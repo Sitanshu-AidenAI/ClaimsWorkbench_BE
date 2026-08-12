@@ -1,0 +1,219 @@
+# Local development / CI stack.
+#
+# Third-party images are pinned by digest, as required by the infrastructure
+# section of the tech stack. The tag beside each digest is the human-readable
+# label it resolved from — update both together.
+
+name: claims-workbench
+
+x-app-env: &app-env
+  CWB_ENVIRONMENT: local
+  CWB_POSTGRES_HOST: postgres
+  CWB_POSTGRES_PORT: "5432"
+  CWB_POSTGRES_USER: claims
+  CWB_POSTGRES_PASSWORD: claims
+  CWB_POSTGRES_DB: claims_workbench
+  CWB_REDIS_HOST: redis
+  CWB_REDIS_PORT: "6379"
+  CWB_KEYCLOAK_SERVER_URL: http://keycloak:8080
+  CWB_KEYCLOAK_REALM: claims-workbench
+  CWB_KEYCLOAK_CLIENT_ID: claims-workbench-api
+  CWB_S3_ENDPOINT_URL: http://minio:9000
+  CWB_S3_ACCESS_KEY_ID: minioadmin
+  CWB_S3_SECRET_ACCESS_KEY: minioadmin
+  CWB_S3_BUCKET: claims-documents
+  CWB_CORS_ORIGINS: http://localhost:5173
+
+x-app-build: &app-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  # -------------------------------------------------------------------------
+  # Application
+  # -------------------------------------------------------------------------
+  api:
+    <<: *app-build
+    environment: *app-env
+    ports:
+      - "${CWB_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    <<: *app-build
+    environment: *app-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app.celery_app
+      - worker
+      - --loglevel=info
+      - --concurrency=4
+    healthcheck:
+      test:
+        ["CMD", "celery", "-A", "app.workers.celery_app.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  beat:
+    <<: *app-build
+    environment: *app-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app.celery_app
+      - beat
+      - --loglevel=info
+      - --schedule=/tmp/celerybeat-schedule
+    restart: unless-stopped
+
+  migrate:
+    <<: *app-build
+    environment: *app-env
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  # -------------------------------------------------------------------------
+  # Data stores
+  # -------------------------------------------------------------------------
+  postgres:
+    # postgres:16-alpine
+    image: postgres@sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382
+    environment:
+      POSTGRES_USER: claims
+      POSTGRES_PASSWORD: claims
+      POSTGRES_DB: claims_workbench
+      # Deterministic collation, so index ordering matches across machines.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${CWB_PG_PORT:-5442}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claims -d claims_workbench"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    # redis:7-alpine
+    image: redis@sha256:9702d01c1f10c3ea9f48211b4362e44f154ff02d063e6f7268eba804059f53bf
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "${CWB_REDIS_PORT:-6389}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Identity
+  # -------------------------------------------------------------------------
+  keycloak:
+    # quay.io/keycloak/keycloak:25.0
+    image: quay.io/keycloak/keycloak@sha256:89aae522be5c945670620f61bdabed612835fb151de8d5aa7091d093e1718a30
+    command: ["start-dev", "--http-port=8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: claims
+      KC_DB_PASSWORD: claims
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "${CWB_KEYCLOAK_PORT:-8090}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Object storage
+  # -------------------------------------------------------------------------
+  minio:
+    # minio/minio:latest
+    image: minio/minio@sha256:9966a92a734f9411e32f4f41d7d9d826fcdc0f68c4e20b70295bd4e7c11f8a2f
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "${CWB_MINIO_PORT:-9020}:9000"
+      - "${CWB_MINIO_CONSOLE_PORT:-9021}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio-init:
+    # minio/mc:latest
+    image: minio/mc@sha256:37d109dddbbb2c95873f5fc81ac93f37023264770fc580a7564148892087b1b7
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/scripts/init.sh"]
+    volumes:
+      - ./docker/minio:/scripts:ro
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_BUCKET: claims-documents
+    restart: "no"
+
+  # -------------------------------------------------------------------------
+  # Development / CI support services
+  # -------------------------------------------------------------------------
+  wiremock:
+    # wiremock/wiremock:3.9.1 — external API stubs for dev/CI
+    image: wiremock/wiremock@sha256:754891c2a5cc222962dc74a6abb3cf45697597116d0754cd91141fdfa429b22e
+    command: ["--global-response-templating", "--verbose", "--port", "8080"]
+    ports:
+      - "${CWB_WIREMOCK_PORT:-8091}:8080"
+    volumes:
+      - ./docker/wiremock/mappings:/home/wiremock/mappings:ro
+    restart: unless-stopped
+
+  mailpit:
+    # axllent/mailpit:latest — catches outbound mail in development
+    image: axllent/mailpit@sha256:c4ae9effabe72c819aa08b47dee3b47b1d93a650332792b37bc6bd38fc747424
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "${CWB_MAILPIT_SMTP_PORT:-1035}:1025" # SMTP
+      - "${CWB_MAILPIT_UI_PORT:-8035}:8025" # web UI
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

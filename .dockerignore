@@ -1,0 +1,24 @@
+.git
+.github
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+.ruff_cache
+.mypy_cache
+.pytest_cache
+.coverage*
+htmlcov
+coverage.xml
+.env
+.env.*
+tests
+docker-compose.yml
+*.md
+.DS_Store
+celerybeat-schedule*
+
+# Re-included after the broad rules above: the package build reads README.md,
+# and pyproject.toml declares it as the project readme.
+!README.md

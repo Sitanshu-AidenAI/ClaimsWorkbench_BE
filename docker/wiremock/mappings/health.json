@@ -1,0 +1,16 @@
+{
+  "mappings": [
+    {
+      "name": "External stub health",
+      "request": {
+        "method": "GET",
+        "urlPath": "/__stub/health"
+      },
+      "response": {
+        "status": 200,
+        "jsonBody": { "status": "ok", "stub": "wiremock" },
+        "headers": { "Content-Type": "application/json" }
+      }
+    }
+  ]
+}

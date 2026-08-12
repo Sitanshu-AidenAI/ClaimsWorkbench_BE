@@ -1,0 +1,963 @@
+"""FNOL intake endpoints.
+
+Two things shape this router. First, **one call per user intention**: the review
+workspace reads a whole case in one request and the command centre reads the
+whole board in one request, because a screen assembled from nine calls shows nine
+different moments of the same queue. Second, **the route is a thin edge** — it
+authorises, validates, delegates to a service, maps the result and commits. Every
+rule it appears to enforce actually lives in `app.services.fnol`.
+
+Authorisation is enforced here on the server, not only in the client's routing:
+`FNOL_WRITE_ROLES` gates every mutation, and reads are open to the wider claims
+population because a handler working a claim needs the notice behind it.
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import uuid
+from datetime import UTC, datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
+
+from app.api.deps.auth import require_roles
+from app.api.deps.services import FNOLContext, FNOLContextDep
+from app.core.errors import NotFoundError, ValidationError
+from app.core.logging import get_logger
+from app.core.security import Principal
+from app.domain.enums import (
+    FNOL_READ_ROLES,
+    FNOL_WRITE_ROLES,
+    AuditEventType,
+    DuplicateResolution,
+    ExceptionStatus,
+    FNOLChannel,
+    FNOLStatus,
+    Severity,
+)
+from app.domain.lifecycle import BLOCKING_EXCEPTIONS
+from app.domain.normalisation import parse_line_of_business
+from app.domain.rules import valid_loss_type
+from app.models.fnol import FNOLCase
+from app.schemas import fnol as api
+from app.services.fnol.ingestion import (
+    IncomingAttachment,
+    IncomingEmail,
+    IncomingNotification,
+)
+
+logger = get_logger(__name__)
+
+router = APIRouter(prefix="/fnol", tags=["fnol"])
+
+ReadAccess = Annotated[Principal, Depends(require_roles(*FNOL_READ_ROLES))]
+WriteAccess = Annotated[Principal, Depends(require_roles(*FNOL_WRITE_ROLES))]
+
+#: The three the board's insight column counts, in the order it draws them.
+_INSIGHT_CODES = (
+    ("major_losses", "high_severity", "potential major losses"),
+    ("duplicates", "possible_duplicate", "possible duplicates"),
+    ("missing_policy", "no_policy_match", "without a policy match"),
+    ("cat_linked", "cat_match", "linked to a catastrophe event"),
+)
+
+
+def actor_of(principal: Principal) -> str:
+    """How a person is named in the audit trail: their name, not their subject."""
+    return principal.full_name or principal.username or principal.email or principal.subject
+
+
+# ---------------------------------------------------------------------------
+# Ingest
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "",
+    response_model=api.FNOLDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a notification from a structured channel",
+)
+async def create_notification(
+    payload: api.NotificationCreate,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+    idempotency_key: Annotated[str | None, Query(alias="idempotency_key")] = None,
+) -> api.FNOLDetail:
+    """Portal, API, phone, TPA and manual entry all land here.
+
+    An `idempotency_key` makes the call safe to retry: the same key returns the
+    same notice rather than logging a second one, which matters most on the phone
+    channel where an officer's browser is the thing that timed out.
+    """
+    notification = IncomingNotification(
+        channel=payload.channel,
+        received_at=payload.received_at or datetime.now(UTC),
+        body=payload.body,
+        source_metadata=payload.source_metadata,
+        reporter_name=payload.reporter_name,
+        reporter_organisation=payload.reporter_organisation,
+        reporter_role=payload.reporter_role,
+        reporter_email=payload.reporter_email,
+        reporter_phone=payload.reporter_phone,
+        external_reference=payload.external_reference,
+        source_reference=payload.source_reference,
+        idempotency_key=idempotency_key,
+        supplied_fields=_supplied(payload.supplied),
+    )
+
+    case, created = await context.ingestion.ingest(notification, actor=actor_of(principal))
+    if created:
+        await context.ingestion.record_supplied_provenance(case, notification)
+        if payload.process:
+            await context.pipeline.run(case)
+        else:
+            context.fnol.mark_queued(case)
+
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.post(
+    "/email",
+    response_model=api.FNOLDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Ingest an inbound claim email",
+)
+async def ingest_email(
+    payload: api.EmailNotificationCreate,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    """The mailbox integration's entry point.
+
+    Redelivery is normal for email — servers retry, and brokers reply-all onto the
+    same thread — so a message id that has been seen before returns the existing
+    notice rather than creating a second one.
+    """
+    attachments = [
+        IncomingAttachment(
+            filename=item.filename,
+            content=_decode_attachment(item.filename, item.content_base64),
+            content_type=item.content_type,
+        )
+        for item in payload.attachments
+    ]
+
+    email = IncomingEmail(
+        sender=payload.sender,
+        recipient=payload.recipient,
+        subject=payload.subject,
+        body=payload.body,
+        message_id=payload.message_id,
+        received_at=payload.received_at,
+        thread_id=payload.thread_id,
+        cc=payload.cc,
+        headers=payload.headers,
+        attachments=attachments,
+        from_broker=payload.from_broker,
+        body_is_html=payload.body_is_html,
+    )
+
+    notification = context.ingestion.from_email(email)
+    case, created = await context.ingestion.ingest(notification, actor=actor_of(principal))
+
+    if created:
+        for attachment in attachments:
+            await context.fnol.attach_document(
+                case,
+                filename=attachment.filename,
+                content=attachment.content,
+                content_type=attachment.content_type,
+                source="email_attachment",
+                actor=actor_of(principal),
+            )
+        if payload.process:
+            await context.pipeline.run(case)
+        else:
+            context.fnol.mark_queued(case)
+
+    await context.commit()
+    return await build_detail(context, case)
+
+
+# ---------------------------------------------------------------------------
+# Reads
+# ---------------------------------------------------------------------------
+
+
+@router.get("", response_model=api.FNOLListResult, summary="List notifications")
+async def list_notifications(
+    context: FNOLContextDep,
+    principal: ReadAccess,
+    status_filter: Annotated[list[FNOLStatus] | None, Query(alias="status")] = None,
+    channel: Annotated[list[FNOLChannel] | None, Query()] = None,
+    severity: Annotated[list[Severity] | None, Query()] = None,
+    search: Annotated[str | None, Query(max_length=120)] = None,
+    needs_review: Annotated[bool, Query()] = False,
+    unassigned: Annotated[bool, Query()] = False,
+    order: Annotated[str, Query(pattern="^(received_at|severity)$")] = "received_at",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> api.FNOLListResult:
+    del principal
+    rows, total = await context.cases.list_cases(
+        statuses=[value.value for value in status_filter] if status_filter else None,
+        channels=[value.value for value in channel] if channel else None,
+        severities=[value.value for value in severity] if severity else None,
+        search=search,
+        needs_review=needs_review,
+        unassigned=unassigned,
+        order=order,
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    return api.FNOLListResult(
+        items=[await _summarise(context, case) for case in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/board", response_model=api.BoardResult, summary="The intake command centre")
+async def board(
+    context: FNOLContextDep,
+    principal: ReadAccess,
+    order: Annotated[str, Query(pattern="^(received_at|severity)$")] = "severity",
+    unassigned: Annotated[bool, Query()] = False,
+    limit: Annotated[int, Query(ge=1, le=50)] = 8,
+) -> api.BoardResult:
+    """Figures, queue and insights in one call.
+
+    One call rather than three: the band, the queue and the insight counts all
+    describe the same moment of the same book, and fetching them separately is how
+    a board ends up saying 127 above a list of 131.
+    """
+    del principal
+    metrics = await context.fnol.board_metrics()
+    rows, total = await context.cases.list_cases(order=order, unassigned=unassigned, limit=limit)
+
+    processed = sum(
+        count
+        for status_value, count in metrics.status_counts.items()
+        if status_value != FNOLStatus.RECEIVED
+    )
+    total_cases = sum(metrics.status_counts.values())
+    with_policy = total_cases - metrics.exception_counts.get("no_policy_match", 0)
+    converted = metrics.status_counts.get(FNOLStatus.CLAIM_CREATED, 0)
+
+    return api.BoardResult(
+        items=[await _summarise(context, case) for case in rows],
+        total=total,
+        metrics=[
+            api.BoardMetric(
+                id="new_intake",
+                label="New intake",
+                value=metrics.received_today,
+                note="received in the last 24 hours",
+            ),
+            api.BoardMetric(
+                id="needs_review",
+                label="Needs review",
+                value=metrics.needs_review,
+                note="waiting on an intake officer",
+            ),
+            api.BoardMetric(
+                id="high_severity",
+                label="High severity",
+                value=metrics.high_severity,
+                note="assessed high or critical",
+            ),
+            api.BoardMetric(
+                id="exceptions",
+                label="Open exceptions",
+                value=metrics.exceptions_open,
+                note="notifications with something outstanding",
+            ),
+        ],
+        insights=[
+            api.BoardInsight(
+                id=insight_id,
+                count=metrics.exception_counts.get(code, 0),
+                label=label,
+            )
+            for insight_id, code, label in _INSIGHT_CODES
+        ],
+        ingest=[
+            api.IngestStageOut(
+                id="classified", label="Read and classified", done=processed, total=total_cases
+            ),
+            api.IngestStageOut(
+                id="policy_matched",
+                label="Policy matched",
+                done=max(0, with_policy),
+                total=total_cases,
+            ),
+            api.IngestStageOut(
+                id="converted", label="Converted to claims", done=converted, total=total_cases
+            ),
+        ],
+        status_counts=metrics.status_counts,
+        channel_counts=metrics.channel_counts,
+        captured_at=datetime.now(UTC),
+    )
+
+
+@router.get("/{reference}", response_model=api.FNOLDetail, summary="One notification in full")
+async def get_notification(
+    reference: str, context: FNOLContextDep, principal: ReadAccess
+) -> api.FNOLDetail:
+    del principal
+    case = await context.fnol.get(reference)
+    return await build_detail(context, case)
+
+
+@router.get(
+    "/{reference}/audit",
+    response_model=list[api.AuditEventOut],
+    summary="The notification's audit trail",
+)
+async def audit_history(
+    reference: str, context: FNOLContextDep, principal: ReadAccess
+) -> list[api.AuditEventOut]:
+    del principal
+    case = await context.fnol.get(reference)
+    related = (case.claim_id,) if case.claim_id else ()
+    events = await context.audit.history(case.id, related_ids=related)
+    return [api.to_audit_event(event) for event in events]
+
+
+# ---------------------------------------------------------------------------
+# Processing
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{reference}/process",
+    response_model=api.ProcessResult,
+    summary="Run the intake pipeline",
+)
+async def process(
+    reference: str,
+    payload: api.ProcessRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.ProcessResult:
+    """Read, classify, match, assess and raise exceptions, in one operation.
+
+    A single orchestration endpoint rather than one per stage: the stages feed
+    each other, and a client driving them individually would be re-implementing
+    the pipeline over the network — and could stop halfway.
+    """
+    del principal
+    case = await context.fnol.get(reference)
+    result = await context.pipeline.run(case, force=payload.force)
+    await context.commit()
+
+    return api.ProcessResult(
+        reference=case.reference,
+        status=result.status,
+        processing_state=case.processing_state,
+        extraction_reused=result.extraction_reused,
+        exceptions_raised=result.exceptions_raised,
+        error=result.error,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Human review
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/{reference}", response_model=api.FNOLDetail, summary="Correct extracted values")
+async def update_fields(
+    reference: str,
+    payload: api.FieldUpdateRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+
+    changed = await context.fnol.update_fields(
+        case, payload.updates, actor=actor_of(principal), reason=payload.reason
+    )
+    if changed and payload.reprocess:
+        # A corrected date of loss changes the policy match, the CAT match and
+        # half the exceptions, so the notice is re-derived rather than left
+        # showing conclusions drawn from the old value.
+        await context.pipeline.run(case)
+    elif changed:
+        await context.fnol.refresh_status(case)
+
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.post(
+    "/{reference}/policy-selection",
+    response_model=api.FNOLDetail,
+    summary="Choose the policy this notice belongs to",
+)
+async def select_policy(
+    reference: str,
+    payload: api.PolicySelectionRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+
+    policy = await context.policy_matching.select(
+        case, payload.policy_id, actor=actor_of(principal)
+    )
+    if policy is None:
+        raise ValidationError(
+            "That policy is not one of the candidates on this notification. "
+            "Search for it first so the match is recorded."
+        )
+
+    context.audit.fnol(
+        case,
+        event_type=AuditEventType.POLICY_SELECTED,
+        summary=f"Policy {policy.policy_number} confirmed by {actor_of(principal)}.",
+        actor=actor_of(principal),
+        after={"policy_number": policy.policy_number},
+        context={"reason": payload.reason} if payload.reason else {},
+    )
+
+    await context.pipeline.run(case)
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.get(
+    "/{reference}/policy-search",
+    response_model=api.PolicySearchResult,
+    summary="Search the policy book for this notice",
+)
+async def search_policies(
+    reference: str,
+    context: FNOLContextDep,
+    principal: ReadAccess,
+    q: Annotated[str, Query(min_length=2, max_length=120)],
+) -> api.PolicySearchResult:
+    """What an officer uses when nothing matched automatically.
+
+    Returns candidates in the same shape as the automatic ones so the frontend
+    draws one list, and so selecting a searched policy goes through exactly the
+    same confirmation path as selecting a suggested one.
+    """
+    del principal
+    case = await context.fnol.get(reference)
+    policies = await context.policies.find_candidates(
+        policy_number=q, insured_name=q, organisation=q, broker=q, limit=20
+    )
+    matches = {match.policy_id: match for match in await context.cases.list_policy_matches(case.id)}
+    return api.PolicySearchResult(
+        items=[api.to_policy_candidate(matches.get(policy.id), policy) for policy in policies]
+    )
+
+
+@router.post(
+    "/{reference}/duplicates/{duplicate_id}",
+    response_model=api.FNOLDetail,
+    summary="Resolve a possible duplicate",
+)
+async def resolve_duplicate(
+    reference: str,
+    duplicate_id: uuid.UUID,
+    payload: api.DuplicateResolutionRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+
+    await context.fnol.resolve_duplicate(
+        case,
+        duplicate_id,
+        resolution=DuplicateResolution(payload.resolution),
+        note=payload.note,
+        actor=actor_of(principal),
+    )
+    await context.fnol.refresh_status(case)
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.post(
+    "/{reference}/exceptions/{exception_id}",
+    response_model=api.FNOLDetail,
+    summary="Mark an exception dealt with",
+)
+async def resolve_exception(
+    reference: str,
+    exception_id: uuid.UUID,
+    payload: api.ExceptionResolutionRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    await context.fnol.resolve_exception(
+        case,
+        exception_id,
+        status=ExceptionStatus(payload.status),
+        note=payload.note,
+        actor=actor_of(principal),
+    )
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.post(
+    "/{reference}/severity", response_model=api.FNOLDetail, summary="Override the severity"
+)
+async def override_severity(
+    reference: str,
+    payload: api.SeverityOverrideRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+    await context.fnol.override_severity(
+        case, severity=payload.severity, reason=payload.reason, actor=actor_of(principal)
+    )
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.post(
+    "/{reference}/classification",
+    response_model=api.FNOLDetail,
+    summary="Override the classification",
+)
+async def override_classification(
+    reference: str,
+    payload: api.ClassificationOverrideRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+
+    line = parse_line_of_business(payload.line_of_business)
+    if line is None:
+        raise ValidationError(
+            f"“{payload.line_of_business}” is not a line of business this carrier writes."
+        )
+    loss_type = valid_loss_type(line, payload.loss_type) if payload.loss_type else None
+    if payload.loss_type and loss_type is None:
+        raise ValidationError(
+            f"“{payload.loss_type}” is not a loss type recorded against "
+            f"{line.value.replace('_', ' ')} claims."
+        )
+
+    await context.fnol.override_classification(
+        case,
+        line_of_business=line.value,
+        loss_type=loss_type,
+        claim_type=payload.claim_type,
+        reason=payload.reason,
+        actor=actor_of(principal),
+    )
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.post(
+    "/{reference}/cat-match",
+    response_model=api.FNOLDetail,
+    summary="Confirm or remove a catastrophe attribution",
+)
+async def confirm_cat_match(
+    reference: str,
+    payload: api.CatMatchRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+    await context.fnol.confirm_cat_match(
+        case,
+        confirmed=payload.confirmed,
+        event_id=payload.event_id,
+        actor=actor_of(principal),
+    )
+    await context.fnol.refresh_status(case)
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.post("/{reference}/notes", response_model=api.NoteOut, summary="Add a note")
+async def add_note(
+    reference: str,
+    payload: api.NoteRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.NoteOut:
+    case = await context.fnol.get(reference)
+    note = await context.fnol.add_note(case, body=payload.body, actor=actor_of(principal))
+    await context.commit()
+    return api.to_note(note)
+
+
+@router.post("/{reference}/status", response_model=api.FNOLDetail, summary="Move the notification")
+async def transition(
+    reference: str,
+    payload: api.TransitionRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    """Refer, reject or cancel a notification.
+
+    Claim creation is deliberately not reachable from here — it has its own
+    endpoint because it has its own preconditions and its own idempotency.
+    """
+    if payload.status is FNOLStatus.CLAIM_CREATED:
+        raise ValidationError(
+            "A claim is created through the create-claim action, not by setting a status."
+        )
+    case = await context.fnol.get(reference)
+    await context.fnol.transition(
+        case, payload.status, actor=actor_of(principal), reason=payload.reason
+    )
+    await context.commit()
+    return await build_detail(context, case)
+
+
+# ---------------------------------------------------------------------------
+# Documents
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{reference}/documents",
+    response_model=api.FNOLDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Attach a document",
+)
+async def upload_document(
+    reference: str,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+    file: Annotated[UploadFile, File()],
+    reprocess: Annotated[bool, Query()] = True,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+
+    content = await file.read()
+    await context.fnol.attach_document(
+        case,
+        filename=file.filename or "attachment",
+        content=content,
+        content_type=file.content_type,
+        source="upload",
+        actor=actor_of(principal),
+    )
+    if reprocess:
+        # New evidence changes the extraction's fingerprint, so the pipeline
+        # genuinely re-reads rather than returning the cached analysis.
+        await context.pipeline.run(case)
+
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.delete(
+    "/{reference}/documents/{document_id}",
+    response_model=api.FNOLDetail,
+    summary="Remove a document",
+)
+async def delete_document(
+    reference: str,
+    document_id: uuid.UUID,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    case = await context.fnol.get(reference)
+    await context.fnol.remove_document(case, document_id, actor=actor_of(principal))
+    await context.pipeline.run(case)
+    await context.commit()
+    return await build_detail(context, case)
+
+
+@router.get(
+    "/{reference}/documents/{document_id}/content",
+    summary="Download an attached document",
+)
+async def download_document(
+    reference: str,
+    document_id: uuid.UUID,
+    context: FNOLContextDep,
+    principal: ReadAccess,
+) -> Response:
+    del principal
+    case = await context.fnol.get(reference)
+    document = await context.cases.get_document(document_id)
+    if document is None or document.fnol_case_id != case.id:
+        raise NotFoundError("That document is not on this notification.")
+
+    content = await context.documents.fetch(document.storage_key)
+    return Response(
+        content=content,
+        media_type=document.content_type,
+        headers={
+            # `attachment` rather than `inline`: a claim document is arbitrary
+            # user-supplied content, and rendering it in the application's origin
+            # is how an uploaded file becomes a script on the claims desk.
+            "Content-Disposition": f'attachment; filename="{document.filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Claim creation
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{reference}/create-claim",
+    response_model=api.FNOLDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create the claim",
+)
+async def create_claim(
+    reference: str,
+    payload: api.ClaimCreationRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    """Convert a reviewed notification into a claim.
+
+    Refuses with a checklist when something blocks it, and returns the existing
+    claim — rather than making a second one — when the notice has already been
+    converted.
+    """
+    case = await context.fnol.get(reference)
+    result = await context.creation.create(
+        case.id, actor=actor_of(principal), idempotency_key=payload.idempotency_key
+    )
+    await context.commit()
+
+    logger.info(
+        "fnol_claim_creation",
+        fnol=case.reference,
+        claim=result.claim.reference,
+        created=result.created,
+    )
+    refreshed = await context.fnol.get(reference)
+    return await build_detail(context, refreshed)
+
+
+# ---------------------------------------------------------------------------
+# Mapping helpers
+# ---------------------------------------------------------------------------
+
+
+async def _summarise(context: FNOLContext, case: FNOLCase) -> api.FNOLSummary:
+    exceptions = await context.cases.list_exceptions(case.id, only_open=True)
+    blocking = sum(
+        1 for item in exceptions if item.code in {code.value for code in BLOCKING_EXCEPTIONS}
+    )
+    claim_reference = None
+    if case.claim_id:
+        claim = await context.claims.get(case.claim_id)
+        claim_reference = claim.reference if claim else None
+
+    return api.to_summary(
+        case,
+        open_exceptions=len(exceptions),
+        blocking_exceptions=blocking,
+        claim_reference=claim_reference,
+    )
+
+
+async def build_detail(context: FNOLContext, case: FNOLCase) -> api.FNOLDetail:
+    """Assemble the whole review workspace payload.
+
+    The case is refreshed first because `updated_at` is maintained by a database
+    trigger: after any write, SQLAlchemy knows the column is stale and would
+    reload it lazily — which, inside a response being serialised, is IO in a
+    place the async driver cannot do it. One explicit SELECT here is both cheaper
+    and considerably less mysterious.
+    """
+    await context.session.refresh(case)
+    documents = await context.cases.list_documents(case.id)
+    fields = await context.cases.list_fields(case.id)
+    parties = await context.cases.list_parties(case.id)
+    matches = await context.cases.list_policy_matches(case.id)
+    duplicates = await context.cases.list_duplicates(case.id)
+    exceptions = await context.cases.list_exceptions(case.id)
+    analyses = await context.cases.list_analyses(case.id)
+    notes = await context.cases.list_notes(case.id)
+
+    candidates: list[api.PolicyCandidateOut] = []
+    for match in matches:
+        policy = await context.policies.get(match.policy_id)
+        if policy is not None:
+            candidates.append(api.to_policy_candidate(match, policy))
+
+    cat_event = None
+    if case.cat_event_id:
+        event = await context.cat_events.get(case.cat_event_id)
+        if event is not None:
+            cat_event = api.to_cat_event(
+                event,
+                confidence=float(case.cat_confidence) if case.cat_confidence else None,
+                confirmed=bool(case.cat_confirmed),
+            )
+
+    claim_reference = None
+    if case.claim_id:
+        claim = await context.claims.get(case.claim_id)
+        claim_reference = claim.reference if claim else None
+
+    blockers = await context.creation.blockers(case)
+
+    return api.FNOLDetail(
+        id=case.id,
+        reference=case.reference,
+        title=api.case_title(case),
+        status=FNOLStatus(case.status),
+        processing_state=case.processing_state,
+        processing_error=case.processing_error,
+        processing_completed_at=case.processing_completed_at,
+        source=api.SourceOut(
+            channel=FNOLChannel(case.channel),
+            received_at=case.received_at,
+            message_id=case.message_id,
+            thread_id=case.thread_id,
+            external_reference=case.external_reference,
+            source_reference=case.source_reference,
+            metadata=case.source_metadata or {},
+            body=case.source_body,
+        ),
+        reporter_name=case.reporter_name,
+        reporter_organisation=case.reporter_organisation,
+        reporter_role=case.reporter_role,
+        reporter_email=case.reporter_email,
+        reporter_phone=case.reporter_phone,
+        policy_number=case.policy_number,
+        insured_name=case.insured_name,
+        insured_organisation=case.insured_organisation,
+        policy_type=case.policy_type,
+        policy_id=case.policy_id,
+        policy_confirmed=bool(case.policy_confirmed),
+        line_of_business=case.line_of_business,
+        claim_type=case.claim_type,
+        loss_type=case.loss_type,
+        complexity=case.complexity,
+        classification_confidence=_float(case.classification_confidence),
+        classification_overridden=bool(case.classification_overridden),
+        date_of_loss=case.date_of_loss,
+        loss_location=case.loss_location,
+        loss_country=case.loss_country,
+        loss_description=case.loss_description,
+        cause_of_loss=case.cause_of_loss,
+        affected_assets=case.affected_assets,
+        injuries=case.injuries,
+        fatalities=case.fatalities,
+        business_interruption=bool(case.business_interruption),
+        structural_damage=bool(case.structural_damage),
+        environmental_exposure=bool(case.environmental_exposure),
+        estimated_loss=api.money(case.estimated_loss_minor, case.currency),
+        repair_estimate=api.money(case.repair_estimate_minor, case.currency),
+        currency=case.currency or "GBP",
+        police_reference=case.police_reference,
+        incident_reference=case.incident_reference,
+        authorities_involved=case.authorities_involved,
+        potential_litigation=bool(case.potential_litigation),
+        severity=Severity(case.severity) if case.severity else None,
+        severity_confidence=_float(case.severity_confidence),
+        severity_overridden=bool(case.severity_overridden),
+        fraud_risk=case.fraud_risk,
+        fraud_score=_float(case.fraud_score),
+        coverage_indicator=case.coverage_indicator,
+        completeness_score=_float(case.completeness_score),
+        extraction_confidence=_float(case.extraction_confidence),
+        ai_summary=case.ai_summary,
+        ai_summary_generated_at=case.ai_summary_generated_at,
+        cat_event=cat_event,
+        claim_reference=claim_reference,
+        assigned_to=case.assigned_to,
+        created_by=case.created_by,
+        created_at=case.created_at,
+        updated_at=case.updated_at,
+        documents=[api.to_document(document) for document in documents],
+        fields=[api.to_field(field) for field in fields],
+        parties=[api.to_party(party) for party in parties],
+        policy_candidates=candidates,
+        duplicates=[api.to_duplicate(candidate) for candidate in duplicates],
+        exceptions=[api.to_exception(exception) for exception in exceptions],
+        analyses={analysis.kind: api.to_analysis(analysis) for analysis in analyses},
+        notes=[api.to_note(note) for note in notes],
+        blockers=[
+            api.BlockerOut(code=blocker.code, message=blocker.message) for blocker in blockers
+        ],
+        can_create_claim=not blockers and case.claim_id is None,
+    )
+
+
+def _float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _supplied(supplied: dict[str, object]) -> dict[str, object]:
+    """Only the attributes the case actually has. Anything else is dropped.
+
+    A structured channel is trusted to *state* values, not to name columns: an
+    unknown key here would be a client writing to a field this API never
+    published.
+    """
+    allowed = {
+        "reporter_name",
+        "reporter_organisation",
+        "reporter_role",
+        "reporter_email",
+        "reporter_phone",
+        "policy_number",
+        "insured_name",
+        "insured_organisation",
+        "loss_location",
+        "loss_country",
+        "loss_description",
+        "cause_of_loss",
+        "affected_assets",
+        "police_reference",
+        "incident_reference",
+    }
+    return {key: value for key, value in supplied.items() if key in allowed}
+
+
+def _decode_attachment(filename: str, encoded: str) -> bytes:
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValidationError(
+            f"The attachment {filename} was not valid base64.", details={"filename": filename}
+        ) from exc
+
+
+def _refuse_if_converted(case: FNOLCase) -> None:
+    """A converted notice is a historical record and does not change.
+
+    Corrections after conversion belong on the claim, which has its own trail —
+    editing the notice would rewrite what the claim was created from.
+    """
+    if case.status == FNOLStatus.CLAIM_CREATED:
+        raise ValidationError(
+            f"{case.reference} has already been converted into a claim and cannot be edited. "
+            "Make the correction on the claim instead."
+        )
