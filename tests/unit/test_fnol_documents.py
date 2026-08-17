@@ -24,6 +24,29 @@ from app.services.documents.validation import (
 MAX = 5_000_000
 
 
+def pdf_bytes(*, text_pages: list[str], blank_pages: int = 0) -> bytes:
+    """A real PDF, built with the `reportlab` this project already depends on.
+
+    `blank_pages` carry a drawn rectangle and no text operators, which is what a
+    scanned page looks like to a text-layer reader.
+    """
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    document = canvas.Canvas(buffer)
+    for body in text_pages:
+        offset = 800
+        for line in body.splitlines():
+            document.drawString(60, offset, line)
+            offset -= 16
+        document.showPage()
+    for _ in range(blank_pages):
+        document.rect(100, 100, 200, 200, fill=1)
+        document.showPage()
+    document.save()
+    return buffer.getvalue()
+
+
 class TestFilenameSanitising:
     @pytest.mark.parametrize(
         ("raw", "expected"),
@@ -123,9 +146,18 @@ class TestTextExtraction:
         assert "Estimated loss: GBP 128,000" in result.text
 
     def test_a_scanned_pdf_is_reported_as_needing_ocr(self) -> None:
-        result = extract_text("application/pdf", b"%PDF-1.7\n/Type/Page\n(no text operators)")
+        # A real PDF with a drawn rectangle and no text operators — which is what a
+        # scan is. The fixture has to be a genuine PDF now that a genuine parser
+        # reads it: the previous `b"%PDF-1.7\n/Type/Page\n..."` stand-in only ever
+        # satisfied a regex.
+        result = extract_text("application/pdf", pdf_bytes(text_pages=[], blank_pages=1))
         assert result.status is DocumentExtractionStatus.UNSUPPORTED
         assert "optical character recognition" in (result.error or "").lower()
+
+    def test_bytes_that_are_not_really_a_pdf_fail_without_raising(self) -> None:
+        result = extract_text("application/pdf", b"%PDF-1.7\nnot actually a pdf")
+        assert result.status is DocumentExtractionStatus.FAILED
+        assert result.error is not None
 
     def test_an_image_is_stored_but_claims_no_text(self) -> None:
         result = extract_text("image/png", b"\x89PNG\r\n\x1a\n")

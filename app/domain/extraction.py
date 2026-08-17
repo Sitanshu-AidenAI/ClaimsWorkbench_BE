@@ -14,6 +14,7 @@ property, and a field the model genuinely could not find comes back as
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -30,6 +31,11 @@ class AIModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+#: A passage label as the extraction prompt prints it: `C1`, `C12`. Anything else is
+#: a label the model invented, and is discarded rather than stored — see the validator.
+_CHUNK_LABEL_RE = re.compile(r"^C\d{1,3}$")
+
+
 class ExtractedField(AIModel):
     """One value, with how sure the model was and where it read it."""
 
@@ -39,6 +45,26 @@ class ExtractedField(AIModel):
     )
     evidence: str | None = Field(
         description="The phrase the value was read from. Null when inferred."
+    )
+    #: Which retrieved passage this value came from, so the review screen can show the
+    #: officer the page it is written on. Null when it came from the notification body,
+    #: which has no passage label — and null is the honest answer there rather than a
+    #: guess at the nearest one.
+    #:
+    #: The one field here with a default, and the reason is worth recording: the
+    #: strict-mode requirement is enforced by `pydantic_json_schema`'s `_tighten`,
+    #: which marks *every* property required in the schema sent to the provider
+    #: regardless of what the Python model defaults to. So the default is invisible to
+    #: the model and visible only to the deterministic reader in
+    #: `app.domain.heuristics`, which reads whole text rather than passages and has no
+    #: label to give.
+    source_chunk_ref: str | None = Field(
+        default=None,
+        description=(
+            "The label of the passage this value was read from, exactly as printed "
+            "(for example 'C3'). Null when the value came from the notification body "
+            "rather than from a passage. Never invent a label."
+        ),
     )
 
     @field_validator("value")
@@ -58,6 +84,21 @@ class ExtractedField(AIModel):
             return None
         trimmed = value.strip()
         return trimmed[:MAX_EVIDENCE_LENGTH] if trimmed else None
+
+    @field_validator("source_chunk_ref")
+    @classmethod
+    def _bound_chunk_ref(cls, value: str | None) -> str | None:
+        """Reject anything that is not label-shaped.
+
+        A model that answers "the survey report" or "page 4" here has not cited a
+        passage, and storing it would put text in a column the review screen resolves
+        as an identifier. Whether the label names a passage the model was actually
+        shown is checked later, by the service that knows what it showed it.
+        """
+        if value is None:
+            return None
+        trimmed = value.strip().upper()
+        return trimmed if _CHUNK_LABEL_RE.match(trimmed) else None
 
     @property
     def present(self) -> bool:

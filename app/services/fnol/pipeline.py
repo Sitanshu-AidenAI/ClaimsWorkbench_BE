@@ -6,9 +6,14 @@ match a policy before you have read the notice. Written as one readable sequence
 rather than buried in a controller, so the order is reviewable by someone who
 knows claims and not Python.
 
-    read documents → extract → classify → match policy → check completeness
+    index documents → extract → classify → match policy → check completeness
     → detect duplicates → assess severity, fraud and coverage → match catastrophe
     → summarise → raise exceptions → set status
+
+Indexing is stage zero and is what makes the rest citable: it cuts each document's
+text into passages carrying the page they came from, so a field extracted afterwards
+can point at where it was read. It is idempotent, so a re-run on an unchanged case
+costs one query per document and nothing else.
 
 Two economies are built in and both matter at production volume:
 
@@ -16,7 +21,9 @@ Two economies are built in and both matter at production volume:
   summary each carry a fingerprint of what they were built from, and a re-run
   with an unchanged fingerprint skips the model call entirely.
 * **One model call reads the whole notice.** Everything after extraction is
-  deterministic code over the extracted values.
+  deterministic code over the extracted values. When a case carries enough document
+  text to be worth searching, that one call reads the passages retrieval selected
+  rather than a truncated concatenation of everything — but it is still one call.
 
 The pipeline never raises for a stage failure. An unreachable model provider, an
 unreadable PDF or a policy repository returning nothing are all normal states of
@@ -30,6 +37,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from app.core.config import ExtractionSettings, settings
 from app.core.logging import get_logger
 from app.domain.enums import (
     AnalysisKind,
@@ -42,10 +50,15 @@ from app.domain.enums import (
 )
 from app.domain.lifecycle import derive_status
 from app.models.fnol import FNOLCase
+from app.repositories.extraction import ExtractionSchemaRepository
 from app.repositories.fnol import FNOLRepository
 from app.repositories.policy import PolicyRepository
+from app.services.extraction.engine import RunOutcome, SchemaExtractionEngine
+from app.services.extraction.registry import to_dataset
+from app.services.fnol.adapter import FNOLWriteBackAdapter, WriteBackResult
 from app.services.fnol.assessments import AssessmentServices
 from app.services.fnol.audit import AuditService
+from app.services.fnol.body import NotificationBodyDocumentService
 from app.services.fnol.classification import ClassificationService
 from app.services.fnol.exceptions import ExceptionService
 from app.services.fnol.extraction import FNOLExtractionService
@@ -55,6 +68,8 @@ from app.services.fnol.matching import (
     PolicyMatchingService,
 )
 from app.services.fnol.summary import FNOLSummaryService
+from app.services.intelligence.indexing import CaseIndexOutcome, DocumentIndexService
+from app.services.notifications.service import NotificationService
 
 logger = get_logger(__name__)
 
@@ -66,6 +81,30 @@ class PipelineResult:
     extraction_reused: bool
     exceptions_raised: int
     error: str | None = None
+    #: What the indexing stage did, and whether the extraction read retrieved
+    #: passages or the whole corpus. Surfaced so "did retrieval do anything on this
+    #: notice" is answerable from the response rather than from the logs.
+    documents_indexed: int = 0
+    chunks_indexed: int = 0
+    retrieval_used: bool = False
+    #: The dataset that read this notice, and how it went. `None` means the
+    #: pre-existing fixed-schema path ran instead — no dataset is configured, or
+    #: `CWB_EXTRACT_SCHEMA_DRIVEN` is off.
+    schema_key: str | None = None
+    extraction_run_id: str | None = None
+    fields_extracted: int = 0
+    fields_needing_review: int = 0
+
+
+@dataclass(slots=True)
+class _DatasetExtraction:
+    """The dataset path's result, in the shape the shared downstream needs."""
+
+    outcome: RunOutcome
+    write_back: WriteBackResult
+    fingerprint: str
+    failed: bool
+    retrieval_used: bool
 
 
 class FNOLPipeline:
@@ -83,7 +122,28 @@ class FNOLPipeline:
         summary: FNOLSummaryService,
         exceptions: ExceptionService,
         audit: AuditService,
+        #: The desk's notification panel. Optional in the same way and for the same
+        #: reason `index` is: a deployment or a test without one processes notices
+        #: exactly as it did before the panel existed. Emission never raises, so a
+        #: present one cannot fail a run either.
+        notifications: NotificationService | None = None,
+        index: DocumentIndexService | None = None,
+        #: The configurable-dataset path. All four are `None`-able together: a
+        #: deployment without them runs exactly as it did before this existed,
+        #: which is what keeps the pre-existing behaviour reachable and tested.
+        schemas: ExtractionSchemaRepository | None = None,
+        engine: SchemaExtractionEngine | None = None,
+        adapter: FNOLWriteBackAdapter | None = None,
+        body: NotificationBodyDocumentService | None = None,
+        extraction_config: ExtractionSettings | None = None,
     ) -> None:
+        self._notifications = notifications
+        self._index = index
+        self._schemas = schemas
+        self._engine = engine
+        self._adapter = adapter
+        self._body = body
+        self._extraction_config = extraction_config or settings.extraction
         self._repository = repository
         self._policies = policies
         self._extraction = extraction
@@ -98,8 +158,13 @@ class FNOLPipeline:
 
     async def run(self, case: FNOLCase, *, force: bool = False) -> PipelineResult:
         """Process a notice end to end. `force` re-reads it even if nothing moved."""
+        # Held in a local as well as on the case: it is the discriminator in this
+        # run's notification keys, and the three events must agree on it. Reading
+        # it back off the case at the end would work today and break the moment
+        # anything in between touches the column.
+        started_at = datetime.now(UTC)
         case.processing_state = ProcessingState.PROCESSING
-        case.processing_started_at = datetime.now(UTC)
+        case.processing_started_at = started_at
         case.processing_error = None
         if case.status == FNOLStatus.RECEIVED:
             case.status = FNOLStatus.PROCESSING
@@ -111,6 +176,13 @@ class FNOLPipeline:
             summary="Automated processing started.",
             context={"force": force},
         )
+        if self._notifications is not None:
+            await self._notifications.fnol_processing_started(
+                case_id=case.id,
+                reference=case.reference,
+                started_at=started_at,
+                channel=case.channel,
+            )
 
         try:
             result = await self._run_stages(case, force=force)
@@ -126,6 +198,13 @@ class FNOLPipeline:
                 summary="Automated processing failed and needs to be retried.",
                 context={"error": type(exc).__name__},
             )
+            if self._notifications is not None:
+                await self._notifications.fnol_processing_failed(
+                    case_id=case.id,
+                    reference=case.reference,
+                    started_at=started_at,
+                    error=case.processing_error,
+                )
             return PipelineResult(
                 case=case,
                 status=FNOLStatus.AI_PROCESSING_FAILED,
@@ -150,10 +229,40 @@ class FNOLPipeline:
                 "extraction_reused": result.extraction_reused,
             },
         )
+        if self._notifications is not None:
+            await self._notifications.fnol_processing_succeeded(
+                case_id=case.id,
+                reference=case.reference,
+                started_at=started_at,
+                status=result.status.value,
+                exceptions_raised=result.exceptions_raised,
+                fields_extracted=result.fields_extracted,
+                documents_indexed=result.documents_indexed,
+            )
         return result
 
     async def _run_stages(self, case: FNOLCase, *, force: bool) -> PipelineResult:
+        # --- 0a. The notification body becomes a document ---------------------
+        # So that a value read out of the broker's own email can be cited like a
+        # value read out of an attachment. Everything downstream then treats the
+        # body as an ordinary document, which is the whole point: no stage below
+        # this line knows it is different.
+        if self._body is not None:
+            await self._body.ensure(case)
+
         documents = list(await self._repository.list_documents(case.id))
+
+        # --- 0b. Index the documents ------------------------------------------
+        # Turns stored text into citable passages, and vectorises them when a
+        # provider is configured. Never raises: a document that cannot be read or
+        # embedded becomes a failed row and is counted as unreadable below, which
+        # feeds the exception the officer already sees for that.
+        index = (
+            await self._index.index_case(documents, force=force)
+            if self._index is not None
+            else CaseIndexOutcome.disabled()
+        )
+
         document_texts = [
             document.extracted_text for document in documents if document.extracted_text
         ]
@@ -165,7 +274,31 @@ class FNOLPipeline:
         )
 
         # --- 1. Extraction --------------------------------------------------
-        fingerprint = FNOLExtractionService.fingerprint(case.source_body or "", document_texts)
+        # Two paths, and exactly one runs. The dataset path reads the notice
+        # against whatever fields the desk has configured; the fixed path reads
+        # it against the schema compiled into `app.domain.extraction`. The
+        # dataset path is preferred when one is configured and the module is on,
+        # and the fixed path remains the answer for a deployment that has neither
+        # — including every existing test of the pre-existing behaviour.
+        dataset = await self._extract_dataset(case, documents, index.signature, force=force)
+        if dataset is not None:
+            return await self._downstream(
+                case,
+                document_texts=document_texts,
+                unreadable=unreadable,
+                index=index,
+                fingerprint=dataset.fingerprint,
+                extraction_failed=dataset.failed,
+                field_confidences=dataset.write_back.confidences,
+                raw_loss_date=dataset.write_back.raw_loss_date,
+                retrieval_used=dataset.retrieval_used,
+                extraction_reused=dataset.outcome.reused,
+                dataset=dataset,
+            )
+
+        fingerprint = FNOLExtractionService.fingerprint(
+            case.source_body or "", document_texts, index.signature
+        )
         stored = await self._repository.get_analysis(case.id, AnalysisKind.EXTRACTION)
         reused = bool(
             stored is not None
@@ -175,6 +308,7 @@ class FNOLPipeline:
         )
 
         extraction_failed = False
+        retrieval_used = False
         field_confidences: dict[str, float | None] = {}
         raw_loss_date: str | None = None
 
@@ -190,6 +324,9 @@ class FNOLPipeline:
                 source_text=case.source_body or "",
                 document_texts=document_texts,
                 channel=case.channel,
+                case_id=case.id,
+                documents=documents,
+                index_signature=index.signature,
             )
             if outcome.extraction is None:
                 extraction_failed = True
@@ -205,15 +342,25 @@ class FNOLPipeline:
                     latency_ms=outcome.latency_ms,
                 )
             else:
-                field_confidences = await self._extraction.apply(case, outcome.extraction)
+                field_confidences = await self._extraction.apply(
+                    case, outcome.extraction, evidence=outcome.evidence
+                )
                 raw_loss_date = outcome.extraction.loss.date_of_loss.value
+                retrieval_used = outcome.retrieval_used
                 await self._repository.record_analysis(
                     case.id,
                     kind=AnalysisKind.EXTRACTION,
                     provider=outcome.provider,
                     model=outcome.model,
                     input_fingerprint=fingerprint,
-                    result=outcome.extraction.model_dump(mode="json"),
+                    # The retrieval trace rides along in the same JSONB column rather
+                    # than in a table of its own. It is the answer to "why did the
+                    # model read that", it is already fingerprinted with the
+                    # extraction it explains, and it is already served with it.
+                    result={
+                        **outcome.extraction.model_dump(mode="json"),
+                        "retrieval": (outcome.evidence.trace if outcome.evidence else {}),
+                    },
                     confidence=outcome.extraction.overall_confidence,
                     error=outcome.error,
                     latency_ms=outcome.latency_ms,
@@ -228,6 +375,43 @@ class FNOLPipeline:
                     context={"provider": outcome.provider, "model": outcome.model},
                 )
 
+        return await self._downstream(
+            case,
+            document_texts=document_texts,
+            unreadable=unreadable,
+            index=index,
+            fingerprint=fingerprint,
+            extraction_failed=extraction_failed,
+            field_confidences=field_confidences,
+            raw_loss_date=raw_loss_date,
+            retrieval_used=retrieval_used,
+            extraction_reused=reused,
+            dataset=None,
+        )
+
+    async def _downstream(
+        self,
+        case: FNOLCase,
+        *,
+        document_texts: list[str],
+        unreadable: int,
+        index: CaseIndexOutcome,
+        fingerprint: str,
+        extraction_failed: bool,
+        field_confidences: dict[str, float | None],
+        raw_loss_date: str | None,
+        retrieval_used: bool,
+        extraction_reused: bool,
+        dataset: _DatasetExtraction | None,
+    ) -> PipelineResult:
+        """Everything after the notice has been read.
+
+        Shared by both extraction paths, and unchanged from the sequence that
+        came before them: classify, match, assess, summarise, raise exceptions,
+        set status. Neither path may have its own version of this — the whole
+        value of switching how a notice is *read* rests on nothing else about how
+        it is *handled* changing with it.
+        """
         # --- 2. Classification ----------------------------------------------
         corpus = "\n\n".join(part for part in (case.source_body or "", *document_texts) if part)[
             :20_000
@@ -365,8 +549,147 @@ class FNOLPipeline:
         return PipelineResult(
             case=case,
             status=FNOLStatus(case.status),
-            extraction_reused=reused,
+            extraction_reused=extraction_reused,
             exceptions_raised=len(raised),
+            documents_indexed=index.indexed,
+            chunks_indexed=index.chunks,
+            retrieval_used=retrieval_used,
+            schema_key=dataset.outcome.run.schema_key if dataset else None,
+            extraction_run_id=str(dataset.outcome.run.id) if dataset else None,
+            fields_extracted=dataset.outcome.run.fields_extracted if dataset else 0,
+            fields_needing_review=dataset.outcome.run.fields_needing_review if dataset else 0,
+        )
+
+    # -- The configurable-dataset path ---------------------------------------
+
+    async def write_back(self, case: FNOLCase, values: list[Any]) -> WriteBackResult | None:
+        """Mirror extracted values onto the claim record, outside a full run.
+
+        What the correction endpoint calls after an officer edits a value: the
+        edit has to reach `fnol_cases` and `fnol_extracted_fields` in the same
+        transaction, or the review screen and the pipeline disagree about what
+        the value is until the next run. Exposed on the pipeline rather than the
+        adapter so a route never has to know the adapter exists.
+        """
+        if self._adapter is None:
+            return None
+        return await self._adapter.apply(case, values)
+
+    async def _extract_dataset(
+        self,
+        case: FNOLCase,
+        documents: list[Any],
+        index_signature: str,
+        *,
+        force: bool,
+    ) -> _DatasetExtraction | None:
+        """Read the notice against the configured dataset.
+
+        Returns `None` — meaning "the fixed schema should run instead" — for four
+        reasons, none of which is an error:
+
+        * the module is switched off;
+        * its collaborators were not wired;
+        * **no model provider is configured**, so the deterministic reader is the
+          only thing that can read anything, and it answers the fixed schema;
+        * no dataset is configured, because nobody has set one up yet.
+        """
+        if not self._extraction_config.schema_driven:
+            return None
+        if self._schemas is None or self._engine is None or self._adapter is None:
+            return None
+        if not self._engine.available:
+            # A desk with no API key keeps the deterministic reading it has always
+            # had. A dataset run here would be honest and useless: it would
+            # correctly report having read nothing, and the notice would land in
+            # `ai_processing_failed` with an empty form where it used to carry
+            # values the regex reader found.
+            logger.info("fnol_dataset_needs_a_provider", reference=case.reference)
+            return None
+
+        schema = await self._schemas.get_default()
+        if schema is None:
+            logger.info("fnol_no_default_dataset", reference=case.reference)
+            return None
+
+        dataset = to_dataset(schema)
+        outcome = await self._engine.run(
+            case,
+            schema=schema,
+            dataset=dataset,
+            documents=documents,
+            index_signature=index_signature,
+            force=force,
+        )
+
+        # The write-back runs on a reused run too. It is cheap — it reads rows
+        # this transaction already has — and it is what guarantees the claim
+        # record matches the values on screen after a restart, a schema rename or
+        # a correction made through a different route.
+        write_back = await self._adapter.apply(case, outcome.values)
+
+        await self._repository.record_analysis(
+            case.id,
+            kind=AnalysisKind.EXTRACTION,
+            provider=outcome.run.provider or "none",
+            model=outcome.run.model,
+            input_fingerprint=outcome.run.fingerprint or "",
+            result={
+                "schema_key": outcome.run.schema_key,
+                "schema_version": outcome.run.schema_version,
+                "run_id": str(outcome.run.id),
+                "fields_total": outcome.run.fields_total,
+                "fields_extracted": outcome.run.fields_extracted,
+                "fields_needing_review": outcome.run.fields_needing_review,
+                "retrieval": {
+                    "strategy": outcome.run.retrieval_strategy,
+                    "degraded": outcome.run.degraded,
+                    "chunks_available": outcome.run.chunks_available,
+                    "llm_calls": outcome.run.llm_calls,
+                },
+                "values": {
+                    value.field_key: {
+                        "value": value.value_text,
+                        "confidence": float(value.confidence)
+                        if value.confidence is not None
+                        else None,
+                        "needs_review": value.needs_review,
+                        "chunk_id": str(value.source_chunk_id) if value.source_chunk_id else None,
+                    }
+                    for value in outcome.values
+                },
+            },
+            status="completed" if outcome.succeeded else "failed",
+            confidence=case.extraction_confidence,
+            error=outcome.run.error,
+            latency_ms=outcome.run.latency_ms,
+        )
+
+        if outcome.succeeded and not outcome.reused:
+            self._audit.system(
+                case,
+                event_type=AuditEventType.EXTRACTION_COMPLETED,
+                summary=(
+                    f"Notification read against the {outcome.run.schema_key} dataset: "
+                    f"{outcome.run.fields_extracted} of {outcome.run.fields_total} fields found, "
+                    f"{outcome.run.fields_needing_review} needing review."
+                ),
+                context={
+                    "schema": outcome.run.schema_key,
+                    "provider": outcome.run.provider,
+                    "model": outcome.run.model,
+                },
+            )
+
+        return _DatasetExtraction(
+            outcome=outcome,
+            write_back=write_back,
+            fingerprint=outcome.run.fingerprint or "",
+            # A run that produced nothing at all is an extraction failure in the
+            # sense the exception engine means: the notice could not be read, and
+            # the officer should be told rather than shown an empty form.
+            failed=not outcome.succeeded,
+            retrieval_used=outcome.run.retrieval_strategy not in (None, "none", "whole-corpus"),
         )
 
     async def _resolve_policy(self, case: FNOLCase, outcome: Any) -> Any | None:

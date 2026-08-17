@@ -115,8 +115,8 @@ docker compose up --build
 │   ├── models/              # SQLAlchemy mapped models
 │   ├── schemas/             # Pydantic request/response models
 │   ├── repositories/        # data-access objects
-│   ├── services/            # business logic, cache, storage, PDF
-│   ├── integrations/        # outbound HTTP clients
+│   ├── services/            # business logic, cache, storage, PDF, mailbox intake
+│   ├── integrations/        # outbound HTTP clients (Microsoft Graph)
 │   ├── workers/             # Celery app, tasks, beat schedule
 │   └── utils/
 ├── tests/{unit,integration}/
@@ -311,10 +311,190 @@ constructing it by hand: a straight-through claim, a possible duplicate, a major
 loss, a catastrophe match, a loss outside the policy period, a file with several
 fraud indicators, and a notice too incomplete to do anything with.
 
+### Deleting a notification
+
+`DELETE /api/v1/fnol/{reference}` removes a notice from every store that holds
+any part of it — the case and its nine child tables, the passages, the dataset
+runs and values, the attachment bytes in object storage, the vectors in the
+search index, and the mailbox ledger rows that collected it. It answers with a
+receipt: what was removed, from where, and anything that could not be.
+
+Three rules make it safe to expose:
+
+* **A converted notice is refused.** Once `create-claim` has run, the claim is
+  the record and deleting the notice would leave it citing nothing. `409`, with
+  the claim reference in the message.
+* **The audit trail survives**, and gains a final `fnol.deleted` event naming who
+  did it and why. Audit rows carry no foreign key to the case precisely so a
+  deletion cannot reach them.
+* **Postgres commits before the stores that cannot roll back.** A failure
+  sweeping the bucket or the index is reported in `warnings`, not raised — the
+  rows have already gone, and a `502` for a case that no longer exists helps
+  nobody.
+
+It is not a lifecycle transition. Rejecting or cancelling keeps the record and
+keeps why, and is what an officer wanting a notice off the queue usually means;
+this is for a notice that should never have existed. `app/services/fnol/deletion.py`
+carries the reasoning; `tests/integration/test_fnol_deletion_flow.py` proves it
+against a real database, where the `ON DELETE CASCADE`s actually run.
+
 ### Authorisation
 
 `fnol-officer`, `claims-manager` and `claims-admin` may work intake;
 `claims-handler` and `loss-adjuster` may read it; assignment and triage overrides
-are `claims-manager` and `claims-admin` only. Enforced on the server —
+are `claims-manager` and `claims-admin` only. Deleting a notification is narrower
+still — `claims-manager` and `claims-admin`, `FNOL_DELETE_ROLES` — because every
+other write leaves the record standing. Enforced on the server —
 `tests/unit/test_fnol_permissions.py` asserts that the refusal happens before any
 database access.
+
+---
+
+## Outlook mailbox intake
+
+Notifications are collected from a shared Outlook mailbox over Microsoft Graph,
+turned into FNOL notices with their attachments stored as claim documents, and
+left `queued` for the extraction pipeline. Full setup, permissions and
+troubleshooting: **[docs/mail-intake.md](docs/mail-intake.md)**.
+
+**Keycloak is not required for this flow.** The service reads the mailbox as
+itself, under application permissions and the client-credentials grant — no user
+signs in. Keycloak authorises the people who trigger a poll through the API;
+Graph authorises the service that does the collecting.
+
+```bash
+# Four settings, and nothing else is required.
+CWB_GRAPH_TENANT_ID=...          # or GRAPH_TENANT_ID
+CWB_GRAPH_CLIENT_ID=...          # or GRAPH_CLIENT_ID
+CWB_GRAPH_CLIENT_SECRET=...      # or GRAPH_CLIENT_SECRET
+CWB_GRAPH_SHARED_MAILBOX=claims@carrier.example   # or OUTLOOK_SHARED_MAILBOX
+```
+
+Graph application permission: **`Mail.ReadWrite`** with admin consent
+(`Mail.Read` suffices if `CWB_GRAPH_MARK_AS_READ=false`; `Mail.ReadBasic` never
+does — it carries neither body nor attachments). Restrict the app registration to
+the one mailbox with an application access policy.
+
+```bash
+make mail-intake                       # collect once, now
+CWB_GRAPH_POLL_ENABLED=true make beat  # every CWB_GRAPH_POLL_INTERVAL_SECONDS
+curl -X POST localhost:8000/api/v1/mail-intake/poll -H "Authorization: Bearer $TOKEN"
+curl "localhost:8000/api/v1/mail-intake/messages?status=failed" -H "Authorization: Bearer $TOKEN"
+```
+
+Every message ever seen is a row in `mail_intake_messages`, and every
+attachment — stored or refused, with the reason — a row in
+`mail_intake_attachments`. Both the Graph message id and the RFC 5322
+`Message-ID` are unique, so a re-delivered email produces no second notice. One
+message failing does not stop the batch; one attachment failing does not lose
+the message. Nothing is ever deleted from the mailbox, and moving messages is
+opt-in.
+
+---
+
+## Notifications
+
+**The desk finds out that an email arrived without watching the board.** A
+collected message raises a notification in the same transaction as the notice it
+became, and the pipeline raises one more when it starts and one when it finishes —
+so the bell in the top bar counts arrivals, successes and failures. Full
+reference: **[docs/notifications.md](docs/notifications.md)**.
+
+No configuration; nothing here is tunable because nothing needed to be.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/notifications` | The panel — newest first, with a per-caller unread total |
+| `POST` | `/api/v1/notifications/read` | Acknowledge what was shown |
+| `POST` | `/api/v1/notifications/read-all` | Clear the badge |
+
+Notifications are **desk-wide** — a broker's email arrives at the claims desk, not
+at a person, and intake runs with no human in the loop to address it to. The
+*read* state is **per-person**, keyed on the token subject in
+`notification_reads`, so one officer clearing their badge does not clear it for the
+rest of the desk. `dedupe_key` is unique in Postgres, which is what makes a
+re-polled mailbox or a re-delivered Celery task produce no second row on anyone's
+panel. Gated on `FNOL_READ_ROLES`: being told something is not a decision, so a
+`claims-handler` may read and acknowledge where they may not process.
+
+The frontend polls every 20s while signed in, never while the tab is hidden, and
+never at all while signed out. Delivery is polling rather than a socket because
+the mailbox behind it is itself polled every 300s — an arrival is minutes old
+before anything could push it.
+
+```bash
+uv run pytest tests/integration/test_mail_intake_pipeline_flow.py   # the whole seam
+```
+
+---
+
+## Extraction datasets
+
+**What the system reads out of a notice is configuration, not code.** A dataset
+is a named set of fields; each field carries a description written the way a
+document phrases the thing, and that description is used verbatim as its
+retrieval query. Adding a field is a row in a table.
+
+Full reference — configuring one, what it costs, how it degrades, and the
+frontend contract: **[docs/extraction-datasets.md](docs/extraction-datasets.md)**.
+
+`FNOL notice` ships as the default and is seeded on boot. Its field keys are the
+same dotted paths the review screen already uses, so its values are mirrored onto
+the claim record by `app/services/fnol/adapter.py` — the one module that knows
+both a dataset and a claim.
+
+```bash
+curl localhost:8000/api/v1/extraction/schemas -H "Authorization: Bearer $TOKEN"
+curl -X PUT localhost:8000/api/v1/extraction/schemas/fnol_notice/fields \
+  -H "Authorization: Bearer $TOKEN" -d '{"fields": [...]}'
+curl -X POST localhost:8000/api/v1/fnol/FNOL-2026-000123/extraction \
+  -H "Authorization: Bearer $TOKEN" -d '{"force": true}'
+curl localhost:8000/api/v1/fnol/FNOL-2026-000123/extraction/values/policy.policy_number/evidence \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+The **notification body is a document**, written out alongside the attachments
+and read, chunked, embedded and cited by exactly the same code. That is what
+makes a value read out of the broker's own email point at a source rather than at
+nothing.
+
+Editing a dataset is gated on `claims-admin` / `business-admin`; running one and
+correcting its values are ordinary intake writes. With no model provider
+configured the dataset path stands aside entirely and the deterministic reader
+runs, exactly as before.
+
+---
+
+## Extraction review, and the demo
+
+The screen the two layers above exist for. `/intake/:reference` opens on
+**extraction review**: the dataset's values on the left, and on the right the
+page of the document each was read from, with the quoted text boxed on it.
+Clicking a value asks the server where it came from; the citation is a passage id
+recorded at extraction time and the rectangles are read off the stored PDF's word
+geometry, so neither can be guessed in a browser. **Intelligence review** is one
+click away and holds the pipeline's conclusions — completeness, severity, fraud
+signals, coverage, duplicates and the exception list.
+
+How it fits together, what to set, and what it does when a provider is missing:
+**[docs/extraction-review.md](docs/extraction-review.md)**.
+
+A full demo runs on committed, realistic documents — a two-page loss notice, a
+certificate of insurance, a three-page marine survey, an itemised damage schedule
+and the covering email:
+
+```bash
+make up && make migrate
+make demo          # ingest, index, extract, and report on what landed
+make demo-reset    # delete the demo case and run it again
+```
+
+It drives the same `build_pipeline` the API route and the Celery worker use, so
+it cannot pass while production is broken, and it exits non-zero when the
+pipeline did not produce what the screen needs. The document set and the scenario
+behind it: **[demo-data/document-intelligence/](demo-data/document-intelligence/)**.
+
+`CWB_AI_API_KEY` is what the citations depend on. Without it the documents are
+still read, chunked and indexed, but the dataset path stands aside and the
+deterministic reader — which never read a passage — cannot cite one. The demo
+reports that rather than pretending.

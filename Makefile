@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install env up down logs migrate revision check lint format test test-integration \
-        run worker beat keycloak build clean
+        run worker beat mail-intake keycloak build clean seed demo demo-reset demo-documents
 
 CELERY := uv run celery -A app.workers.celery_app.celery_app
 
@@ -19,7 +19,7 @@ env: ## Create .env from the template if it does not exist
 	@test -f .env || (cp .env.example .env && echo "created .env — review the host ports")
 
 up: ## Start the infrastructure services
-	docker compose up -d postgres redis minio minio-init keycloak wiremock mailpit
+	docker compose up -d postgres redis minio minio-init keycloak wiremock mailpit qdrant
 
 down: ## Stop all services
 	docker compose down
@@ -57,6 +57,35 @@ worker: ## Run a Celery worker
 
 beat: ## Run Celery beat
 	$(CELERY) beat --loglevel=info
+
+mail-intake: ## Collect the shared Outlook mailbox once (needs the Graph settings)
+	uv run python -m app.services.mail
+
+seed: ## Load the development notifications and claims
+	uv run python -m app.db.seed
+
+demo: ## Run the default demo pack through the real pipeline end to end
+	uv run python -m app.db.demo
+
+demo-reset: ## Delete the demo case and run the default pack again from scratch
+	uv run python -m app.db.demo --reset
+
+demo-packs: ## Run every demo-data pack in turn: make demo-packs [PACK=slug]
+	@if [ -n "$(PACK)" ]; then \
+	  uv run python -m app.db.demo --pack "$(PACK)"; \
+	else \
+	  for pack in $$(uv run python -m app.db.demo --list-packs); do \
+	    echo "── $$pack ──"; \
+	    uv run python -m app.db.demo --pack "$$pack" || exit 1; \
+	  done; \
+	fi
+
+demo-list: ## List the notification packs under demo-data/
+	@uv run python -m app.db.demo --list-packs
+
+demo-documents: ## Rebuild every demo pack's PDFs from their generators
+	uv run python scripts/build_demo_documents.py
+	uv run python scripts/build_demo_packs.py
 
 keycloak: ## Bootstrap the local Keycloak realm, clients and demo user
 	KEYCLOAK_URL=http://localhost:$${CWB_KEYCLOAK_PORT:-8090} ./scripts/bootstrap-keycloak.sh

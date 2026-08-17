@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.routes import claims, fnol, health, meta
+from app.api.v1.routes import claims, extraction, fnol, health, mail_intake, meta, notifications
 
 api_router = APIRouter()
 
@@ -17,3 +17,9 @@ api_router.include_router(health.router)
 api_router.include_router(meta.router)
 api_router.include_router(fnol.router)
 api_router.include_router(claims.router)
+api_router.include_router(mail_intake.router)
+api_router.include_router(notifications.router)
+# Registered after `fnol` deliberately: it carries routes under `/fnol/...` as
+# well as `/extraction/...`, and FastAPI matches in registration order, so its
+# static segments must not shadow `fnol`'s `/{reference}` patterns.
+api_router.include_router(extraction.router)

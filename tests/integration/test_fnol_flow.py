@@ -245,9 +245,16 @@ class TestIntakeToClaim:
         assert case.line_of_business == "property"
         assert case.date_of_loss is not None
 
-        documents = await context.cases.list_documents(case.id)
-        assert [document.filename for document in documents] == ["estimate.csv"]
-        assert documents[0].extraction_status == "extracted"
+        # The attachment, plus the notification body written out as a document of
+        # its own — which is what makes a value read from the broker's email
+        # citable in the same way as one read from a file they attached.
+        documents = {
+            document.filename: document for document in await context.cases.list_documents(case.id)
+        }
+        assert set(documents) == {"estimate.csv", "notification-body.txt"}
+        assert documents["estimate.csv"].extraction_status == "extracted"
+        assert documents["notification-body.txt"].source == "email_body"
+        assert documents["notification-body.txt"].extracted_text == (case.source_body or "").strip()
 
         # --- Intelligence ---------------------------------------------------
         analyses = {analysis.kind for analysis in await context.cases.list_analyses(case.id)}
@@ -307,7 +314,8 @@ class TestIntakeToClaim:
 
         # The original notice survives conversion.
         assert case.source_body is not None
-        assert len(await context.cases.list_documents(case.id)) == 1
+        # The attachment and the body document both survive conversion.
+        assert len(await context.cases.list_documents(case.id)) == 2
         assert len(await context.cases.list_analyses(case.id)) >= 10
 
         # --- Triage and assignment --------------------------------------------

@@ -21,9 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.enums import (
     REVIEW_FNOL_STATUSES,
     AnalysisKind,
+    DocumentIndexStatus,
     ExceptionStatus,
     FNOLStatus,
+    ProcessingState,
 )
+from app.domain.lifecycle import BLOCKING_EXCEPTIONS
 from app.models.fnol import (
     FNOLAIAnalysis,
     FNOLCase,
@@ -65,6 +68,17 @@ class FNOLRepository:
     async def get(self, case_id: uuid.UUID) -> FNOLCase | None:
         return await self._session.get(FNOLCase, case_id)
 
+    async def reference_of(self, case_id: uuid.UUID) -> str | None:
+        """The case's reference, without loading the case.
+
+        For the worker, which wants the reference for a log line and a task result
+        and nothing else. Loading the whole case — and the seven `selectin`
+        collections hanging off it — to read one string is the sort of thing that
+        only shows up as a slow queue much later.
+        """
+        statement = select(FNOLCase.reference).where(FNOLCase.id == case_id)
+        return await self._session.scalar(statement)
+
     async def get_by_reference(self, reference: str) -> FNOLCase | None:
         statement = select(FNOLCase).where(FNOLCase.reference == reference.strip().upper())
         return (await self._session.execute(statement)).scalars().first()
@@ -96,6 +110,7 @@ class FNOLRepository:
         search: str | None = None,
         needs_review: bool = False,
         unassigned: bool = False,
+        blocking: bool = False,
         order: str = "received_at",
         limit: int = 25,
         offset: int = 0,
@@ -109,6 +124,7 @@ class FNOLRepository:
             search=search,
             needs_review=needs_review,
             unassigned=unassigned,
+            blocking=blocking,
         )
 
         total = int(
@@ -122,6 +138,7 @@ class FNOLRepository:
                         search=search,
                         needs_review=needs_review,
                         unassigned=unassigned,
+                        blocking=blocking,
                     )
                 )
             ).scalar_one()
@@ -148,6 +165,7 @@ class FNOLRepository:
         search: str | None,
         needs_review: bool,
         unassigned: bool,
+        blocking: bool = False,
     ) -> Select[T]:
         if statuses:
             statement = statement.where(FNOLCase.status.in_(list(statuses)))
@@ -158,6 +176,21 @@ class FNOLRepository:
         if needs_review:
             statement = statement.where(
                 FNOLCase.status.in_([s.value for s in REVIEW_FNOL_STATUSES])
+            )
+        if blocking:
+            # "Something is stopping this one", expressed where the queue is
+            # counted rather than after a page has been cut. The board filtered
+            # this in the browser until it needed to paginate, at which point a
+            # client-side filter could only ever narrow the page in hand — page 2
+            # of a filter applied to page 1 is not a page of anything.
+            statement = statement.where(
+                select(FNOLException.id)
+                .where(
+                    FNOLException.fnol_case_id == FNOLCase.id,
+                    FNOLException.status == ExceptionStatus.OPEN,
+                    FNOLException.code.in_([code.value for code in BLOCKING_EXCEPTIONS]),
+                )
+                .exists()
             )
         if unassigned:
             statement = statement.where(FNOLCase.assigned_to.is_(None))
@@ -285,6 +318,133 @@ class FNOLRepository:
         statement = select(func.count(FNOLDocument.id)).where(FNOLDocument.fnol_case_id == case_id)
         return int((await self._session.execute(statement)).scalar_one())
 
+    # -- Deletion --------------------------------------------------------------
+
+    async def child_counts(self, case_id: uuid.UUID) -> dict[str, int]:
+        """How many rows in each `fnol_*` table belong to one case.
+
+        Counted *before* the delete, because after it there is nothing left to
+        count and a deletion that cannot say what it removed is indistinguishable
+        from one that removed nothing. Ordinary counts rather than the deleted row
+        counts the database could return: the child rows go by `ON DELETE CASCADE`
+        inside the server, which reports one row deleted however deep it reached.
+        """
+        counted = {
+            "documents": FNOLDocument,
+            "fields": FNOLExtractedField,
+            "parties": FNOLParty,
+            "policy_matches": FNOLPolicyMatch,
+            "duplicates": FNOLDuplicateCandidate,
+            "exceptions": FNOLException,
+            "analyses": FNOLAIAnalysis,
+            "notes": FNOLNote,
+        }
+        return {
+            name: int(
+                (
+                    await self._session.execute(
+                        select(func.count(model.id)).where(model.fnol_case_id == case_id)
+                    )
+                ).scalar_one()
+            )
+            for name, model in counted.items()
+        }
+
+    async def delete_case(self, case: FNOLCase) -> None:
+        """Remove the notice and, by cascade, everything hanging off it.
+
+        The ORM delete rather than a Core `DELETE`, deliberately: the case's
+        collections are mapped `delete-orphan`, so a Core statement would leave the
+        identity map holding children whose parent has gone and any later flush in
+        the same transaction would try to write them back.
+
+        What actually reaches every table is still the database's own
+        `ON DELETE CASCADE` — passages, dataset runs and dataset values have no
+        mapped relationship to the case, and the constraint is what removes them.
+        A `RESTRICT` from `claims` is not caught here: a converted notice is
+        refused before this is called, and an integrity error escaping from here
+        would mean that guard had failed, which is not something to swallow.
+        """
+        await self._session.delete(case)
+        await self._session.flush()
+
+    # -- The processing queue -------------------------------------------------
+
+    async def claim_queued(self, *, limit: int) -> Sequence[FNOLCase]:
+        """Claim cases the mailbox left queued, and mark them as being worked.
+
+        `FOR UPDATE SKIP LOCKED` is the whole method. Two beat ticks overlapping, or
+        two workers running, must not both claim the same notice — and a lock that
+        *waits* would serialise the workers instead of dividing the work between them.
+        Skipping locked rows means the second worker takes the next ten notices.
+
+        The state moves inside the same transaction that selected the rows, which is
+        what makes the claim survive the lock being released.
+        """
+        statement = (
+            select(FNOLCase)
+            .where(FNOLCase.processing_state == ProcessingState.QUEUED)
+            .order_by(FNOLCase.created_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        claimed = (await self._session.execute(statement)).scalars().all()
+        for case in claimed:
+            case.processing_state = ProcessingState.PROCESSING
+            case.processing_started_at = datetime.now(UTC)
+        return claimed
+
+    async def release_stale_indexing(self, *, older_than_minutes: int, max_attempts: int) -> int:
+        """Return documents stuck mid-index to `pending`, or fail them.
+
+        A worker killed between claiming a document and finishing it leaves
+        `index_status = 'indexing'`, which nothing picks up again because it is not
+        `pending`. Without this the document is never read and nothing says so.
+
+        A document that has already used its attempts is failed rather than requeued:
+        the point of an attempt limit is that it is reached.
+        """
+        # Naive, because `TimestampMixin.updated_at` is `TIMESTAMP WITHOUT TIME ZONE`
+        # and is written by `now()` on the server. Comparing it to an aware datetime is
+        # a driver-level error, not a silent off-by-an-offset — but the naive value it
+        # holds is UTC, so this is the right instant either way.
+        cutoff = (datetime.now(UTC) - timedelta(minutes=older_than_minutes)).replace(tzinfo=None)
+        statement = select(FNOLDocument).where(
+            FNOLDocument.index_status == DocumentIndexStatus.INDEXING,
+            FNOLDocument.updated_at < cutoff,
+        )
+        stale = (await self._session.execute(statement)).scalars().all()
+
+        for document in stale:
+            if document.index_attempts >= max_attempts:
+                document.index_status = DocumentIndexStatus.FAILED
+                document.index_error = (
+                    f"Indexing did not complete after {document.index_attempts} attempts."
+                )
+            else:
+                document.index_status = DocumentIndexStatus.PENDING
+                document.index_error = "Indexing was interrupted and will be retried."
+        return len(stale)
+
+    async def release_stale_processing(self, *, older_than_minutes: int) -> int:
+        """Return cases stuck in `processing` to the queue.
+
+        The same backstop one level up. A case left `processing` is invisible to the
+        queue poller, so a lost worker would otherwise strand the notice rather than
+        delay it.
+        """
+        cutoff = datetime.now(UTC) - timedelta(minutes=older_than_minutes)
+        statement = select(FNOLCase).where(
+            FNOLCase.processing_state == ProcessingState.PROCESSING,
+            FNOLCase.processing_started_at.is_not(None),
+            FNOLCase.processing_started_at < cutoff,
+        )
+        stale = (await self._session.execute(statement)).scalars().all()
+        for case in stale:
+            case.processing_state = ProcessingState.QUEUED
+            case.processing_error = "Processing was interrupted and has been requeued."
+        return len(stale)
+
     # -- Extracted fields ----------------------------------------------------
 
     async def list_fields(self, case_id: uuid.UUID) -> Sequence[FNOLExtractedField]:
@@ -313,6 +473,7 @@ class FNOLRepository:
         confidence: float | None,
         source: str,
         source_document_id: uuid.UUID | None = None,
+        source_chunk_id: uuid.UUID | None = None,
         evidence_snippet: str | None = None,
     ) -> FNOLExtractedField:
         """Record what a value is and where it came from.
@@ -320,6 +481,11 @@ class FNOLRepository:
         A field a human has already corrected is *not* overwritten by a later
         model run — only its evidence is refreshed. Losing an officer's correction
         to a re-extraction is the single most damaging thing this module could do.
+
+        The citation is refreshed on a corrected field for the same reason it is
+        kept at all: an officer who has overridden a value still wants to see what
+        the document said, and that is exactly the comparison an override is made
+        against.
         """
         existing = await self.get_field(case_id, field_path)
         if existing is None:
@@ -332,6 +498,7 @@ class FNOLRepository:
                 confidence=confidence,
                 source=source,
                 source_document_id=source_document_id,
+                source_chunk_id=source_chunk_id,
                 evidence_snippet=evidence_snippet,
             )
             self._session.add(field)
@@ -343,12 +510,15 @@ class FNOLRepository:
             existing.evidence_snippet = evidence_snippet or existing.evidence_snippet
             if source_document_id:
                 existing.source_document_id = source_document_id
+            if source_chunk_id:
+                existing.source_chunk_id = source_chunk_id
             return existing
 
         existing.value_text = value_text
         existing.confidence = confidence
         existing.source = source
         existing.source_document_id = source_document_id
+        existing.source_chunk_id = source_chunk_id
         existing.evidence_snippet = evidence_snippet
         return existing
 

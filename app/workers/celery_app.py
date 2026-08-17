@@ -54,6 +54,38 @@ celery_app.conf.beat_schedule = {
     },
 }
 
+# Mailbox intake is scheduled only where it is switched on *and* configured. An
+# environment with no Graph credentials gets no entry at all rather than a
+# schedule that fails every five minutes and buries everything else in the log.
+if settings.docint.enabled and settings.docint.queue_poll_enabled:
+    # The consumer of what mailbox intake leaves behind. Intake stops at
+    # `processing_state = queued` by design, and before this entry existed nothing
+    # read that — a collected notice sat in the queue until someone pressed a button.
+    celery_app.conf.beat_schedule["process-queued-fnol-cases"] = {
+        "task": "app.workers.tasks.process_queued_cases",
+        "schedule": float(settings.docint.queue_poll_interval_seconds),
+    }
+    # The backstop for a worker killed mid-index. Hourly is often enough: the failure
+    # it recovers from is rare, and the recovery is not urgent so much as necessary.
+    celery_app.conf.beat_schedule["reap-stale-indexing"] = {
+        "task": "app.workers.tasks.reap_stale_indexing",
+        "schedule": 3600.0,
+    }
+    logger.info(
+        "document_intelligence_schedule_registered",
+        interval_seconds=settings.docint.queue_poll_interval_seconds,
+    )
+
+if settings.graph.poll_enabled and settings.graph.configured:
+    celery_app.conf.beat_schedule["poll-mail-intake"] = {
+        "task": "app.workers.tasks.poll_mail_intake",
+        "schedule": float(settings.graph.poll_interval_seconds),
+    }
+    logger.info(
+        "mail_intake_schedule_registered",
+        interval_seconds=settings.graph.poll_interval_seconds,
+    )
+
 
 @setup_logging.connect
 def _configure_celery_logging(**_kwargs: Any) -> None:

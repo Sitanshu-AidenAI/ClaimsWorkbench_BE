@@ -9,6 +9,7 @@ repository's `upsert_field`, and this service is what feeds it.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +23,7 @@ from app.domain.heuristics import extract_from_text
 from app.domain.rules import BASE_REQUIRED_FIELDS, LOB_REQUIRED_FIELDS
 from app.repositories.fnol import FNOLRepository
 from app.services.ai.base import AIProvider, AIProviderError
+from app.services.fnol.evidence import SECTION_QUERIES, EvidenceBundle, FNOLEvidenceService
 
 logger = get_logger(__name__)
 
@@ -38,7 +40,11 @@ SYSTEM_PROMPT = (
     "4. Set confidence to 1.0 only for values stated explicitly and unambiguously; "
     "use 0.5-0.8 when you inferred the value from context; 0 when absent.\n"
     "5. Copy values as written. Do not reformat dates, convert currencies or expand "
-    "abbreviations."
+    "abbreviations.\n"
+    "6. When a value comes from a labelled passage, set `source_chunk_ref` to that "
+    "passage's label exactly as printed, for example 'C3'. Set it to null when the "
+    "value came from the notification body rather than from a passage. Never invent "
+    "a label: a citation that points nowhere is worse than no citation."
 )
 
 #: Label and section for each field path, so provenance rows read the same way the
@@ -64,6 +70,16 @@ _FIELD_META.update(
     }
 )
 
+#: Every section a field belongs to must have retrieval queries covering it, or a field
+#: can be added that no search will ever find evidence for. Checked at import so the
+#: omission is a startup failure rather than a quietly uncited field months later.
+_UNCOVERED_SECTIONS = {section for _, section in _FIELD_META.values()} - set(SECTION_QUERIES)
+if _UNCOVERED_SECTIONS:  # pragma: no cover — a developer error, caught at import
+    raise RuntimeError(
+        "These FNOL field sections have no retrieval queries in "
+        f"app.services.fnol.evidence.SECTION_QUERIES: {sorted(_UNCOVERED_SECTIONS)}"
+    )
+
 
 @dataclass(slots=True)
 class ExtractionOutcome:
@@ -73,10 +89,18 @@ class ExtractionOutcome:
     latency_ms: int
     fingerprint: str
     error: str | None = None
+    #: The passages the model was shown, if any. Carried on the outcome rather than
+    #: returned separately so `apply` cannot be handed a different set than the one
+    #: the model actually read — which would resolve every label to the wrong passage.
+    evidence: EvidenceBundle | None = None
 
     @property
     def succeeded(self) -> bool:
         return self.extraction is not None
+
+    @property
+    def retrieval_used(self) -> bool:
+        return bool(self.evidence and self.evidence.used)
 
 
 class FNOLExtractionService:
@@ -88,32 +112,54 @@ class FNOLExtractionService:
         *,
         provider: AIProvider | None,
         ai_config: AISettings | None = None,
+        evidence: FNOLEvidenceService | None = None,
     ) -> None:
         self._repository = repository
         self._provider = provider
         self._ai = ai_config or settings.ai
+        #: `None` means no retrieval — the whole corpus is sent, exactly as it was
+        #: before this existed. Retrieval narrows the prompt; it never gates it.
+        self._evidence = evidence
 
     @staticmethod
-    def fingerprint(source_text: str, document_texts: list[str]) -> str:
+    def fingerprint(source_text: str, document_texts: list[str], index_signature: str = "") -> str:
         """What the extraction depends on, hashed.
 
         The pipeline compares this against the stored fingerprint and skips the
         call when it has not moved. That is what stops a page refresh, a status
         change or an unrelated edit from costing a model call.
+
+        `index_signature` folds in the state of the case's passages, so re-indexing —
+        a new attachment, a re-read after OCR was switched on, a chunk-size change —
+        moves the fingerprint and the notice is re-read. Without it a case would keep
+        an extraction that cites passages which no longer exist.
+
+        The two-argument form is kept working for callers that have no passages.
         """
         digest = hashlib.sha256()
         digest.update(source_text.encode("utf-8", errors="ignore"))
         for text in sorted(document_texts):
             digest.update(b"\x00")
             digest.update(text.encode("utf-8", errors="ignore"))
+        if index_signature:
+            digest.update(b"\x00")
+            digest.update(index_signature.encode("utf-8"))
         return digest.hexdigest()
 
     async def extract(
-        self, *, source_text: str, document_texts: list[str], channel: str
+        self,
+        *,
+        source_text: str,
+        document_texts: list[str],
+        channel: str,
+        case_id: uuid.UUID | None = None,
+        documents: list[Any] | None = None,
+        index_signature: str = "",
     ) -> ExtractionOutcome:
         """Read the notice, falling back to the deterministic reader on failure."""
-        corpus = self._build_corpus(source_text, document_texts)
-        fingerprint = self.fingerprint(source_text, document_texts)
+        fingerprint = self.fingerprint(source_text, document_texts, index_signature)
+        bundle = await self._gather(case_id, documents)
+        corpus = self._compose(source_text, document_texts, bundle)
 
         if self._provider is None:
             return self._heuristic(corpus, fingerprint, channel)
@@ -140,7 +186,38 @@ class FNOLExtractionService:
             model=response.model,
             latency_ms=response.latency_ms,
             fingerprint=fingerprint,
+            evidence=bundle,
         )
+
+    async def _gather(
+        self, case_id: uuid.UUID | None, documents: list[Any] | None
+    ) -> EvidenceBundle | None:
+        """Retrieve passages, or `None` when retrieval is not in play."""
+        if self._evidence is None or case_id is None:
+            return None
+        try:
+            return await self._evidence.gather(case_id, documents or [])
+        except Exception as exc:
+            # Retrieval failing must not fail the extraction. The whole corpus is
+            # still there and is what the pipeline read before retrieval existed.
+            logger.warning("fnol_evidence_unavailable", error=type(exc).__name__)
+            return None
+
+    def _compose(
+        self, source_text: str, document_texts: list[str], bundle: EvidenceBundle | None
+    ) -> str:
+        """The prompt body: the notice, then either retrieved passages or everything.
+
+        The notification body is always first and always whole. It is small, it is the
+        notice itself, and a retrieval miss on it would be the one failure this whole
+        mechanism must not be able to cause.
+        """
+        if bundle is not None and bundle.used:
+            budget = self._ai.max_input_characters
+            head = source_text.strip()[:budget]
+            remaining = max(0, budget - len(head))
+            return f"{head}\n\n{bundle.prompt[:remaining]}"
+        return self._build_corpus(source_text, document_texts)
 
     def _heuristic(self, corpus: str, fingerprint: str, channel: str) -> ExtractionOutcome:
         del channel
@@ -186,7 +263,7 @@ class FNOLExtractionService:
         case: Any,
         extraction: FNOLExtraction,
         *,
-        document_id_by_index: dict[int, Any] | None = None,
+        evidence: EvidenceBundle | None = None,
     ) -> dict[str, float | None]:
         """Write the extraction onto the case and its provenance rows.
 
@@ -197,9 +274,16 @@ class FNOLExtractionService:
         a human-supplied one — the field row is the authority on that, and this is
         the second place the rule is enforced, because losing an officer's
         correction is the one bug that must not be possible.
+
+        `evidence` is the passage set the model was shown. Each field's
+        `source_chunk_ref` is resolved against it so the review screen can point at
+        the page a value is written on. A label that resolves to nothing is dropped:
+        the *value* is still stored, because a model may read a value correctly and
+        mislabel where it came from, but the citation is not — provenance pointing at
+        a passage that was never shown is worse than none.
         """
-        del document_id_by_index
         confidences: dict[str, float | None] = {}
+        unresolved: set[str] = set()
 
         async def record(
             path: str, field: ExtractedField, *, parsed: object, attribute: str | None
@@ -207,6 +291,11 @@ class FNOLExtractionService:
             label, section = _FIELD_META.get(
                 path, (path.split(".")[-1].replace("_", " ").title(), path.split(".")[0])
             )
+
+            citation = evidence.resolve(field.source_chunk_ref) if evidence else None
+            if field.source_chunk_ref and citation is None:
+                unresolved.add(field.source_chunk_ref)
+
             row = await self._repository.upsert_field(
                 case.id,
                 field_path=path,
@@ -215,6 +304,8 @@ class FNOLExtractionService:
                 value_text=field.value,
                 confidence=field.confidence if field.present else None,
                 source=FieldSource.AI,
+                source_document_id=citation.document_id if citation else None,
+                source_chunk_id=citation.chunk_id if citation else None,
                 evidence_snippet=field.evidence,
             )
             confidences[path] = row.confidence
@@ -396,6 +487,15 @@ class FNOLExtractionService:
                 phone=normalisation.parse_phone(party.phone),
                 source=FieldSource.AI,
                 confidence=party.confidence,
+            )
+
+        if unresolved:
+            # Same posture as the classification service's rejection of a
+            # hallucinated line of business: reported, not stored, not fatal.
+            logger.warning(
+                "fnol_extraction_unknown_chunk_refs",
+                reference=getattr(case, "reference", None),
+                labels=sorted(unresolved),
             )
 
         case.extraction_confidence = extraction.overall_confidence

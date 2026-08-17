@@ -36,6 +36,19 @@ dependencies = [
     "reportlab>=5.0",
     "markdown>=3.6",
     "nh3>=0.2",
+    # Document text extraction. Every choice here is licence-constrained: this is a
+    # carrier-deployed product, so AGPL (PyMuPDF/pymupdf4llm) and GPL (extract-msg)
+    # are legal questions rather than technical ones, and both have permissive
+    # equivalents that cover what the pipeline needs.
+    "pypdfium2>=4.30",   # per-page PDF text and page rasterisation (Apache-2.0/BSD-3)
+    "pdfplumber>=0.11",  # PDF tables (MIT, over pdfminer.six)
+    "python-docx>=1.1",  # DOCX paragraphs, headings and tables in body order (MIT)
+    "openpyxl>=3.1",     # XLSX values, not formulas (MIT)
+    "olefile>=0.47",     # .msg OLE container reading for forwarded Outlook mail (BSD-3)
+    # Vector index. HTTP transport only, so the image needs no native gRPC build.
+    # Kept in step with the server image pinned in docker-compose.yml: the client
+    # warns rather than errors on a version mismatch, so drift is quiet.
+    "qdrant-client>=1.19,<1.20",
 ]
 
 [project.optional-dependencies]

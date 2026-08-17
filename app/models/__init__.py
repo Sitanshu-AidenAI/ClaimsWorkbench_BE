@@ -14,10 +14,17 @@ from __future__ import annotations
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.audit import AuditEvent
 from app.models.claim import Claim, ClaimAssignment, ClaimTriage
+from app.models.extraction import (
+    ExtractedValue,
+    ExtractionRun,
+    ExtractionSchema,
+    ExtractionSchemaField,
+)
 from app.models.fnol import (
     FNOLAIAnalysis,
     FNOLCase,
     FNOLDocument,
+    FNOLDocumentChunk,
     FNOLDuplicateCandidate,
     FNOLException,
     FNOLExtractedField,
@@ -25,6 +32,8 @@ from app.models.fnol import (
     FNOLParty,
     FNOLPolicyMatch,
 )
+from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage
+from app.models.notification import Notification, NotificationRead
 from app.models.reference_data import CatEvent, Handler, Policy, ReferenceSequence
 
 __all__ = [
@@ -34,9 +43,14 @@ __all__ = [
     "Claim",
     "ClaimAssignment",
     "ClaimTriage",
+    "ExtractedValue",
+    "ExtractionRun",
+    "ExtractionSchema",
+    "ExtractionSchemaField",
     "FNOLAIAnalysis",
     "FNOLCase",
     "FNOLDocument",
+    "FNOLDocumentChunk",
     "FNOLDuplicateCandidate",
     "FNOLException",
     "FNOLExtractedField",
@@ -44,6 +58,10 @@ __all__ = [
     "FNOLParty",
     "FNOLPolicyMatch",
     "Handler",
+    "MailIntakeAttachment",
+    "MailIntakeMessage",
+    "Notification",
+    "NotificationRead",
     "Policy",
     "ReferenceSequence",
     "TimestampMixin",

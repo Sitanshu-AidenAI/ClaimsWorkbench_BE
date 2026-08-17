@@ -27,6 +27,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -36,7 +37,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +45,7 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.domain.enums import (
     AnalysisStatus,
     DocumentExtractionStatus,
+    DocumentIndexStatus,
     DuplicateResolution,
     ExceptionStatus,
     FieldSource,
@@ -246,13 +248,150 @@ class FNOLDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     extraction_error: Mapped[str | None] = mapped_column(Text)
     uploaded_by: Mapped[str | None] = mapped_column(String(255))
 
+    # --- How the text was read -----------------------------------------------
+    #: Which reader produced `extracted_text` — `pdf_text_layer`, `pdf_ocr`, `docx`,
+    #: `xlsx`, `eml`, `msg`. Not the content type: a PDF can be read from its text
+    #: layer or by OCR, and those are different answers that need re-reading
+    #: separately when the reader improves.
+    text_extractor: Mapped[str | None] = mapped_column(String(48))
+    text_extractor_version: Mapped[str | None] = mapped_column(String(16))
+    #: `sha256(checksum | extractor | version)`. Unchanged means the text does not
+    #: need re-reading, which is what makes a re-run free rather than another OCR bill.
+    extraction_signature: Mapped[str | None] = mapped_column(String(64), index=True)
+
+    ocr_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    ocr_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4, asdecimal=False))
+    #: The detector's own sentence, positive or negative — "avg chars/page 12.4 below
+    #: threshold 50". Kept so "why was this OCR'd" is answerable without re-running it.
+    ocr_reason: Mapped[str | None] = mapped_column(String(255))
+    ocr_pages_processed: Mapped[int | None] = mapped_column(Integer)
+
+    #: `[[start, end], …]` per page into `extracted_text`. Written by the reader that
+    #: did the joining, so a page number on a citation is exact rather than estimated.
+    page_offsets: Mapped[list[list[int]] | None] = mapped_column(JSONB)
+
+    # --- Indexing ------------------------------------------------------------
+    index_status: Mapped[str] = mapped_column(
+        String(16), default=DocumentIndexStatus.PENDING, index=True
+    )
+    #: `sha256(extraction_signature | chunk params | embedding model | dimension)`.
+    #: Unchanged and `indexed` means chunking, embedding and the vector upsert are
+    #: all skipped.
+    index_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    index_error: Mapped[str | None] = mapped_column(Text)
+    index_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    #: Below `chunk_count` means the vector index is behind the passages — visible
+    #: drift rather than silent, and repaired by re-indexing.
+    embedded_chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     case: Mapped[FNOLCase] = relationship(back_populates="documents")
+    #: `lazy="raise"` on purpose. A case can carry thousands of chunks and the
+    #: review screen must never load them as a side effect of reading a document
+    #: row; everything that wants chunks asks the repository for the ones it needs.
+    chunks: Mapped[list[FNOLDocumentChunk]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="raise",
+    )
 
     __table_args__ = (
         # The same attachment arriving twice on one case is one document. Across
         # cases it is two, because two brokers sending the same survey report is
         # not a duplicate document — it is two notices citing one report.
         UniqueConstraint("fnol_case_id", "checksum_sha256", name="uq_fnol_document_checksum"),
+        CheckConstraint("index_attempts >= 0", name="document_index_attempts_non_negative"),
+        CheckConstraint("chunk_count >= 0", name="document_chunk_count_non_negative"),
+        CheckConstraint(
+            "embedded_chunk_count >= 0 AND embedded_chunk_count <= chunk_count",
+            name="document_embedded_chunk_count_bounded",
+        ),
+    )
+
+
+class FNOLDocumentChunk(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """One passage of one document, and where in the document it is.
+
+    This table is what makes a citation clickable. The model is asked to name the
+    passage it read a value from; that name resolves to a row here; and the row
+    carries the page and the character offsets that turn "the survey report says
+    CP-2026-4471" into a highlight on page 4.
+
+    **Postgres owns the text, Qdrant owns the vectors.** The passage a claims
+    officer is shown as evidence is part of the claim record: it has to survive the
+    vector store being wiped, reindexed or unreachable, and it has to be readable
+    in the same transaction as the field row it justifies. Keeping the text here
+    also makes the vector index rebuildable from Postgres alone, which turns a lost
+    Qdrant volume from a data loss into a re-index.
+
+    `fnol_case_id` is denormalised — it is reachable through `fnol_document_id` —
+    because the two hot queries are case-scoped: searching a case's passages and
+    reading the evidence behind one of its fields. Neither should need a join.
+    """
+
+    __tablename__ = "fnol_document_chunks"
+
+    fnol_document_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("fnol_documents.id", ondelete="CASCADE"), index=True
+    )
+    fnol_case_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("fnol_cases.id", ondelete="CASCADE"), index=True
+    )
+
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    #: `{document_id}:{chunk_index:05d}`. The stable public name of a passage, and
+    #: the string the model echoes back to cite it.
+    chunk_ref: Mapped[str] = mapped_column(String(96))
+
+    content: Mapped[str] = mapped_column(Text)
+    #: sha256 of the whitespace-normalised lowercased text. Two documents sharing a
+    #: boilerplate paragraph embed once.
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    token_count: Mapped[int] = mapped_column(Integer)
+
+    #: Offsets into `fnol_documents.extracted_text`. The highlight is resolved from
+    #: these, so they must address the stored text exactly.
+    char_start: Mapped[int] = mapped_column(Integer)
+    char_end: Mapped[int] = mapped_column(Integer)
+
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    page_from: Mapped[int | None] = mapped_column(Integer)
+    page_to: Mapped[int | None] = mapped_column(Integer)
+    #: A worksheet name, the nearest heading, a forwarded message's subject. What a
+    #: citation shows when the format has no page numbers to show.
+    section_label: Mapped[str | None] = mapped_column(String(128))
+
+    #: `uuid5` of the chunk ref, so re-indexing overwrites in place rather than
+    #: adding a second copy of every passage. NULL means not in the vector index.
+    vector_point_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    embedding_model: Mapped[str | None] = mapped_column(String(96))
+    embedding_dimension: Mapped[int | None] = mapped_column(Integer)
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    #: The keyword half of retrieval, and what makes it degrade to something real
+    #: rather than to nothing when no embedding provider is configured. Generated by
+    #: Postgres rather than maintained by the application, so it cannot drift from
+    #: `content`; deferred because nothing in Python ever wants to read a tsvector.
+    content_tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', content)", persisted=True),
+        deferred=True,
+    )
+
+    document: Mapped[FNOLDocument] = relationship(back_populates="chunks")
+
+    __table_args__ = (
+        Index("ix_fnol_document_chunks_content_tsv", "content_tsv", postgresql_using="gin"),
+        UniqueConstraint("fnol_document_id", "chunk_index", name="uq_fnol_document_chunk_index"),
+        UniqueConstraint("chunk_ref", name="uq_fnol_document_chunk_ref"),
+        # Two passages must never claim the same vector, or a search hit resolves to
+        # the wrong page of the wrong file.
+        UniqueConstraint("vector_point_id", name="uq_fnol_document_chunk_point"),
+        CheckConstraint("char_end >= char_start", name="chunk_offsets_ordered"),
+        CheckConstraint("chunk_index >= 0", name="chunk_index_non_negative"),
+        CheckConstraint("token_count >= 0", name="chunk_token_count_non_negative"),
     )
 
 
@@ -280,6 +419,13 @@ class FNOLExtractedField(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     source_document_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("fnol_documents.id", ondelete="SET NULL")
+    )
+    #: The passage the value was read from. `SET NULL` rather than `CASCADE`: losing
+    #: the citation when a document is re-indexed must not lose the value, and an
+    #: officer would rather see "CP-2026-4471, source no longer available" than
+    #: nothing at all.
+    source_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("fnol_document_chunks.id", ondelete="SET NULL")
     )
     evidence_snippet: Mapped[str | None] = mapped_column(Text)
 

@@ -93,6 +93,29 @@ invocation.
 
 ---
 
+## Mailbox intake commits per message, not per request
+
+Everywhere else in this codebase the commit sits at the route boundary, so a
+multi-service operation is atomic. `app.services.mail.intake` is the one
+deliberate exception: it commits once per collected message.
+
+A poll is a batch of independent notifications, and the rules that follow from
+that are incompatible with one transaction:
+
+* One message failing must not discard the nineteen collected before it.
+* A failure must be *recorded*, and a row cannot be written inside a
+  transaction that has just been rolled back — so the failure path opens its
+  own.
+* The mailbox is only touched after the notice is durable, which means a commit
+  has to happen between the two.
+
+The service therefore takes the session itself rather than leaving commit to the
+caller, and `run_mail_intake` opens a plain session rather than `session_scope`,
+whose closing commit would blur exactly the boundary that makes a partial batch
+safe.
+
+---
+
 ## Metrics: no in-progress gauge
 
 `should_instrument_requests_inprogress` is off. The instrumentator creates that

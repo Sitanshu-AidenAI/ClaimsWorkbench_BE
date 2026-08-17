@@ -132,6 +132,13 @@ class FNOLSummary(SchemaBase):
 
 
 class FNOLDocumentOut(SchemaBase):
+    """A file on the notice — one row of the case file.
+
+    Carries how the text was read and how far indexing got, because both are things a
+    claims officer legitimately asks about a document that has produced no fields:
+    "was this a scan", "was it OCR'd", "has it been read yet".
+    """
+
     id: uuid.UUID
     filename: str
     content_type: str
@@ -144,6 +151,22 @@ class FNOLDocumentOut(SchemaBase):
     extraction_error: str | None
     uploaded_by: str | None
     created_at: datetime
+
+    # --- How it was read -----------------------------------------------------
+    text_extractor: str | None = None
+    ocr_applied: bool = False
+    ocr_confidence: float | None = None
+    #: The detector's sentence, so the screen can say *why* rather than just "OCR: yes".
+    ocr_reason: str | None = None
+
+    # --- How far indexing got ------------------------------------------------
+    index_status: str = "pending"
+    #: Below `chunk_count` means the vector index is behind the passages. Surfaced
+    #: rather than hidden: the drift is repairable and invisible drift is not.
+    chunk_count: int = 0
+    embedded_chunk_count: int = 0
+    index_error: str | None = None
+    indexed_at: datetime | None = None
 
 
 class FNOLFieldOut(SchemaBase):
@@ -162,6 +185,12 @@ class FNOLFieldOut(SchemaBase):
     override_reason: str | None
     evidence: str | None
     source_document_id: uuid.UUID | None
+    #: The passage the value was read from. Present means the review screen can offer
+    #: "show me where this came from" for this field, and
+    #: `GET /fnol/{reference}/fields/{path}/evidence` is what that button calls.
+    source_chunk_id: uuid.UUID | None = None
+    source_document_filename: str | None = None
+    source_page_number: int | None = None
 
 
 class FNOLPartyOut(SchemaBase):
@@ -425,7 +454,12 @@ class BoardResult(SchemaBase):
     """One call for the intake command centre: figures, queue and insights."""
 
     items: list[FNOLSummary]
+    #: The whole queue behind the page in `items`, after filtering.
     total: int
+    #: Which page of that queue `items` is, and how big a page is. The figures and
+    #: insights alongside describe the whole book regardless of either.
+    page: int = 1
+    page_size: int = 8
     metrics: list[BoardMetric]
     insights: list[BoardInsight]
     ingest: list[IngestStageOut]
@@ -508,6 +542,140 @@ class ProcessResult(SchemaBase):
     extraction_reused: bool
     exceptions_raised: int
     error: str | None
+    #: What the indexing stage did, and whether the extraction read retrieved passages
+    #: or the whole corpus — so "is retrieval actually doing anything here" is
+    #: answerable from the response rather than only from the logs.
+    documents_indexed: int = 0
+    chunks_indexed: int = 0
+    retrieval_used: bool = False
+
+
+# --- Document passages and evidence -------------------------------------------
+
+
+class HighlightRectOut(SchemaBase):
+    """One rectangle to draw over a page, in PDF points from the top-left.
+
+    `page_width` and `page_height` travel with every rectangle so a viewer can scale to
+    whatever size it renders at without a second request asking how big the page is.
+    """
+
+    page_number: int
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+    page_width: float
+    page_height: float
+
+
+class DocumentChunkOut(SchemaBase):
+    """One passage of a document."""
+
+    id: uuid.UUID
+    chunk_ref: str
+    chunk_index: int
+    content: str
+    token_count: int
+    char_start: int
+    char_end: int
+    page_number: int | None
+    page_from: int | None
+    page_to: int | None
+    section_label: str | None
+    embedded: bool
+
+
+class DocumentChunkListResult(SchemaBase):
+    items: list[DocumentChunkOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class DocumentSearchHitOut(SchemaBase):
+    """One passage that matched a search, and how it was found."""
+
+    chunk_ref: str
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    filename: str
+    page_number: int | None
+    section_label: str | None
+    snippet: str
+    score: float
+    semantic_score: float | None
+    keyword_score: float | None
+
+
+class DocumentSearchResult(SchemaBase):
+    items: list[DocumentSearchHitOut]
+    #: `hybrid-rrf`, `semantic`, `keyword`, or `none`. Reported so a thin result set is
+    #: interpretable — "keyword" means the vector index was unavailable or unconfigured.
+    strategy: str
+    degraded: bool
+    chunks_searched: int
+
+
+class FieldEvidenceOut(SchemaBase):
+    """Where one extracted value came from.
+
+    This is the payload behind "show me where this came from". It answers at three
+    levels of precision and says which one it reached: the document and page always,
+    the exact text always, and rectangles when the document is a PDF whose words could
+    be located. `note` explains the absence of rectangles rather than leaving a viewer
+    to render a page with nothing marked on it.
+    """
+
+    path: str
+    label: str
+    value: str | None
+    confidence: float | None
+    source: str
+    human_modified: bool
+
+    document_id: uuid.UUID | None
+    filename: str | None
+    content_type: str | None
+
+    chunk_id: uuid.UUID | None
+    chunk_ref: str | None
+    page_number: int | None
+    section_label: str | None
+
+    #: The text to highlight — the model's quoted evidence when it could be located
+    #: inside the passage, otherwise the passage itself, capped.
+    text: str | None
+    #: Offsets into the document's stored text, for a plain-text viewer.
+    char_start: int | None
+    char_end: int | None
+    rects: list[HighlightRectOut]
+    note: str | None
+
+
+class DocumentIndexRequest(SchemaBase):
+    """Ask for a case's documents to be read into passages."""
+
+    #: Re-read and re-index even when nothing has changed. The normal path is
+    #: fingerprint-guarded and does nothing when the inputs hold still.
+    force: bool = False
+    #: One document rather than all of them.
+    document_id: uuid.UUID | None = None
+    #: Run the FNOL pipeline afterwards, which is what turns new passages into fields.
+    run_pipeline: bool = True
+
+
+class DocumentIndexResult(SchemaBase):
+    reference: str
+    processing_state: str
+    documents: int
+    indexed: int
+    skipped: int
+    failed: int
+    reused: int
+    chunks: int
+    embedded: int
+    errors: list[str]
 
 
 class AuditEventOut(SchemaBase):
@@ -526,6 +694,33 @@ class AuditEventOut(SchemaBase):
 
 class PolicySearchResult(SchemaBase):
     items: list[PolicyCandidateOut]
+
+
+class FNOLDeletionResult(SchemaBase):
+    """The receipt for a deleted notification.
+
+    A body rather than `204 No Content`, because the officer who pressed the
+    button is entitled to know what actually went — and because the two things
+    that can partly fail, object storage and the search index, have no other way
+    to report themselves once the rows are committed.
+    """
+
+    reference: str
+    deleted: bool
+    #: One entry per table: `documents`, `chunks`, `fields`, `extracted_values`,
+    #: `mail_messages` and so on.
+    records: dict[str, int]
+    #: Every row across every table the notice owned.
+    total_records: int
+    #: Files removed from object storage, and how many were expected.
+    documents_stored: int
+    blobs_removed: int
+    #: Whether the vector index was swept. `false` when none is configured.
+    vectors_cleared: bool
+    #: The audit trail is kept. Named in the response so nobody has to infer it.
+    audit_retained: bool = True
+    #: Non-fatal problems, fit to show the officer.
+    warnings: list[str] = Field(default_factory=list)
 
 
 PageSize = Annotated[int, Field(ge=1, le=100)]
@@ -602,10 +797,36 @@ def to_document(document: Any) -> FNOLDocumentOut:
         extraction_error=document.extraction_error,
         uploaded_by=document.uploaded_by,
         created_at=document.created_at,
+        text_extractor=document.text_extractor,
+        ocr_applied=bool(document.ocr_applied),
+        ocr_confidence=_as_float(document.ocr_confidence),
+        ocr_reason=document.ocr_reason,
+        index_status=document.index_status,
+        chunk_count=document.chunk_count or 0,
+        embedded_chunk_count=document.embedded_chunk_count or 0,
+        index_error=document.index_error,
+        indexed_at=document.indexed_at,
     )
 
 
-def to_field(field: Any) -> FNOLFieldOut:
+def to_field(
+    field: Any,
+    citations: dict[uuid.UUID, tuple[str, int | None]] | None = None,
+) -> FNOLFieldOut:
+    """One field row.
+
+    `citations` maps a chunk id to `(filename, page_number)`. Passed in rather than
+    read through the relationship because rendering the review screen must not fire one
+    query per field — and because `FNOLDocumentChunk` is deliberately `lazy="raise"`,
+    so a lazy read here would be an error rather than a slow success.
+    """
+    filename: str | None = None
+    page_number: int | None = None
+    if citations and field.source_chunk_id is not None:
+        found = citations.get(field.source_chunk_id)
+        if found is not None:
+            filename, page_number = found
+
     return FNOLFieldOut(
         path=field.field_path,
         section=field.section,
@@ -620,6 +841,59 @@ def to_field(field: Any) -> FNOLFieldOut:
         override_reason=field.override_reason,
         evidence=field.evidence_snippet,
         source_document_id=field.source_document_id,
+        source_chunk_id=field.source_chunk_id,
+        source_document_filename=filename,
+        source_page_number=page_number,
+    )
+
+
+def to_chunk(chunk: Any) -> DocumentChunkOut:
+    return DocumentChunkOut(
+        id=chunk.id,
+        chunk_ref=chunk.chunk_ref,
+        chunk_index=chunk.chunk_index,
+        content=chunk.content,
+        token_count=chunk.token_count,
+        char_start=chunk.char_start,
+        char_end=chunk.char_end,
+        page_number=chunk.page_number,
+        page_from=chunk.page_from,
+        page_to=chunk.page_to,
+        section_label=chunk.section_label,
+        embedded=chunk.vector_point_id is not None,
+    )
+
+
+#: Characters of a passage shown in a search result. Enough to judge relevance, short
+#: enough that twenty hits are readable.
+SEARCH_SNIPPET_CHARACTERS = 320
+
+
+def to_search_hit(hit: Any, *, filename: str) -> DocumentSearchHitOut:
+    chunk = hit.chunk
+    return DocumentSearchHitOut(
+        chunk_ref=chunk.chunk_ref,
+        chunk_id=chunk.id,
+        document_id=chunk.fnol_document_id,
+        filename=filename,
+        page_number=chunk.page_number,
+        section_label=chunk.section_label,
+        snippet=chunk.content[:SEARCH_SNIPPET_CHARACTERS],
+        score=hit.score,
+        semantic_score=hit.semantic_score,
+        keyword_score=hit.keyword_score,
+    )
+
+
+def to_highlight_rect(rect: Any) -> HighlightRectOut:
+    return HighlightRectOut(
+        page_number=rect.page_number,
+        x0=rect.x0,
+        top=rect.top,
+        x1=rect.x1,
+        bottom=rect.bottom,
+        page_width=rect.page_width,
+        page_height=rect.page_height,
     )
 
 

@@ -21,9 +21,36 @@ from app.core.middleware import AccessLogMiddleware, RequestContextMiddleware
 from app.core.observability import setup_metrics
 from app.db.pool import close_pool, init_pool
 from app.db.session import dispose_engine, init_engine
+from app.integrations.graph.client import close_mail_client
 from app.services.cache import close_redis, init_redis
+from app.services.intelligence.embedding import close_embedding_provider
+from app.services.intelligence.vectors import close_vector_store
 
 logger = get_logger(__name__)
+
+
+async def _seed_extraction_schemas(config: Settings) -> None:
+    """Create the bundled extraction datasets if they are missing.
+
+    On boot rather than in a migration, because the seed is additive
+    configuration rather than schema: a release that introduces a field should
+    deliver it to a deployment that has already run its migrations, and a field
+    an administrator has edited must survive that. Never fatal — a desk whose
+    dataset could not be seeded still serves every other route, and the next boot
+    tries again.
+    """
+    if not config.extraction.seed_on_startup:
+        return
+
+    from app.db.session import session_scope
+    from app.repositories.extraction import ExtractionSchemaRepository
+    from app.services.extraction.registry import seed_builtin_schemas
+
+    try:
+        async with session_scope() as session:
+            await seed_builtin_schemas(ExtractionSchemaRepository(session))
+    except Exception as exc:
+        logger.warning("extraction_schema_seed_failed", error=type(exc).__name__, detail=str(exc))
 
 
 def create_app(
@@ -48,12 +75,16 @@ def create_app(
         await init_engine(config)
         await init_pool(config)
         await init_redis(config)
+        await _seed_extraction_schemas(config)
         logger.info("application_started")
         try:
             yield
         finally:
             await close_redis()
             await close_pool()
+            await close_mail_client()
+            await close_embedding_provider()
+            await close_vector_store()
             await dispose_engine()
             logger.info("application_stopped")
 

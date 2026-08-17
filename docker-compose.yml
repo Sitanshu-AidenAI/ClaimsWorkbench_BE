@@ -23,6 +23,23 @@ x-app-env: &app-env
   CWB_S3_SECRET_ACCESS_KEY: minioadmin
   CWB_S3_BUCKET: claims-documents
   CWB_CORS_ORIGINS: http://localhost:5173
+  # Outlook mailbox intake. Passed through from the shell or the repo-root
+  # `.env`, never written here: a client secret does not belong in a file that
+  # is committed. Empty means unconfigured, which means intake stays off.
+  CWB_GRAPH_TENANT_ID: ${CWB_GRAPH_TENANT_ID:-${GRAPH_TENANT_ID:-}}
+  CWB_GRAPH_CLIENT_ID: ${CWB_GRAPH_CLIENT_ID:-${GRAPH_CLIENT_ID:-}}
+  CWB_GRAPH_CLIENT_SECRET: ${CWB_GRAPH_CLIENT_SECRET:-${GRAPH_CLIENT_SECRET:-}}
+  CWB_GRAPH_SHARED_MAILBOX: ${CWB_GRAPH_SHARED_MAILBOX:-${OUTLOOK_SHARED_MAILBOX:-}}
+  CWB_GRAPH_POLL_ENABLED: ${CWB_GRAPH_POLL_ENABLED:-false}
+  CWB_GRAPH_MARK_AS_READ: ${CWB_GRAPH_MARK_AS_READ:-true}
+  CWB_GRAPH_MOVE_TO_FOLDER: ${CWB_GRAPH_MOVE_TO_FOLDER:-}
+  # Document intelligence. The Qdrant URL is set because the service below is part
+  # of this stack; the embedding key is not, because it is a secret and because
+  # leaving it unset is a supported mode — passages are still written and still
+  # keyword-searchable, they simply are not vectorised.
+  CWB_DOCINT_QDRANT_URL: ${CWB_DOCINT_QDRANT_URL:-http://qdrant:6333}
+  CWB_DOCINT_EMBEDDING_API_KEY: ${CWB_DOCINT_EMBEDDING_API_KEY:-}
+  CWB_DOCINT_OCR_URL: ${CWB_DOCINT_OCR_URL:-}
 
 x-app-build: &app-build
   build:
@@ -128,6 +145,38 @@ services:
     restart: unless-stopped
 
   # -------------------------------------------------------------------------
+  # Vector index
+  # -------------------------------------------------------------------------
+  qdrant:
+    # qdrant/qdrant:v1.19.0
+    #
+    # Kept in step with `qdrant-client` in `pyproject.toml`: the client refuses a
+    # server whose major version differs or whose minor differs by more than one, and
+    # says so as a warning rather than an error — so a drifting pair degrades quietly
+    # instead of failing loudly. Update both together.
+    image: qdrant/qdrant@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc
+    ports:
+      - "${CWB_QDRANT_PORT:-6343}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      # `/readyz` rather than `/`: the root path answers before the shards are loaded,
+      # so a worker starting against it can fail its first upsert.
+      #
+      # `CMD` with an explicit `bash` rather than `CMD-SHELL`: the image carries no
+      # curl and no wget, so the request is made with bash's `/dev/tcp` — which is a
+      # bash builtin, and `CMD-SHELL` runs `/bin/sh` (dash), where it does not exist.
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/6333 && printf 'GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'all shards are ready' <&3"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
   # Identity
   # -------------------------------------------------------------------------
   keycloak:
@@ -216,4 +265,5 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  qdrant-data:
   minio-data:

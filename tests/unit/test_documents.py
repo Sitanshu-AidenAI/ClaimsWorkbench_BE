@@ -34,6 +34,32 @@ def test_strip_html_removes_all_markup() -> None:
     assert strip_html("<p>hello <b>there</b></p>").strip() == "hello there"
 
 
+def test_strip_html_turns_paragraph_boundaries_into_line_breaks() -> None:
+    # Real mail clients send "plain text" as one <p> per line. Without a line
+    # break at each boundary, two labelled fields collapse onto one run-on
+    # line — and the FNOL heuristic reader matches `Label: value` anchored to
+    # the start of a line, so a labelled field on a run-on line is invisible.
+    html_body = "<p>Policy number: POL-2026-0041</p><p>Insured: Test Ltd</p>"
+
+    assert strip_html(html_body) == "Policy number: POL-2026-0041\nInsured: Test Ltd"
+
+
+def test_strip_html_treats_br_as_a_line_break_too() -> None:
+    assert strip_html("Line one<br>Line two<br/>Line three") == "Line one\nLine two\nLine three"
+
+
+def test_strip_html_decodes_entities_rather_than_leaving_them_escaped() -> None:
+    assert (
+        strip_html("<p>Meridian Print &amp; Packaging Ltd</p>") == "Meridian Print & Packaging Ltd"
+    )
+
+
+def test_strip_html_collapses_runs_of_blank_lines_from_adjacent_block_tags() -> None:
+    html_body = "<div><p>First</p><p></p><p><br></p><p>Second</p></div>"
+
+    assert strip_html(html_body) == "First\n\nSecond"
+
+
 def test_markdown_is_rendered_then_sanitised() -> None:
     html = markdown_to_safe_html("# Heading\n\n<script>alert(1)</script>\n\nBody **text**.")
 

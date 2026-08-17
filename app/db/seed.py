@@ -18,6 +18,12 @@ pipeline. Nothing here writes a severity, a duplicate score or an exception
 directly: the demo data is a set of inputs, and everything the screens show is
 computed by the same code that will run in production.
 
+Every notice that then has nothing blocking it is converted into a claim, which
+is what gives the claims queue, the triage and assignment rows and the knowledge
+graph something to read. That conversion goes through `ClaimCreationService` for
+the same reason: the demo claims are the ones an officer could have created, and
+the blocked scenarios stay in the intake queue.
+
     uv run python -m app.db.seed          # add anything missing
     uv run python -m app.db.seed --reset  # clear the FNOL tables and rebuild
 """
@@ -31,6 +37,7 @@ from typing import Any
 
 from sqlalchemy import delete, select
 
+from app.api.deps.services import build_pipeline
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine, init_engine, session_scope
@@ -52,30 +59,25 @@ from app.models.reference_data import CatEvent, Handler, Policy, ReferenceSequen
 from app.repositories.audit import AuditRepository
 from app.repositories.catastrophe import CatEventRepository
 from app.repositories.claim import ClaimRepository
+from app.repositories.extraction import ExtractionSchemaRepository
 from app.repositories.fnol import FNOLRepository
-from app.repositories.policy import PolicyRepository
+from app.repositories.handler import HandlerRepository
 from app.repositories.reference import ReferenceRepository
 from app.services.ai.factory import get_ai_provider
 from app.services.documents.service import DocumentProcessingService
-from app.services.fnol.assessments import AssessmentServices
+from app.services.extraction.registry import seed_builtin_schemas
 from app.services.fnol.audit import AuditService
-from app.services.fnol.classification import ClassificationService
-from app.services.fnol.exceptions import ExceptionService
-from app.services.fnol.extraction import FNOLExtractionService
+from app.services.fnol.claims import ClaimCreationBlocked, ClaimCreationService
 from app.services.fnol.ingestion import (
     FNOLIngestionService,
     IncomingAttachment,
     IncomingEmail,
     IncomingNotification,
 )
-from app.services.fnol.matching import (
-    CatastropheMatchingService,
-    DuplicateDetectionService,
-    PolicyMatchingService,
-)
-from app.services.fnol.pipeline import FNOLPipeline
 from app.services.fnol.service import FNOLService
-from app.services.fnol.summary import FNOLSummaryService
+from app.services.fnol.triage import AssignmentService, TriageService
+from app.services.intelligence.embedding import get_embedding_provider
+from app.services.intelligence.vectors import get_vector_store
 
 logger = get_logger(__name__)
 
@@ -767,7 +769,10 @@ async def seed(*, reset: bool = False) -> None:
         async with session_scope() as session:
             created = await _seed_scenarios(session)
 
-        logger.info("seed_completed", scenarios=created)
+        async with session_scope() as session:
+            converted = await _convert_ready_cases(session)
+
+        logger.info("seed_completed", scenarios=created, claims=converted)
     finally:
         await dispose_engine()
 
@@ -812,29 +817,36 @@ async def _seed_reference_data(session: Any) -> None:
 
 async def _seed_scenarios(session: Any) -> int:
     """Ingest each notification and run it through the real pipeline."""
+    # Ordinarily created on boot by the API. Seeding may run against a database
+    # the API has never started against, and without a dataset the pipeline falls
+    # back to the fixed schema and writes no citations.
+    await seed_builtin_schemas(ExtractionSchemaRepository(session))
+
     cases = FNOLRepository(session)
-    claims = ClaimRepository(session)
-    policies = PolicyRepository(session)
-    cat_events = CatEventRepository(session)
     references = ReferenceRepository(session)
     audit = AuditService(AuditRepository(session))
     documents = DocumentProcessingService()
+    cat_events = CatEventRepository(session)
     provider = get_ai_provider()
 
     ingestion = FNOLIngestionService(cases, references, audit)
     fnol_service = FNOLService(cases, audit, documents=documents, cat_events=cat_events)
-    pipeline = FNOLPipeline(
-        repository=cases,
-        policies=policies,
-        extraction=FNOLExtractionService(cases, provider=provider),
-        classification=ClassificationService(provider=provider),
-        policy_matching=PolicyMatchingService(policies, cases),
-        duplicates=DuplicateDetectionService(cases, claims),
-        catastrophe=CatastropheMatchingService(cat_events),
-        assessments=AssessmentServices(cases),
-        summary=FNOLSummaryService(provider=provider),
-        exceptions=ExceptionService(cases),
-        audit=audit,
+
+    # The same assembly the API and the worker use.
+    #
+    # This used to build its own `FNOLPipeline` with ten collaborators listed by
+    # hand, which meant the seeded cases silently skipped the four stages that
+    # arrived with document intelligence: the notification body was never written
+    # out as a document, nothing was chunked or indexed, the configured dataset
+    # was never run, and no value carried the passage it was read from. The demo
+    # data therefore could not exercise the screen the demo data exists for.
+    # `build_pipeline` exists precisely so a scheduled run and an officer pressing
+    # "reprocess" cannot diverge; seeding is a third caller and had diverged.
+    pipeline = build_pipeline(
+        session,
+        provider=provider,
+        embeddings=get_embedding_provider(),
+        vectors=get_vector_store(),
     )
 
     created = 0
@@ -872,6 +884,79 @@ async def _seed_scenarios(session: Any) -> int:
             scenario=scenario["key"],
             reference=case.reference,
             status=case.status,
+        )
+
+    return created
+
+
+async def _convert_ready_cases(session: Any) -> int:
+    """Convert every notice with nothing blocking it into a claim.
+
+    A separate pass, run after all seven scenarios are ingested, for the reason
+    the scenarios are committed one at a time: converting A the moment it is
+    ingested would change what B's duplicate scan sees, and B exists precisely to
+    come out as a possible duplicate of A. Claims are layered on top of the
+    finished intake states rather than interleaved with them.
+
+    Which notices convert is *asked*, not listed. `blockers()` is the same
+    checklist the create-claim endpoint enforces, so the demo claims are exactly
+    the ones an officer could have made by hand — and a scenario written to be
+    blocked (E outside its policy period, F on fraud indicators, G with no policy
+    to match) stays in the intake queue because the rules say so, not because a
+    list here left it out.
+    """
+    cases = FNOLRepository(session)
+    claims = ClaimRepository(session)
+    handlers = HandlerRepository(session)
+    references = ReferenceRepository(session)
+    audit = AuditService(AuditRepository(session))
+
+    creation = ClaimCreationService(
+        fnol=cases,
+        claims=claims,
+        references=references,
+        triage=TriageService(claims),
+        assignment=AssignmentService(handlers, claims),
+        audit=audit,
+    )
+
+    rows, _ = await cases.list_cases(limit=100)
+    created = 0
+    for case in rows:
+        if case.claim_id is not None:
+            continue
+
+        blockers = await creation.blockers(case)
+        if blockers:
+            logger.info(
+                "seed_claim_skipped",
+                reference=case.reference,
+                blockers=[blocker.code for blocker in blockers],
+            )
+            continue
+
+        try:
+            result = await creation.create(case.id, actor="Seed data")
+        except ClaimCreationBlocked as exc:
+            # Only reachable if the checklist changed under us. Recorded rather
+            # than raised: one unconvertible notice must not cost the whole seed.
+            logger.warning(
+                "seed_claim_refused",
+                reference=case.reference,
+                blockers=[blocker.code for blocker in exc.blockers],
+            )
+            continue
+
+        # Committed per claim for the same reason the scenarios are: the triage
+        # and assignment rows are written inside this transaction, and a later
+        # failure must not take an already-good claim down with it.
+        await session.commit()
+        created += 1
+        logger.info(
+            "seed_claim",
+            reference=case.reference,
+            claim=result.claim.reference,
+            severity=result.claim.severity,
         )
 
     return created

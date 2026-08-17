@@ -40,6 +40,7 @@ from app.repositories.fnol import FNOLRepository
 from app.services.documents.service import DocumentProcessingService
 from app.services.fnol.audit import AuditService
 from app.services.fnol.extraction import _FIELD_META
+from app.services.intelligence.indexing import extraction_signature
 
 logger = get_logger(__name__)
 
@@ -548,7 +549,14 @@ class FNOLService:
             page_count=stored.page_count,
             extraction_error=stored.extraction_error,
             uploaded_by=actor,
+            # How the text was read, and where each page landed inside it. Neither is
+            # derivable after the fact — the same content type can be read more than one
+            # way — and `page_offsets` is what a citation's page number comes from, so a
+            # document stored without it can never point an officer at a page.
+            text_extractor=stored.extractor,
+            page_offsets=stored.page_offsets or None,
         )
+        document.extraction_signature = extraction_signature(document)
         self._repository.add_document(document)
         await self._repository.flush()
 

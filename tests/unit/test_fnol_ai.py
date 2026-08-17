@@ -22,8 +22,18 @@ from app.services.ai.factory import get_ai_provider, reset_ai_provider
 from app.services.ai.openai_provider import OpenAIProvider
 from app.services.fnol.classification import ClassificationService
 from app.services.fnol.extraction import HEURISTIC_PROVIDER, FNOLExtractionService
+from tests.fakes.ai import StubProvider
 
 BASE_URL = "https://api.test/v1"
+
+CLASSIFICATION = {
+    "line_of_business": "property",
+    "claim_type": None,
+    "loss_type": "fire",
+    "complexity": "standard",
+    "confidence": 0.9,
+    "reasoning": "The notification describes a warehouse fire.",
+}
 
 
 def config() -> AISettings:
@@ -38,29 +48,6 @@ def completion(content: str) -> httpx.Response:
             "usage": {"prompt_tokens": 10, "completion_tokens": 20},
         },
     )
-
-
-class StubProvider:
-    """A provider that answers with whatever the test hands it."""
-
-    name = "stub"
-    model = "stub-model"
-
-    def __init__(self, result: object = None, error: Exception | None = None) -> None:
-        self._result = result
-        self._error = error
-        self.calls = 0
-
-    async def structured(self, **_kwargs: object) -> object:
-        from app.services.ai.base import AIResponse
-
-        self.calls += 1
-        if self._error is not None:
-            raise self._error
-        return AIResponse(data=self._result, provider=self.name, model=self.model, latency_ms=1)
-
-    async def aclose(self) -> None:
-        return None
 
 
 class TestSchemaGeneration:
@@ -80,19 +67,61 @@ class TestSchemaGeneration:
 
 
 class TestOpenAIProvider:
+    async def test_the_request_omits_parameters_a_reasoning_model_rejects(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        # The GPT-5 family answers `max_tokens` and any explicit `temperature` with
+        # a 400, so the wire payload — not just the model name — is the contract.
+        route = respx_mock.post(f"{BASE_URL}/chat/completions").mock(
+            return_value=completion(json.dumps(CLASSIFICATION))
+        )
+        provider = OpenAIProvider(config())
+        await provider.structured(
+            schema=ClassificationResult,
+            system_prompt="s",
+            user_prompt="u",
+            schema_name="claim_classification",
+        )
+        sent = json.loads(route.calls.last.request.content)
+        assert sent["max_completion_tokens"] == 4096
+        assert "max_tokens" not in sent
+        assert "temperature" not in sent
+        assert "reasoning_effort" not in sent
+        await provider.aclose()
+
+    async def test_temperature_and_effort_are_sent_when_configured(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        # A gateway or a GPT-4-class model still honours both, so opting in has to
+        # keep working.
+        route = respx_mock.post(f"{BASE_URL}/chat/completions").mock(
+            return_value=completion(json.dumps(CLASSIFICATION))
+        )
+        tuned = AISettings(
+            api_key="test-key",
+            base_url=BASE_URL,
+            model="test-model",
+            max_attempts=1,
+            temperature=0.0,
+            reasoning_effort="low",
+        )
+        provider = OpenAIProvider(tuned)
+        await provider.structured(
+            schema=ClassificationResult,
+            system_prompt="s",
+            user_prompt="u",
+            schema_name="claim_classification",
+        )
+        sent = json.loads(route.calls.last.request.content)
+        assert sent["temperature"] == 0.0
+        assert sent["reasoning_effort"] == "low"
+        await provider.aclose()
+
     async def test_a_valid_response_is_returned_as_a_typed_object(
         self, respx_mock: respx.MockRouter
     ) -> None:
-        payload = {
-            "line_of_business": "property",
-            "claim_type": None,
-            "loss_type": "fire",
-            "complexity": "standard",
-            "confidence": 0.9,
-            "reasoning": "The notification describes a warehouse fire.",
-        }
         respx_mock.post(f"{BASE_URL}/chat/completions").mock(
-            return_value=completion(json.dumps(payload))
+            return_value=completion(json.dumps(CLASSIFICATION))
         )
 
         provider = OpenAIProvider(config())

@@ -18,7 +18,7 @@ import base64
 import binascii
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 
@@ -28,9 +28,11 @@ from app.core.errors import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.core.security import Principal
 from app.domain.enums import (
+    FNOL_DELETE_ROLES,
     FNOL_READ_ROLES,
     FNOL_WRITE_ROLES,
     AuditEventType,
+    DocumentIndexStatus,
     DuplicateResolution,
     ExceptionStatus,
     FNOLChannel,
@@ -47,6 +49,11 @@ from app.services.fnol.ingestion import (
     IncomingEmail,
     IncomingNotification,
 )
+from app.services.intelligence.highlight import (
+    locate_in_chunk,
+    page_for_offset,
+    resolve_pdf_rects,
+)
 
 logger = get_logger(__name__)
 
@@ -54,6 +61,8 @@ router = APIRouter(prefix="/fnol", tags=["fnol"])
 
 ReadAccess = Annotated[Principal, Depends(require_roles(*FNOL_READ_ROLES))]
 WriteAccess = Annotated[Principal, Depends(require_roles(*FNOL_WRITE_ROLES))]
+#: Destroying a notice is a supervisor's call. See `FNOL_DELETE_ROLES`.
+DeleteAccess = Annotated[Principal, Depends(require_roles(*FNOL_DELETE_ROLES))]
 
 #: The three the board's insight column counts, in the order it draws them.
 _INSIGHT_CODES = (
@@ -228,17 +237,31 @@ async def board(
     principal: ReadAccess,
     order: Annotated[str, Query(pattern="^(received_at|severity)$")] = "severity",
     unassigned: Annotated[bool, Query()] = False,
+    blocking: Annotated[bool, Query()] = False,
     limit: Annotated[int, Query(ge=1, le=50)] = 8,
+    page: Annotated[int, Query(ge=1)] = 1,
 ) -> api.BoardResult:
     """Figures, queue and insights in one call.
 
     One call rather than three: the band, the queue and the insight counts all
     describe the same moment of the same book, and fetching them separately is how
     a board ends up saying 127 above a list of 131.
+
+    The queue is a page of that book rather than the top of it. `limit` is the page
+    size and is left where it was so existing callers keep the slice they asked
+    for; `page` walks it. The figures, insights and counts describe the whole book
+    on every page — they are the board's read of the morning, not of the eight
+    rows currently on screen.
     """
     del principal
     metrics = await context.fnol.board_metrics()
-    rows, total = await context.cases.list_cases(order=order, unassigned=unassigned, limit=limit)
+    rows, total = await context.cases.list_cases(
+        order=order,
+        unassigned=unassigned,
+        blocking=blocking,
+        limit=limit,
+        offset=(page - 1) * limit,
+    )
 
     processed = sum(
         count
@@ -252,6 +275,8 @@ async def board(
     return api.BoardResult(
         items=[await _summarise(context, case) for case in rows],
         total=total,
+        page=page,
+        page_size=limit,
         metrics=[
             api.BoardMetric(
                 id="new_intake",
@@ -330,6 +355,54 @@ async def audit_history(
     return [api.to_audit_event(event) for event in events]
 
 
+@router.delete(
+    "/{reference}",
+    response_model=api.FNOLDeletionResult,
+    summary="Delete a notification and everything held against it",
+)
+async def delete_notification(
+    reference: str,
+    context: FNOLContextDep,
+    principal: DeleteAccess,
+    reason: Annotated[str | None, Query(max_length=500)] = None,
+) -> api.FNOLDeletionResult:
+    """Remove the notice from every store that holds any part of it.
+
+    That is the notice and its nine child tables, the passages read out of its
+    documents, the dataset values extracted from them, the attachment bytes in
+    object storage, the vectors in the search index, and the mailbox ledger rows
+    that collected it. The audit trail is the one thing kept — including a final
+    event naming who did this and why.
+
+    **Not the same as rejecting or cancelling.** Those are lifecycle decisions and
+    they keep the record, which is almost always what an officer wanting a notice
+    "off the queue" actually needs. This is for a notice that should never have
+    existed: a test submission, a misfiled email, a duplicate ingested twice. It
+    is refused outright once a claim has been created, because the claim is then
+    the record and would be left citing nothing.
+
+    Restricted to supervisors — see `FNOL_DELETE_ROLES`.
+    """
+    case = await context.fnol.get(reference)
+    receipt = await context.deletion.remove(case, actor=actor_of(principal), reason=reason)
+
+    # Committed before the stores are swept, and the ordering is the design — see
+    # the module docstring on `app.services.fnol.deletion`.
+    await context.commit()
+    await context.deletion.purge_stores(receipt)
+
+    return api.FNOLDeletionResult(
+        reference=receipt.reference,
+        deleted=True,
+        records=receipt.records,
+        total_records=receipt.total_records,
+        documents_stored=len(receipt.storage_keys),
+        blobs_removed=receipt.blobs_removed,
+        vectors_cleared=receipt.vectors_cleared,
+        warnings=receipt.warnings,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Processing
 # ---------------------------------------------------------------------------
@@ -364,7 +437,292 @@ async def process(
         extraction_reused=result.extraction_reused,
         exceptions_raised=result.exceptions_raised,
         error=result.error,
+        documents_indexed=result.documents_indexed,
+        chunks_indexed=result.chunks_indexed,
+        retrieval_used=result.retrieval_used,
     )
+
+
+# ---------------------------------------------------------------------------
+# Document passages and evidence
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{reference}/index",
+    response_model=api.DocumentIndexResult,
+    summary="Read the attached documents into citable passages",
+)
+async def index_documents(
+    reference: str,
+    payload: api.DocumentIndexRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.DocumentIndexResult:
+    """Cut the case's documents into passages, and vectorise them if configured.
+
+    Ordinarily this happens on its own: uploading a document or collecting an email
+    queues the notice, and the worker indexes it. This endpoint is the manual handle —
+    for a case whose documents predate indexing, or for `force: true` after a
+    configuration change that means they should be read differently.
+
+    Runs inline rather than enqueueing, because a caller who asked for this wants the
+    answer. The fingerprint guard means the common case is a query per document.
+    """
+    del principal
+    case = await context.fnol.get(reference)
+
+    documents = list(await context.cases.list_documents(case.id))
+    if payload.document_id is not None:
+        documents = [document for document in documents if document.id == payload.document_id]
+        if not documents:
+            raise NotFoundError("That document is not attached to this notification.")
+
+    outcome = await context.index.index_case(documents, force=payload.force)
+    if payload.run_pipeline:
+        # New passages move the extraction fingerprint, so this genuinely re-reads.
+        await context.pipeline.run(case, force=payload.force)
+    await context.commit()
+
+    return api.DocumentIndexResult(
+        reference=case.reference,
+        processing_state=case.processing_state,
+        documents=len(outcome.documents),
+        indexed=outcome.indexed,
+        skipped=sum(
+            1 for document in outcome.documents if document.status == DocumentIndexStatus.SKIPPED
+        ),
+        failed=outcome.failed,
+        reused=sum(1 for document in outcome.documents if document.reused),
+        chunks=outcome.chunks,
+        embedded=outcome.embedded,
+        errors=[document.error for document in outcome.documents if document.error],
+    )
+
+
+@router.get(
+    "/{reference}/documents/{document_id}/chunks",
+    response_model=api.DocumentChunkListResult,
+    summary="List a document's passages",
+)
+async def list_document_chunks(
+    reference: str,
+    document_id: uuid.UUID,
+    context: FNOLContextDep,
+    principal: ReadAccess,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> api.DocumentChunkListResult:
+    """The passages a document was cut into, in order.
+
+    Paginated because a long survey report is hundreds of passages, and this is a
+    diagnostic view — it answers "what did the reader actually get out of this file".
+    """
+    del principal
+    case = await context.fnol.get(reference)
+    document = await _document_of(context, case, document_id)
+
+    total = await context.chunks.count_for_document(document.id)
+    rows = await context.chunks.list_for_document(
+        document.id, offset=(page - 1) * page_size, limit=page_size
+    )
+    return api.DocumentChunkListResult(
+        items=[api.to_chunk(row) for row in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get(
+    "/{reference}/search",
+    response_model=api.DocumentSearchResult,
+    summary="Search the attached documents",
+)
+async def search_documents(
+    reference: str,
+    context: FNOLContextDep,
+    principal: ReadAccess,
+    q: Annotated[str, Query(min_length=2, max_length=500)],
+    top_k: Annotated[int, Query(ge=1, le=50)] = 10,
+    document_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> api.DocumentSearchResult:
+    """Find the passages of this notice's documents that answer a question.
+
+    Scoped to one case always. There is no cross-case document search here on purpose:
+    the passages of one claim are not evidence in another, and an endpoint that could
+    return them would be a disclosure risk rather than a feature.
+    """
+    del principal
+    case = await context.fnol.get(reference)
+
+    result = await context.retrieval.search(case.id, q, limit=top_k, document_id=document_id)
+    filenames = {
+        document.id: document.filename for document in await context.cases.list_documents(case.id)
+    }
+    return api.DocumentSearchResult(
+        items=[
+            api.to_search_hit(hit, filename=filenames.get(hit.chunk.fnol_document_id, "attachment"))
+            for hit in result.hits
+        ],
+        strategy=result.strategy,
+        degraded=result.degraded,
+        chunks_searched=result.chunks_available,
+    )
+
+
+@router.get(
+    "/{reference}/fields/{field_path}/evidence",
+    response_model=api.FieldEvidenceOut,
+    summary="Show where a field's value came from",
+)
+async def field_evidence(
+    reference: str,
+    field_path: str,
+    context: FNOLContextDep,
+    principal: ReadAccess,
+) -> api.FieldEvidenceOut:
+    """The document, page and text behind one extracted value.
+
+    This is what the review screen calls when an officer clicks a field. It answers at
+    whatever precision the document allows and says which it reached: the page and the
+    exact text always, plus rectangles when the document is a PDF whose words could be
+    located. A field with no citation is not an error — a value typed by an officer, or
+    read from the email body, has no passage to point at.
+    """
+    del principal
+    case = await context.fnol.get(reference)
+
+    field = await context.cases.get_field(case.id, field_path)
+    if field is None:
+        raise NotFoundError(f"No field '{field_path}' has been recorded on this notification.")
+
+    chunk = (
+        await context.chunks.get(field.source_chunk_id)
+        if field.source_chunk_id is not None
+        else None
+    )
+    document = None
+    if chunk is not None:
+        document = await context.cases.get_document(chunk.fnol_document_id)
+    elif field.source_document_id is not None:
+        document = await context.cases.get_document(field.source_document_id)
+
+    base = api.FieldEvidenceOut(
+        path=field.field_path,
+        label=field.label,
+        value=field.value_text,
+        confidence=float(field.confidence) if field.confidence is not None else None,
+        source=field.source,
+        human_modified=bool(field.human_modified),
+        document_id=document.id if document else None,
+        filename=document.filename if document else None,
+        content_type=document.content_type if document else None,
+        chunk_id=chunk.id if chunk else None,
+        chunk_ref=chunk.chunk_ref if chunk else None,
+        page_number=chunk.page_number if chunk else None,
+        section_label=chunk.section_label if chunk else None,
+        text=field.evidence_snippet,
+        char_start=None,
+        char_end=None,
+        rects=[],
+        note=None
+        if chunk is not None
+        else "This value has no document passage recorded against it.",
+    )
+
+    if chunk is None or document is None:
+        return base
+
+    start, end, text = locate_in_chunk(chunk.content, chunk.char_start, field.evidence_snippet)
+    located = page_for_offset(document.page_offsets, start)
+    page_number = (located[0] + 1) if located else chunk.page_number
+
+    rects: list[api.HighlightRectOut] = []
+    note: str | None = None
+    if document.content_type == "application/pdf" and located is not None:
+        try:
+            content = await context.documents.fetch(document.storage_key)
+        except Exception:
+            note = "The stored file could not be read to draw the highlight."
+        else:
+            resolved, note = resolve_pdf_rects(content, page_index=located[0], text=text)
+            rects = [api.to_highlight_rect(rect) for rect in resolved]
+    elif document.content_type != "application/pdf":
+        # A Word document or a spreadsheet has no page geometry to draw on. The page
+        # label and the exact text are the honest answer, and are enough for a text
+        # viewer to highlight in.
+        note = "This document has no page layout; highlight the quoted text instead."
+
+    return base.model_copy(
+        update={
+            "page_number": page_number,
+            "text": text,
+            "char_start": start,
+            "char_end": end,
+            "rects": rects,
+            "note": note,
+        }
+    )
+
+
+def _enqueue_index(case: FNOLCase) -> None:
+    """Ask a worker to index and process this notice.
+
+    Called *after* the commit, deliberately: a task that starts before the transaction
+    lands would read a case that does not exist yet. Failing to enqueue is logged and
+    not raised — the notice is already `queued`, and the beat poller is the safety net
+    that makes the queue eventually-consistent rather than dependent on this call.
+    """
+    try:
+        from app.workers.tasks import index_case_documents
+
+        index_case_documents.delay(str(case.id))
+    except Exception as exc:
+        logger.warning(
+            "index_enqueue_failed",
+            reference=case.reference,
+            error=type(exc).__name__,
+        )
+
+
+async def _field_citations(
+    context: FNOLContext, fields: Any, documents: Any
+) -> dict[uuid.UUID, tuple[str, int | None]]:
+    """`chunk_id -> (filename, page_number)` for every field that cites a passage.
+
+    One query for the whole screen. The filename comes from the case's documents,
+    already loaded, so this costs a single passage lookup and no joins.
+    """
+    ids = [field.source_chunk_id for field in fields if field.source_chunk_id is not None]
+    if not ids:
+        return {}
+
+    filenames = {document.id: document.filename for document in documents}
+    resolved: dict[uuid.UUID, tuple[str, int | None]] = {}
+    for chunk_id in set(ids):
+        chunk = await context.chunks.get(chunk_id)
+        if chunk is None:
+            # The passage was replaced by a re-index. The value stands; the citation
+            # does not, and saying nothing is better than naming the wrong page.
+            continue
+        resolved[chunk_id] = (
+            filenames.get(chunk.fnol_document_id, "attachment"),
+            chunk.page_number,
+        )
+    return resolved
+
+
+async def _document_of(context: FNOLContext, case: FNOLCase, document_id: uuid.UUID) -> Any:
+    """One of this case's documents, or a 404.
+
+    Scoped through the case rather than fetched by id alone: a document id from
+    another notice must not resolve here.
+    """
+    document = await context.cases.get_document(document_id)
+    if document is None or document.fnol_case_id != case.id:
+        raise NotFoundError("That document is not attached to this notification.")
+    return document
 
 
 # ---------------------------------------------------------------------------
@@ -661,11 +1019,15 @@ async def upload_document(
         actor=actor_of(principal),
     )
     if reprocess:
-        # New evidence changes the extraction's fingerprint, so the pipeline
-        # genuinely re-reads rather than returning the cached analysis.
-        await context.pipeline.run(case)
+        # Queued rather than processed inline. Reading a document now means opening it,
+        # possibly sending it to OCR, chunking it and embedding it — seconds to minutes
+        # for a large scan, inside an HTTP request that a proxy will give up on first.
+        # The worker picks the notice up from `queued`; the client polls
+        # `GET /fnol/{reference}` and watches `processing_state`.
+        context.fnol.mark_queued(case)
 
     await context.commit()
+    _enqueue_index(case)
     return await build_detail(context, case)
 
 
@@ -791,6 +1153,10 @@ async def build_detail(context: FNOLContext, case: FNOLCase) -> api.FNOLDetail:
     await context.session.refresh(case)
     documents = await context.cases.list_documents(case.id)
     fields = await context.cases.list_fields(case.id)
+    # Resolved in one query, not one per field: `FNOLDocumentChunk` is deliberately
+    # `lazy="raise"`, so reading a citation through the relationship while serialising
+    # a response would be an error rather than a slow success.
+    citations = await _field_citations(context, fields, documents)
     parties = await context.cases.list_parties(case.id)
     matches = await context.cases.list_policy_matches(case.id)
     duplicates = await context.cases.list_duplicates(case.id)
@@ -891,7 +1257,7 @@ async def build_detail(context: FNOLContext, case: FNOLCase) -> api.FNOLDetail:
         created_at=case.created_at,
         updated_at=case.updated_at,
         documents=[api.to_document(document) for document in documents],
-        fields=[api.to_field(field) for field in fields],
+        fields=[api.to_field(field, citations) for field in fields],
         parties=[api.to_party(party) for party in parties],
         policy_candidates=candidates,
         duplicates=[api.to_duplicate(candidate) for candidate in duplicates],

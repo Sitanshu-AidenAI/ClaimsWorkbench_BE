@@ -66,8 +66,10 @@ class OpenAIProvider:
     ) -> AIResponse[T]:
         payload: dict[str, Any] = {
             "model": self._config.model,
-            "temperature": self._config.temperature,
-            "max_tokens": max_output_tokens or self._config.max_output_tokens,
+            # `max_completion_tokens` rather than `max_tokens`: the GPT-5 family
+            # rejects the older name, and GPT-4-class models accept the newer one,
+            # so there is nothing to branch on.
+            "max_completion_tokens": max_output_tokens or self._config.max_output_tokens,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -81,6 +83,13 @@ class OpenAIProvider:
                 },
             },
         }
+        # Both are omitted unless configured. A reasoning model rejects any
+        # temperature but its own default, so sending the key at all is what breaks
+        # the call — not the value.
+        if self._config.temperature is not None:
+            payload["temperature"] = self._config.temperature
+        if self._config.reasoning_effort is not None:
+            payload["reasoning_effort"] = self._config.reasoning_effort
 
         started = time.perf_counter()
         try:

@@ -32,6 +32,10 @@ ALLOWED_EXTENSIONS: dict[str, str] = {
     ".csv": "text/csv",
     ".json": "application/json",
     ".eml": "message/rfc822",
+    # A broker replying "see the chain below" attaches the chain, and Graph's
+    # `itemAttachment` carries no bytes — so a forwarded conversation arrives as a
+    # `.msg` file or not at all.
+    ".msg": "application/vnd.ms-outlook",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xls": "application/vnd.ms-excel",
@@ -46,7 +50,11 @@ _SIGNATURES: tuple[tuple[bytes, frozenset[str]], ...] = (
     (b"\xff\xd8\xff", frozenset({".jpg", ".jpeg"})),
     (b"GIF8", frozenset({".gif"})),
     (b"PK\x03\x04", frozenset({".docx", ".xlsx"})),
-    (b"\xd0\xcf\x11\xe0", frozenset({".doc", ".xls"})),
+    # `.msg` shares the OLE compound-document header with the pre-2007 Office
+    # formats, so the extension is the only thing that distinguishes them — the same
+    # limitation `PK` imposes on `.docx` versus `.xlsx` two lines above. The check
+    # still earns its keep: it catches a `.msg` that is really a PDF or a zip.
+    (b"\xd0\xcf\x11\xe0", frozenset({".doc", ".xls", ".msg"})),
 )
 
 #: Executable and script signatures, refused whatever the extension claims.
@@ -141,6 +149,6 @@ def document_kind(content_type: str) -> str:
         return "photo"
     if content_type in {"text/csv", "application/vnd.ms-excel"} or "spreadsheet" in content_type:
         return "spreadsheet"
-    if content_type == "message/rfc822":
+    if content_type in {"message/rfc822", "application/vnd.ms-outlook"}:
         return "email"
     return "document"

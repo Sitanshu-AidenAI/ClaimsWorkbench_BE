@@ -36,3 +36,8 @@ celerybeat.pid
 # Local artefacts
 *.log
 /tmp/
+
+# Manual test fixtures — generated on demand, not part of the application
+/demo-data/
+var/
+HANDOFF.md

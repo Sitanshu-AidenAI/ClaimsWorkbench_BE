@@ -96,6 +96,27 @@ def _error_response(
     return JSONResponse(status_code=status_code, content=payload)
 
 
+def _serialisable_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
+    """Pydantic's validation errors, with the parts that will not serialise removed.
+
+    A schema whose validator raises `ValueError` — which is how Pydantic asks for
+    a custom message — puts the *exception object* in `ctx["error"]`. Passing
+    that to `json.dumps` raises inside the error handler, so a 422 becomes a 500
+    and the caller is told nothing about what was wrong with their payload.
+
+    `ctx` is dropped rather than coerced: its useful content is already in `msg`,
+    and the remainder is Pydantic internals no API client should be reading.
+    `url` goes with it — a link to pydantic.dev is not part of this API.
+    """
+    cleaned: list[dict[str, Any]] = []
+    for error in exc.errors():
+        entry = {key: value for key, value in error.items() if key not in ("ctx", "url")}
+        # `loc` is a tuple and may carry non-string parts for a list index.
+        entry["loc"] = [str(part) for part in error.get("loc", ())]
+        cleaned.append(entry)
+    return cleaned
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _handle_app_error(_request: Request, exc: AppError) -> JSONResponse:
@@ -124,7 +145,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             HTTP_422_UNPROCESSABLE,
             "validation_error",
             "The request payload is invalid.",
-            {"errors": exc.errors()},
+            {"errors": _serialisable_errors(exc)},
         )
 
     @app.exception_handler(Exception)
