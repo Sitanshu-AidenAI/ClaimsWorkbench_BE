@@ -156,9 +156,15 @@ async def run_case_pipeline(case_id: uuid.UUID, *, force: bool = False) -> Any:
     """Run the FNOL pipeline over one notice, outside a request.
 
     Built through the same assembler the API uses, so a scheduled run and an officer
-    pressing "reprocess" cannot diverge. Commits once, at the end, exactly as the route
-    does — the pipeline is one unit of work and a half-processed notice is worse than
-    an unprocessed one.
+    pressing "reprocess" cannot diverge. The stages are one unit of work and a
+    half-processed notice is worse than an unprocessed one, so they commit once, at
+    the end.
+
+    The exception is the announcement that the run has *started*, which is committed
+    before the stages begin — see `FNOLPipeline`'s `checkpoint`. It is not part of
+    the same unit of work: it describes a claim that has already happened, and held
+    inside the stages' transaction it only became visible once they had finished,
+    which is precisely when it had stopped being true.
     """
     # Imported here rather than at module scope: `app.api.deps.services` imports this
     # package's services to assemble them, so a top-level import would be a cycle.
@@ -178,6 +184,7 @@ async def run_case_pipeline(case_id: uuid.UUID, *, force: bool = False) -> Any:
             provider=get_ai_provider(),
             embeddings=get_embedding_provider(),
             vectors=get_vector_store(),
+            checkpoint=session.commit,
         )
         result = await pipeline.run(case, force=force)
         await session.commit()

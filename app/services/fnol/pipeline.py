@@ -33,6 +33,7 @@ the request.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -136,7 +137,19 @@ class FNOLPipeline:
         adapter: FNOLWriteBackAdapter | None = None,
         body: NotificationBodyDocumentService | None = None,
         extraction_config: ExtractionSettings | None = None,
+        #: Awaited once, immediately after the run has been announced and before
+        #: any stage has run. The worker passes `session.commit`.
+        #:
+        #: Without it the "processing started" notification is invisible until the
+        #: caller's single commit at the *end* of the run — so it arrives in the
+        #: same instant as the completion it exists to precede, which is no use to
+        #: anyone watching the bell. Everything written before this point is
+        #: already durable-worthy on its own: the case is claimed, `processing`,
+        #: and stamped with `processing_started_at`. A worker dying after it
+        #: leaves exactly the state `release_stale_processing` is there to reap.
+        checkpoint: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
+        self._checkpoint = checkpoint
         self._notifications = notifications
         self._index = index
         self._schemas = schemas
@@ -183,6 +196,12 @@ class FNOLPipeline:
                 started_at=started_at,
                 channel=case.channel,
             )
+
+        # Make the announcement visible *now*, not when the run ends. The three
+        # events keep their shared `started_at` discriminator either way, so the
+        # dedupe keys still agree across the commit boundary.
+        if self._checkpoint is not None:
+            await self._checkpoint()
 
         try:
             result = await self._run_stages(case, force=force)
