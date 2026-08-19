@@ -55,7 +55,13 @@ from app.models.fnol import (
     FNOLParty,
     FNOLPolicyMatch,
 )
-from app.models.reference_data import CatEvent, Handler, Policy, ReferenceSequence
+from app.models.reference_data import (
+    CatEvent,
+    Handler,
+    Policy,
+    PolicyLocation,
+    ReferenceSequence,
+)
 from app.repositories.audit import AuditRepository
 from app.repositories.catastrophe import CatEventRepository
 from app.repositories.claim import ClaimRepository
@@ -98,8 +104,11 @@ POLICIES: list[dict[str, Any]] = [
         "insured_name": "Northline Logistics Limited",
         "insured_organisation": "Northline Logistics Limited",
         "insured_email": "operations@northline-logistics.co.uk",
+        "insured_domain": "northline-logistics.co.uk",
         "broker_name": "Harding Vale Brokers",
         "broker_reference": "HVB/NL/0041",
+        "broker_domain": "hardingvale.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
         "policy_type": "Commercial Combined",
         "line_of_business": "property",
         "status": "active",
@@ -115,9 +124,29 @@ POLICIES: list[dict[str, Any]] = [
         "deductible_amount_minor": 25_000_00,
         "perils_covered": ["fire", "flood", "storm", "escape of water", "impact", "theft"],
         "exclusions": ["wear and tear", "gradual deterioration", "terrorism"],
-        "locations": [
-            {"address": "Unit 7, Wakefield Road, Leeds LS9 8AA", "use": "warehouse"},
-            {"address": "Airedale Depot, Keighley BD21 4LP", "use": "depot"},
+        # The policy that proves location matching works. Nine scheduled premises,
+        # each with its own sum insured and its own excess, so a loss at number
+        # seven is matched to number seven — and the candidate card shows *that*
+        # location's excess rather than the policy's headline figure.
+        "locations_scheduled": [
+            ("Location 001", "Head office and national distribution centre",
+             "Unit 7, Wakefield Road, Leeds LS9 8AA", "LS9 8AA", 1_800_000_00, 25_000_00, True),
+            ("Location 002", "Cold store", "Unit 4, Gelderd Road, Leeds LS11 8AX",
+             "LS11 8AX", 900_000_00, 50_000_00, False),
+            ("Location 003", "Transhipment depot", "Airedale Depot, Keighley BD21 4LP",
+             "BD21 4LP", 450_000_00, 10_000_00, False),
+            ("Location 004", "Bonded warehouse", "Dock Street, Hull HU1 3DZ",
+             "HU1 3DZ", 620_000_00, 10_000_00, False),
+            ("Location 005", "Vehicle workshop", "Brookfoot Lane, Brighouse HD6 2RW",
+             "HD6 2RW", 310_000_00, 5_000_00, False),
+            ("Location 006", "Regional hub", "Parkway Industrial Estate, Sheffield S9 4WN",
+             "S9 4WN", 540_000_00, 10_000_00, False),
+            ("Location 007", "Ambient store", "Whitehouse Lane, Huddersfield HD2 1YJ",
+             "HD2 1YJ", 275_000_00, 5_000_00, False),
+            ("Location 008", "Cross-dock", "Europa Way, Doncaster DN11 0BF",
+             "DN11 0BF", 380_000_00, 10_000_00, False),
+            ("Location 009", "Overflow yard", "Kirkstall Road, Leeds LS4 2AZ",
+             "LS4 2AZ", 120_000_00, 5_000_00, False),
         ],
     },
     {
@@ -125,8 +154,11 @@ POLICIES: list[dict[str, Any]] = [
         "insured_name": "Northline Logistics (Scotland) Limited",
         "insured_organisation": "Northline Logistics (Scotland) Limited",
         "insured_email": "scotland@northline-logistics.co.uk",
+        "insured_domain": "northline-logistics.co.uk",
         "broker_name": "Harding Vale Brokers",
         "broker_reference": "HVB/NLS/0198",
+        "broker_domain": "hardingvale.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
         "policy_type": "Commercial Combined",
         "line_of_business": "property",
         "status": "active",
@@ -148,8 +180,11 @@ POLICIES: list[dict[str, Any]] = [
         "insured_name": "Ashford Freight Services Ltd",
         "insured_organisation": "Ashford Freight Services Ltd",
         "insured_email": "claims@ashfordfreight.co.uk",
+        "insured_domain": "ashfordfreight.co.uk",
         "broker_name": "Merridge & Co",
         "broker_reference": "MER/AF/7781",
+        "broker_domain": "merridge.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
         "policy_type": "Motor Fleet",
         "line_of_business": "motor",
         "status": "active",
@@ -171,8 +206,11 @@ POLICIES: list[dict[str, Any]] = [
         "insured_name": "Solent Marine Cargo plc",
         "insured_organisation": "Solent Marine Cargo plc",
         "insured_email": "cargo@solentmarine.com",
+        "insured_domain": "solentmarine.com",
         "broker_name": "Ridgeway Marine",
         "broker_reference": "RM/SMC/3320",
+        "broker_domain": "ridgewaymarine.com",
+        "insurer_name": "Ardenmoor Insurance",
         "policy_type": "Marine Cargo",
         "line_of_business": "marine",
         "status": "active",
@@ -194,8 +232,11 @@ POLICIES: list[dict[str, Any]] = [
         "insured_name": "Calderwood Consulting LLP",
         "insured_organisation": "Calderwood Consulting LLP",
         "insured_email": "risk@calderwood-consulting.com",
+        "insured_domain": "calderwood-consulting.com",
         "broker_name": "Merridge & Co",
         "broker_reference": "MER/CC/5504",
+        "broker_domain": "merridge.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
         "policy_type": "Professional Indemnity",
         "line_of_business": "liability",
         "status": "lapsed",
@@ -218,8 +259,11 @@ POLICIES: list[dict[str, Any]] = [
         "insured_name": "Verity Health Systems Ltd",
         "insured_organisation": "Verity Health Systems Ltd",
         "insured_email": "security@verityhealth.io",
+        "insured_domain": "verityhealth.io",
         "broker_name": "Harding Vale Brokers",
         "broker_reference": "HVB/VH/9120",
+        "broker_domain": "hardingvale.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
         "policy_type": "Cyber & Data",
         "line_of_business": "cyber",
         "status": "active",
@@ -235,6 +279,220 @@ POLICIES: list[dict[str, Any]] = [
         "deductible_amount_minor": 25_000_00,
         "perils_covered": ["ransomware", "data breach", "business interruption"],
         "exclusions": ["unpatched known vulnerability", "war"],
+    },
+    # -- The corporate group, and why name matching alone is not enough -------
+    # A third Northline entity, on a different line of business, at a Leeds
+    # address. Its whole job is to be wrong in a way that only the location and
+    # the line of business can separate it from POL-2026-0041.
+    {
+        "policy_number": "POL-2026-0263",
+        "insured_name": "Northline Property Holdings Ltd",
+        "insured_organisation": "Northline Property Holdings Ltd",
+        "insured_email": "estates@northline-holdings.co.uk",
+        "insured_domain": "northline-holdings.co.uk",
+        "broker_name": "Harding Vale Brokers",
+        "broker_reference": "HVB/NPH/0263",
+        "broker_domain": "hardingvale.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
+        "policy_type": "Property Owners",
+        "line_of_business": "liability",
+        "status": "active",
+        "effective_date": date(TODAY.year, 1, 1),
+        "expiry_date": date(TODAY.year, 12, 31),
+        "country": "United Kingdom",
+        "region": "Yorkshire",
+        "primary_location": "Carlton House, Wellington Street, Leeds LS1 4LT",
+        "currency": "GBP",
+        "limit_amount_minor": 10_000_000_00,
+        "deductible_amount_minor": 5_000_00,
+        "perils_covered": ["public liability", "property owners liability"],
+        "exclusions": ["contractual liability", "terrorism"],
+        "locations_scheduled": [
+            ("Location 001", "Registered office",
+             "Carlton House, Wellington Street, Leeds LS1 4LT", "LS1 4LT",
+             2_400_000_00, 5_000_00, True),
+        ],
+    },
+    # -- The renewal chain ----------------------------------------------------
+    # Last year's term for the same insured, linked from this year's by
+    # `prior_policy_number` below. A loss discovered late falls in this policy and
+    # the engine says so instead of calling it uninsured.
+    {
+        "policy_number": "CP-2025-30582",
+        "insured_name": "Kelbrook Foods Limited",
+        "insured_organisation": "Kelbrook Foods Limited",
+        "insured_email": "accounts@kelbrookfoods.co.uk",
+        "insured_domain": "kelbrookfoods.co.uk",
+        "broker_name": "Thurlow Beckett",
+        "broker_reference": "TB/KF/2025",
+        "broker_domain": "thurlowbeckett.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
+        "policy_type": "Commercial Combined",
+        "line_of_business": "property",
+        "status": "lapsed",
+        "effective_date": date(TODAY.year - 1, 4, 1),
+        "expiry_date": date(TODAY.year, 3, 31),
+        "country": "United Kingdom",
+        "region": "Lancashire",
+        "primary_location": "Sough Lane, Barnoldswick BB18 5NX",
+        "currency": "GBP",
+        "limit_amount_minor": 4_000_000_00,
+        "deductible_amount_minor": 15_000_00,
+        "perils_covered": ["fire", "flood", "escape of water", "impact"],
+        "exclusions": ["wear and tear", "terrorism"],
+        "locations_scheduled": [
+            ("Location 001", "Bakery and cold store", "Sough Lane, Barnoldswick BB18 5NX",
+             "BB18 5NX", 3_200_000_00, 15_000_00, True),
+        ],
+    },
+    {
+        "policy_number": "CP-2026-30582",
+        "insured_name": "Kelbrook Foods Limited",
+        "insured_organisation": "Kelbrook Foods Limited",
+        "insured_email": "accounts@kelbrookfoods.co.uk",
+        "insured_domain": "kelbrookfoods.co.uk",
+        "broker_name": "Thurlow Beckett",
+        "broker_reference": "TB/KF/2026",
+        "broker_domain": "thurlowbeckett.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
+        "policy_type": "Commercial Combined",
+        "line_of_business": "property",
+        "status": "active",
+        "effective_date": date(TODAY.year, 4, 1),
+        "expiry_date": date(TODAY.year + 1, 3, 31),
+        "country": "United Kingdom",
+        "region": "Lancashire",
+        "primary_location": "Sough Lane, Barnoldswick BB18 5NX",
+        "currency": "GBP",
+        "limit_amount_minor": 4_500_000_00,
+        "deductible_amount_minor": 20_000_00,
+        "perils_covered": ["fire", "flood", "escape of water", "impact", "theft"],
+        "exclusions": ["wear and tear", "terrorism"],
+        "prior_policy_number": "CP-2025-30582",
+        "locations_scheduled": [
+            ("Location 001", "Bakery and cold store", "Sough Lane, Barnoldswick BB18 5NX",
+             "BB18 5NX", 3_600_000_00, 20_000_00, True),
+            ("Location 002", "Chilled distribution", "Skipton Road, Colne BB8 7DR",
+             "BB8 7DR", 900_000_00, 10_000_00, False),
+        ],
+    },
+    # -- The number decoy ----------------------------------------------------
+    # One digit from CP-2026-30582, a different insured, a different broker. It is
+    # what makes an exact-versus-near-miss distinction worth drawing at all.
+    {
+        "policy_number": "CP-2026-30583",
+        "insured_name": "Kelbridge Plant Hire Ltd",
+        "insured_organisation": "Kelbridge Plant Hire Ltd",
+        "insured_email": "office@kelbridgeplant.co.uk",
+        "insured_domain": "kelbridgeplant.co.uk",
+        "broker_name": "Merridge & Co",
+        "broker_reference": "MER/KPH/0583",
+        "broker_domain": "merridge.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
+        "policy_type": "Commercial Combined",
+        "line_of_business": "property",
+        "status": "active",
+        "effective_date": date(TODAY.year, 2, 1),
+        "expiry_date": date(TODAY.year + 1, 1, 31),
+        "country": "United Kingdom",
+        "region": "Lancashire",
+        "primary_location": "Fence Gate Works, Nelson BB9 0PT",
+        "currency": "GBP",
+        "limit_amount_minor": 2_000_000_00,
+        "deductible_amount_minor": 10_000_00,
+        "perils_covered": ["fire", "storm", "theft"],
+        "exclusions": ["wear and tear"],
+    },
+    # -- Construction: the project is the risk -------------------------------
+    # Joint names, a contract number, a works period and a twelve-month defects
+    # liability period after practical completion. Every one of those is a signal
+    # a property-shaped matcher has no way to read.
+    {
+        "policy_number": "CAR-2026-4417",
+        "insured_name": "Bellhaven Construction Limited",
+        "insured_organisation": "Bellhaven Construction Limited",
+        "insured_email": "insurance@bellhaven.build",
+        "insured_domain": "bellhaven.build",
+        "broker_name": "Thurlow Beckett",
+        "broker_reference": "TB/BC/4417",
+        "broker_domain": "thurlowbeckett.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
+        "policy_type": "Contractors All Risks",
+        "line_of_business": "construction",
+        "status": "active",
+        "effective_date": date(TODAY.year - 1, 9, 1),
+        "expiry_date": date(TODAY.year, 6, 30),
+        "country": "United Kingdom",
+        "region": "Greater Manchester",
+        "primary_location": "Bellhaven House, Talbot Road, Manchester M16 0PG",
+        "site_address": "Riverside Quarter Phase 2, Water Street, Manchester M3 4JU",
+        "project_name": "Riverside Quarter Phase 2",
+        "project_reference": "ARD/PROJ/2026/017",
+        "contract_number": "RQ2-JCT-2025-0884",
+        "principal_name": "Waterline Regeneration LLP",
+        "contractor_name": "Bellhaven Construction Limited",
+        "practical_completion_date": date(TODAY.year, 6, 30),
+        "maintenance_period_months": 12,
+        "currency": "GBP",
+        "limit_amount_minor": 18_500_000_00,
+        "deductible_amount_minor": 50_000_00,
+        "perils_covered": [
+            "damage to the works",
+            "storm",
+            "flood",
+            "fire",
+            "theft of materials",
+            "third party property damage",
+        ],
+        "exclusions": ["defective design", "consequential loss", "war"],
+        "locations_scheduled": [
+            ("Site", "The works — Riverside Quarter Phase 2",
+             "Riverside Quarter Phase 2, Water Street, Manchester M3 4JU", "M3 4JU",
+             18_500_000_00, 50_000_00, True),
+            ("Store", "Off-site materials store", "Pomona Strand, Manchester M15 4LX",
+             "M15 4LX", 750_000_00, 25_000_00, False),
+        ],
+    },
+    {
+        "policy_number": "CAR-2026-4482",
+        "insured_name": "Marchmont Civils Ltd",
+        "insured_organisation": "Marchmont Civils Ltd",
+        "insured_email": "claims@marchmontcivils.co.uk",
+        "insured_domain": "marchmontcivils.co.uk",
+        "broker_name": "Thurlow Beckett",
+        "broker_reference": "TB/MC/4482",
+        "broker_domain": "thurlowbeckett.co.uk",
+        "insurer_name": "Ardenmoor Insurance",
+        "policy_type": "Erection All Risks",
+        "line_of_business": "engineering",
+        "status": "active",
+        "effective_date": date(TODAY.year, 2, 1),
+        "expiry_date": date(TODAY.year + 1, 5, 31),
+        "country": "United Kingdom",
+        "region": "West Midlands",
+        "primary_location": "Marchmont Yard, Tyburn Road, Birmingham B24 8HJ",
+        "site_address": "Gasworks Lane Regeneration, Gasworks Lane, Wolverhampton WV1 3PT",
+        "project_name": "Gasworks Lane Regeneration",
+        "project_reference": "ARD/PROJ/2026/031",
+        "contract_number": "GLR/NEC4/0221",
+        "principal_name": "Wolverhampton Development Company",
+        "contractor_name": "Marchmont Civils Ltd",
+        "maintenance_period_months": 24,
+        "currency": "GBP",
+        "limit_amount_minor": 9_250_000_00,
+        "deductible_amount_minor": 35_000_00,
+        "perils_covered": [
+            "damage to the works",
+            "storm",
+            "collapse",
+            "third party property damage",
+        ],
+        "exclusions": ["defective workmanship", "penalties"],
+        "locations_scheduled": [
+            ("Site", "The works — Gasworks Lane",
+             "Gasworks Lane Regeneration, Gasworks Lane, Wolverhampton WV1 3PT",
+             "WV1 3PT", 9_250_000_00, 35_000_00, True),
+        ],
     },
 ]
 
@@ -418,12 +676,29 @@ No injuries. The fire service attended and has issued a report reference.
 
 
 def scenarios() -> list[dict[str, Any]]:
-    """The seven demonstration notifications, as their sources."""
+    """The demonstration notifications, as their sources.
+
+    Written as raw broker emails and call notes and run through the real pipeline,
+    never as derived values: a fixture that writes `policy_id` directly decorates
+    the screen instead of testing the system behind it.
+
+    A to G exercise reading a notice, citing it and assessing it. H to L exercise
+    *identifying the policy*, and each is built around one signal the engine has to
+    get right — a broker's own reference in place of a policy number, a scheduled
+    location, a corporate group, a construction contract, and a loss discovered
+    after the policy it belongs to has renewed.
+    """
     loss_a = TODAY - timedelta(days=6)
     loss_c = TODAY - timedelta(days=3)
     loss_d = TODAY - timedelta(days=7)
     loss_e = TODAY - timedelta(days=12)
     loss_f = TODAY - timedelta(days=8)
+    loss_h = TODAY - timedelta(days=4)
+    loss_i = TODAY - timedelta(days=9)
+    loss_j = TODAY - timedelta(days=2)
+    loss_k = TODAY - timedelta(days=11)
+    # Three weeks before this year's term began, so it falls in the prior policy.
+    loss_l = date(TODAY.year, 3, 10)
 
     return [
         # -- A. Straight-through -------------------------------------------
@@ -724,6 +999,234 @@ Not captured: policy number, insured name, date of loss, full address, estimate.
 """,
             ),
         },
+        # -- H. The broker quotes their own reference, not ours -------------
+        # The commonest real shape of a notice that a policy-number-only matcher
+        # cannot resolve: brokers quote the reference their own system prints.
+        {
+            "key": "H",
+            "kind": "email",
+            "email": IncomingEmail(
+                sender="claims@thurlowbeckett.co.uk",
+                recipient="fnol@carrier.com",
+                subject="New claim - our ref TB/KF/2026 - escape of water, Barnoldswick",
+                message_id="<tb-kf-2026-h@thurlowbeckett.co.uk>",
+                received_at=_days_ago(3),
+                from_broker=True,
+                body=f"""Dear Claims Team
+
+Please open a claim for our client under the above scheme.
+
+Our reference: TB/KF/2026
+Insured: Kelbrook Foods Limited
+Broker: Thurlow Beckett
+Reported by: Marcus Ryle
+Role: Claims Broker
+Contact email: m.ryle@thurlowbeckett.co.uk
+Phone: +44 1282 447 118
+
+I am afraid I do not have your policy number to hand — our client's schedule is
+with their finance team — but the risk is the bakery and cold store at Sough Lane.
+
+Date of loss: {loss_h.strftime("%d/%m/%Y")}
+Location: Sough Lane, Barnoldswick BB18 5NX
+Postcode: BB18 5NX
+Country: United Kingdom
+Cause: escape of water
+Description: A chilled water pipe above the packing hall failed overnight and
+discharged for several hours before it was found. Water has reached the packing
+line, the ambient store and the ground floor offices. Production has stopped.
+
+Affected property: packing hall floor and ceiling, packing line, ambient stock
+Injuries: none
+Estimated loss: GBP 210,000
+
+Kind regards
+Marcus Ryle
+Thurlow Beckett
+""",
+            ),
+        },
+        # -- I. A policy number damaged by OCR, resolved by the schedule -----
+        # The number was read off a scanned claim form, so `0` became `O`. What
+        # confirms it is the location: a loss at the second of nine scheduled
+        # premises, which a matcher comparing against a head office would miss.
+        {
+            "key": "I",
+            "kind": "email",
+            "email": IncomingEmail(
+                sender="claims@hardingvale.co.uk",
+                recipient="fnol@carrier.com",
+                subject="FNOL - Northline Logistics - refrigeration failure, Gelderd Road",
+                message_id="<hvb-fnol-ocr-i@hardingvale.co.uk>",
+                received_at=_days_ago(8),
+                from_broker=True,
+                body=f"""Dear Claims Team
+
+First notification of loss, details taken from the insured's completed claim
+form which is scanned below.
+
+Policy number: P0L-2O26-OO41
+Our reference: HVB/NL/0041
+Insured: Northline Logistics Ltd
+Broker: Harding Vale Brokers
+Reported by: Elaine Prosser
+Role: Account Handler
+Contact email: e.prosser@hardingvale.co.uk
+
+Date of loss: {loss_i.strftime("%d/%m/%Y")}
+Location: Unit 4, Gelderd Road, Leeds LS11 8AX
+Postcode: LS11 8AX
+Country: United Kingdom
+Cause: refrigeration breakdown
+Description: The compressor on the cold store at Unit 4 failed at some point over
+the weekend and was found on Monday morning. The store was holding chilled
+product which has had to be condemned. The plant itself is also damaged.
+
+Affected property: cold store compressor, chilled stock
+Injuries: none
+Estimated loss: GBP 96,500
+
+Kind regards
+Elaine Prosser
+Harding Vale Brokers
+""",
+            ),
+        },
+        # -- J. The corporate group ----------------------------------------
+        # Names the client loosely and quotes no reference at all. Two real
+        # entities on two real policies fit, and the officer has to choose.
+        {
+            "key": "J",
+            "kind": "email",
+            "email": IncomingEmail(
+                sender="claims@hardingvale.co.uk",
+                recipient="fnol@carrier.com",
+                subject="Northline - impact damage, please log",
+                message_id="<hvb-fnol-group-j@hardingvale.co.uk>",
+                received_at=_days_ago(1),
+                from_broker=True,
+                body=f"""Hello
+
+Please log the following. I am checking with the client which of their companies
+this site sits under and will confirm.
+
+Insured: Northline Logistics
+Broker: Harding Vale Brokers
+Reported by: Elaine Prosser
+Contact email: e.prosser@hardingvale.co.uk
+
+Date of loss: {loss_j.strftime("%d/%m/%Y")}
+Location: the yard, Leeds
+Country: United Kingdom
+Cause: impact
+Description: A visiting curtain-sider reversed into the loading dock canopy and
+brought down two of the support posts. Nobody was hurt. The dock is out of use
+until it has been propped.
+
+Affected property: loading dock canopy and support posts
+Injuries: none
+Estimated loss: GBP 34,000
+
+Kind regards
+Elaine Prosser
+""",
+            ),
+        },
+        # -- K. Construction, and reported by a party who is not the insured -
+        # The employer notifies on a policy written in joint names. Name matching
+        # against the named insured fails; the project and the contract resolve it.
+        {
+            "key": "K",
+            "kind": "email",
+            "email": IncomingEmail(
+                sender="insurance@waterline-regeneration.co.uk",
+                recipient="fnol@carrier.com",
+                subject="Riverside Quarter Phase 2 - storm damage to the works",
+                message_id="<wr-rq2-k@waterline-regeneration.co.uk>",
+                received_at=_days_ago(10),
+                from_broker=False,
+                body=f"""Dear Claims Team
+
+We are the employer under the contract below and are notifying damage to the
+works following Saturday night's storm. Our contractor is aware and has made the
+area safe.
+
+Project: Riverside Quarter Phase 2
+Contract number: RQ2-JCT-2025-0884
+Insured: Waterline Regeneration LLP
+Main contractor: Bellhaven Construction Limited
+Broker: Thurlow Beckett
+Reported by: Dilys Amankwah
+Role: Development Director
+Contact email: d.amankwah@waterline-regeneration.co.uk
+Phone: +44 161 445 9022
+
+Date of loss: {loss_k.strftime("%d/%m/%Y")}
+Site address: Riverside Quarter Phase 2, Water Street, Manchester M3 4JU
+Postcode: M3 4JU
+Country: United Kingdom
+Cause: storm
+Description: Overnight winds lifted a section of the temporary roof over blocks C
+and D, and rain then entered the completed floors below. Plasterboard, joinery
+and the newly laid screed on levels three and four are affected, and the tower
+crane has been stood down pending inspection. Practical completion is likely to
+slip.
+
+Affected property: temporary roof, screed and joinery to levels three and four
+Injuries: none
+Estimated loss: GBP 480,000
+
+Kind regards
+Dilys Amankwah
+Waterline Regeneration LLP
+""",
+            ),
+        },
+        # -- L. Discovered late, and it belongs to last year's policy --------
+        # The broker quotes the current number in good faith. The loss predates
+        # this term, and the useful answer is the prior policy rather than
+        # "outside the period".
+        {
+            "key": "L",
+            "kind": "email",
+            "email": IncomingEmail(
+                sender="claims@thurlowbeckett.co.uk",
+                recipient="fnol@carrier.com",
+                subject="Late notification - Kelbrook Foods - CP-2026-30582",
+                message_id="<tb-kf-late-l@thurlowbeckett.co.uk>",
+                received_at=_days_ago(2),
+                from_broker=True,
+                body=f"""Dear Claims Team
+
+Our client has only just established the extent of this and has asked us to
+notify it now. I appreciate the delay.
+
+Policy number: CP-2026-30582
+Our reference: TB/KF/2026
+Insured: Kelbrook Foods Limited
+Broker: Thurlow Beckett
+Reported by: Marcus Ryle
+Contact email: m.ryle@thurlowbeckett.co.uk
+
+Date of loss: {loss_l.strftime("%d/%m/%Y")}
+Location: Sough Lane, Barnoldswick BB18 5NX
+Postcode: BB18 5NX
+Country: United Kingdom
+Cause: impact
+Description: A delivery vehicle struck the loading bay wall in March. The damage
+looked cosmetic at the time and was not reported. A structural engineer has now
+advised that the panel has moved and the bay has had to be closed.
+
+Affected property: loading bay wall panel and door track
+Injuries: none
+Estimated loss: GBP 62,000
+
+Kind regards
+Marcus Ryle
+Thurlow Beckett
+""",
+            ),
+        },
     ]
 
 
@@ -762,6 +1265,13 @@ async def seed(*, reset: bool = False) -> None:
                 await session.execute(delete(Claim))
                 await session.execute(delete(FNOLCase))
                 await session.execute(delete(ReferenceSequence))
+                # Reference data too, and policies in particular. `_seed_reference_data`
+                # is idempotent by natural key, which means a policy row that already
+                # exists is left exactly as it was — so a book that gained a schedule of
+                # locations or a renewal link since the last run would never acquire one
+                # on a developer's machine. `--reset` means rebuild, so it rebuilds.
+                # `policy_locations` goes with them by cascade.
+                await session.execute(delete(Policy))
                 await session.flush()
 
             await _seed_reference_data(session)
@@ -778,7 +1288,14 @@ async def seed(*, reset: bool = False) -> None:
 
 
 async def _seed_reference_data(session: Any) -> None:
-    """Insert reference rows that are not already there, keyed by their natural id."""
+    """Insert reference rows that are not already there, keyed by their natural id.
+
+    Policies come in two passes because two of their columns point at other rows.
+    The schedule of locations is written as child rows in the first pass, and the
+    renewal chain is linked in the second — `prior_policy_id` cannot be set until
+    the policy it names exists, and expressing that in the literal above would mean
+    putting ids in a fixture file.
+    """
     for payload in POLICIES:
         existing = (
             (
@@ -789,8 +1306,64 @@ async def _seed_reference_data(session: Any) -> None:
             .scalars()
             .first()
         )
-        if existing is None:
-            session.add(Policy(**payload))
+        if existing is not None:
+            continue
+
+        fields = dict(payload)
+        schedule = fields.pop("locations_scheduled", [])
+        fields.pop("prior_policy_number", None)
+        policy = Policy(**fields)
+        # `locations` keeps the raw JSON form a synchronising integration would
+        # land in, derived from the schedule rather than written twice.
+        policy.locations = [
+            {
+                "location_ref": ref,
+                "description": description,
+                "address": address,
+                "postcode": postcode,
+                "sum_insured_minor": sum_insured,
+                "deductible_minor": deductible,
+                "is_primary": is_primary,
+            }
+            for ref, description, address, postcode, sum_insured, deductible, is_primary in schedule
+        ]
+        policy.locations_scheduled = [
+            PolicyLocation(
+                location_ref=ref,
+                description=description,
+                address=address,
+                postcode=postcode,
+                country=payload.get("country"),
+                sum_insured_minor=sum_insured,
+                deductible_minor=deductible,
+                is_primary=is_primary,
+            )
+            for ref, description, address, postcode, sum_insured, deductible, is_primary in schedule
+        ]
+        session.add(policy)
+
+    await session.flush()
+
+    for payload in POLICIES:
+        prior_number = payload.get("prior_policy_number")
+        if not prior_number:
+            continue
+        rows = (
+            (
+                await session.execute(
+                    select(Policy).where(
+                        Policy.policy_number.in_([payload["policy_number"], prior_number])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        by_number = {row.policy_number: row for row in rows}
+        current = by_number.get(payload["policy_number"])
+        prior = by_number.get(prior_number)
+        if current is not None and prior is not None and current.prior_policy_id is None:
+            current.prior_policy_id = prior.id
 
     for payload in CAT_EVENTS:
         existing = (

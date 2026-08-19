@@ -50,7 +50,10 @@ from app.domain.enums import (
     ExceptionStatus,
     FieldSource,
     FNOLStatus,
+    PolicyConfidence,
+    PolicyIdentificationStatus,
     PolicyMatchStrength,
+    PolicyPeriodOutcome,
     ProcessingState,
 )
 
@@ -106,6 +109,47 @@ class FNOLCase(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     #: True only once a human has accepted the match. Nothing downstream treats an
     #: unconfirmed match as authoritative.
     policy_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # --- Identification signals ---------------------------------------------
+    # Columns rather than a JSON bag, because the identification engine reads
+    # `fnol_cases` and nothing else. Promoting an extracted value to a column is
+    # what makes it a matching signal — the seam is deliberate, so "which fields
+    # matter for identifying a policy" has a structural answer rather than a
+    # conventional one.
+    #
+    # `broker_name` is held apart from `reporter_organisation`: the reporter is
+    # whoever sent the email, which on a forwarded chain is often the insured's
+    # own risk manager, and the broker is named in the signature block.
+    broker_name: Mapped[str | None] = mapped_column(String(255))
+    broker_reference: Mapped[str | None] = mapped_column(String(128), index=True)
+    #: The address of the risk, which on a liability or construction notice is not
+    #: the address the loss happened at.
+    risk_location: Mapped[str | None] = mapped_column(Text)
+    #: Extracted separately from the address, because in the UK it is the single
+    #: most discriminating token an address contains.
+    loss_postcode: Mapped[str | None] = mapped_column(String(16), index=True)
+    project_name: Mapped[str | None] = mapped_column(String(255))
+    contract_number: Mapped[str | None] = mapped_column(String(128), index=True)
+    #: The period as printed *on the notice*, for corroborating a fuzzy policy
+    #: number: "the number is close and the period agrees" is a real inference.
+    policy_period_stated: Mapped[str | None] = mapped_column(String(128))
+
+    # --- Policy identification decision --------------------------------------
+    #: Where identification has got to, as its own axis. `policy_confirmed` says
+    #: whether a policy was bound; this says whether the *question* is settled,
+    #: which is not the same thing — a notice can be referred with no policy, and
+    #: that is a decision rather than an absence of one.
+    policy_identification_status: Mapped[str] = mapped_column(
+        String(24), default=PolicyIdentificationStatus.NOT_RUN, index=True
+    )
+    policy_identification_ran_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    #: Why no policy could be identified, when an officer referred it.
+    policy_referral_reason: Mapped[str | None] = mapped_column(Text)
+    policy_referred_by: Mapped[str | None] = mapped_column(String(255))
+    policy_confirmed_by: Mapped[str | None] = mapped_column(String(255))
+    policy_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # --- Classification ------------------------------------------------------
     line_of_business: Mapped[str | None] = mapped_column(String(48), index=True)
@@ -479,19 +523,53 @@ class FNOLPolicyMatch(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     policy_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("policies.id", ondelete="CASCADE")
     )
+    #: The coarse band the queue and the exception engine read.
     match_strength: Mapped[str] = mapped_column(String(16), default=PolicyMatchStrength.POSSIBLE)
+    #: The five-band judgement the identification screen shows. Finer than
+    #: `match_strength` on purpose: `weak` is a candidate worth showing below the
+    #: line, and `rejected` is one that was compared and failed, which is a
+    #: different statement from one that was never compared at all.
+    confidence: Mapped[str] = mapped_column(String(16), default=PolicyConfidence.POSSIBLE)
     score: Mapped[float] = mapped_column(Numeric(5, 4, asdecimal=False), default=0.0)
     rank: Mapped[int] = mapped_column(Integer, default=0)
     #: `{"policy_number": 1.0, "insured_name": 0.82, ...}` — the per-signal scores.
+    #: Kept as the flat form the queue and the audit trail read.
     matched_on: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    #: The per-signal working in full: outcome, weight, both sides' values, the
+    #: sentence, and the dataset field the notice's value was read from. This is
+    #: what the candidate card renders, and it is stored rather than recomputed so
+    #: that what an officer saw when they bound a policy is recoverable later.
+    signals: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    #: Coverage plausibility, kept apart from the signals. A candidate can be
+    #: certainly the right policy and a poor fit for this loss at the same time.
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    #: The card's face, formatted once on the server: insured, period, limit,
+    #: excess and the *matched* location, which is the one the excess attaches to.
+    display: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    #: `in_force` | `in_maintenance_period` | `prior_term` | `outside_period` |
+    #: `unknown`. Five outcomes because property and construction both need them.
+    period_outcome: Mapped[str] = mapped_column(
+        String(24), default=PolicyPeriodOutcome.UNKNOWN
+    )
     reasoning: Mapped[str | None] = mapped_column(Text)
+    #: How this candidate came to be on the case: ranked by the engine, found by an
+    #: officer searching the book, or listed below the threshold as a near miss.
+    #: A manually-found policy is still persisted as a candidate before it can be
+    #: bound, which is what keeps the selection rule — a bound policy is always one
+    #: of this case's candidates — true without making manual search a dead end.
+    origin: Mapped[str] = mapped_column(String(24), default="engine")
+    #: The engine put this one forward. Never the same thing as `selected`.
+    recommended: Mapped[bool] = mapped_column(Boolean, default=False)
     selected: Mapped[bool] = mapped_column(Boolean, default=False)
     selected_by: Mapped[str | None] = mapped_column(String(255))
+    selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    engine_version: Mapped[str | None] = mapped_column(String(48))
 
     case: Mapped[FNOLCase] = relationship(back_populates="policy_matches")
 
     __table_args__ = (
         UniqueConstraint("fnol_case_id", "policy_id", name="uq_fnol_policy_candidate"),
+        Index("ix_fnol_policy_matches_case_rank", "fnol_case_id", "rank"),
     )
 
 

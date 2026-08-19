@@ -606,20 +606,29 @@ class FNOLRepository:
     ) -> Sequence[FNOLPolicyMatch]:
         """Rescore the candidate list, preserving whichever one a human chose.
 
-        Candidates are the model's working, not the officer's decision — so they
-        are replaced wholesale on every run, except that a selected candidate
-        keeps its flag.
+        Candidates are the engine's working, not the officer's decision — so they
+        are replaced wholesale on every run, with two exceptions that both exist to
+        protect a person's act. A selected candidate keeps its flag and its
+        selection even if a re-score would have dropped it. And a candidate an
+        officer found by searching the book is kept whether or not the engine
+        re-ranked it, because deleting it would make the record of the search
+        disappear along with it.
         """
         existing = {match.policy_id: match for match in await self.list_policy_matches(case_id)}
         selected_id = next(
             (policy_id for policy_id, match in existing.items() if match.selected), None
         )
-        selected_by = existing[selected_id].selected_by if selected_id else None
+        selected = existing.get(selected_id) if selected_id else None
 
         incoming_ids = {candidate["policy_id"] for candidate in candidates}
+        kept: list[FNOLPolicyMatch] = []
         for policy_id, match in existing.items():
-            if policy_id not in incoming_ids and policy_id != selected_id:
-                await self._session.delete(match)
+            if policy_id in incoming_ids:
+                continue
+            if policy_id == selected_id or match.origin == "officer_search":
+                kept.append(match)
+                continue
+            await self._session.delete(match)
 
         results: list[FNOLPolicyMatch] = []
         for index, candidate in enumerate(candidates):
@@ -628,15 +637,36 @@ class FNOLRepository:
             if match is None:
                 match = FNOLPolicyMatch(fnol_case_id=case_id, policy_id=policy_id)
                 self._session.add(match)
-            match.match_strength = candidate["match_strength"]
-            match.score = candidate["score"]
-            match.rank = index
-            match.matched_on = candidate.get("matched_on", {})
-            match.reasoning = candidate.get("reasoning")
+            _apply_candidate(match, candidate, rank=index)
             match.selected = policy_id == selected_id
-            match.selected_by = selected_by if match.selected else None
+            match.selected_by = selected.selected_by if match.selected and selected else None
+            match.selected_at = selected.selected_at if match.selected and selected else None
+            results.append(match)
+
+        # Anything held back sits after the ranked list. It was not put forward by
+        # this run and must not be drawn as though it had been.
+        for offset, match in enumerate(kept, start=len(results)):
+            match.rank = offset
             results.append(match)
         return results
+
+    async def upsert_policy_match(
+        self, case_id: uuid.UUID, candidate: dict[str, Any]
+    ) -> FNOLPolicyMatch:
+        """Record one candidate without touching the rest of the list.
+
+        What the manual path needs: an officer who found the right policy in the
+        book has it scored and stored as a candidate before it can be bound, which
+        is what keeps "a bound policy is always one of this case's candidates" true
+        without making the search a dead end.
+        """
+        match = await self.get_policy_match(case_id, candidate["policy_id"])
+        if match is None:
+            match = FNOLPolicyMatch(fnol_case_id=case_id, policy_id=candidate["policy_id"])
+            self._session.add(match)
+        _apply_candidate(match, candidate, rank=candidate.get("rank", 0))
+        await self._session.flush()
+        return match
 
     # -- Duplicates ----------------------------------------------------------
 
@@ -827,6 +857,29 @@ class FNOLRepository:
         note = FNOLNote(fnol_case_id=case_id, author=author, body=body)
         self._session.add(note)
         return note
+
+
+def _apply_candidate(
+    match: FNOLPolicyMatch, candidate: dict[str, Any], *, rank: int
+) -> None:
+    """Write one scored candidate onto its row.
+
+    In one place because two callers write the same shape, and a row half-written
+    by one of them would show an officer last run's reasons beside this run's score.
+    """
+    match.match_strength = candidate["match_strength"]
+    match.confidence = candidate.get("confidence", match.confidence)
+    match.score = candidate["score"]
+    match.rank = rank
+    match.matched_on = candidate.get("matched_on", {})
+    match.signals = candidate.get("signals", [])
+    match.warnings = candidate.get("warnings", [])
+    match.display = candidate.get("display", {})
+    match.period_outcome = candidate.get("period_outcome", "unknown")
+    match.reasoning = candidate.get("reasoning")
+    match.origin = candidate.get("origin", "engine")
+    match.recommended = bool(candidate.get("recommended", False))
+    match.engine_version = candidate.get("engine_version")
 
 
 def _lead(value: str) -> str:

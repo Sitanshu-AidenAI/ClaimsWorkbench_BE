@@ -415,9 +415,25 @@ class FNOLSettings(BaseSettings):
     # Scores are 0..1 throughout the pipeline.
     duplicate_similarity_threshold: float = 0.62
     duplicate_strong_threshold: float = 0.85
-    policy_match_exact_threshold: float = 0.99
-    policy_match_high_threshold: float = 0.80
-    policy_match_candidate_threshold: float = 0.45
+
+    # -- Policy identification -------------------------------------------------
+    # Bands on the identification engine's weighted signal-agreement score. They
+    # are floors, not the whole rule: `app/domain/policy_identification.py`
+    # classifies on a ladder that also reads *which* signals agreed, so a number
+    # above a floor can still be demoted by an identity conflict.
+    policy_identification_strong_threshold: float = 0.70
+    policy_identification_possible_threshold: float = 0.45
+    #: Below this a candidate is not shown in the ranked list at all — it goes to
+    #: the near-miss list instead, where it is labelled as below the threshold.
+    policy_identification_weak_threshold: float = 0.25
+    #: How close a second candidate has to be before the engine stops recommending
+    #: the first. Ambiguity is an outcome to surface, not one to tie-break.
+    policy_identification_ambiguity_margin: float = 0.08
+    policy_identification_max_candidates: int = 6
+    policy_identification_max_near_misses: int = 4
+    #: Ceiling on the policies handed to the engine per notice. A notice with
+    #: nothing but a country to go on must not drag the whole book into memory.
+    policy_identification_pool_limit: int = 250
     low_confidence_threshold: float = 0.60
     cat_match_threshold: float = 0.55
     cat_radius_km: float = 250.0

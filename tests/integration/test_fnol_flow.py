@@ -261,7 +261,7 @@ class TestIntakeToClaim:
         assert analyses >= {
             "extraction",
             "classification",
-            "policy_match",
+            "policy_identification",
             "completeness",
             "severity",
             "fraud",

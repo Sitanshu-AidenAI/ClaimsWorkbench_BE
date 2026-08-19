@@ -133,10 +133,86 @@ class CoverageIndicator(StrEnum):
 
 
 class PolicyMatchStrength(StrEnum):
+    """The candidate list as a whole, for the queue and the exception engine.
+
+    Coarser than `PolicyConfidence` on purpose. The board filters on it and the
+    status machine reads it, and both want the answer to "does a human have to do
+    something", not the five-band judgement the identification screen shows.
+    """
+
     EXACT = "exact"
     HIGH = "high"
     POSSIBLE = "possible"
     NONE = "none"
+
+
+class PolicyConfidence(StrEnum):
+    """How well one policy answers one notice.
+
+    Five bands rather than four, and the two additions are the useful ones.
+    `WEAK` is a candidate worth showing below the line — an officer recognises
+    the right policy at 0.3 far more often than the arithmetic does. `REJECTED`
+    is a candidate that was compared and materially failed, which is a different
+    statement from one that was never a candidate at all, and the officer who is
+    wondering why their policy is not listed needs to be able to see it.
+    """
+
+    EXACT = "exact"
+    STRONG = "strong"
+    POSSIBLE = "possible"
+    WEAK = "weak"
+    REJECTED = "rejected"
+
+
+class PolicyIdentificationStatus(StrEnum):
+    """Where the identification of one notice's policy has got to.
+
+    `NO_MATCH` and `NEEDS_REVIEW` are both "a person must act" but they are not
+    the same act: the first sends the officer to the policy book, the second sends
+    them to the candidate list. `REFERRED` is the recorded answer that no policy
+    could be identified, which is a decision and not an absence of one.
+    """
+
+    NOT_RUN = "not_run"
+    NO_MATCH = "no_match"
+    NEEDS_REVIEW = "needs_review"
+    CONFIDENT_MATCH = "confident_match"
+    CONFIRMED = "confirmed"
+    REFERRED = "referred"
+
+
+class SignalOutcome(StrEnum):
+    """What comparing one signal against one policy said.
+
+    `MISSING` and `NOT_COMPARED` are deliberately separate, and the distinction is
+    the whole reason this enum exists rather than a float. "The broker was not
+    stated on the notice" is a gap in the notice the officer can go and fill.
+    "Neither the notice nor the policy names a project" is a signal that does not
+    apply to this risk. Collapsing them into one silence tells the officer to
+    chase something that was never there.
+    """
+
+    MATCH = "match"
+    PARTIAL = "partial"
+    MISMATCH = "mismatch"
+    MISSING = "missing"
+    NOT_COMPARED = "not_compared"
+
+
+class PolicyPeriodOutcome(StrEnum):
+    """Where the date of loss falls relative to a policy's term.
+
+    Three outcomes rather than a boolean, because property and construction both
+    need the resolution: a defect discovered inside a defects liability period is
+    in cover, and a loss falling in last year's term is not a failed match but a
+    pointer at the prior policy.
+    """
+
+    IN_FORCE = "in_force"
+    IN_MAINTENANCE_PERIOD = "in_maintenance_period"
+    PRIOR_TERM = "prior_term"
+    OUTSIDE_PERIOD = "outside_period"
+    UNKNOWN = "unknown"
 
 
 class DuplicateResolution(StrEnum):
@@ -156,6 +232,10 @@ class ExceptionCode(StrEnum):
     NO_POLICY_MATCH = "no_policy_match"
     MULTIPLE_POLICY_MATCHES = "multiple_policy_matches"
     UNCONFIRMED_POLICY_MATCH = "unconfirmed_policy_match"
+    #: The reference agrees and the insured named does not. Its own code because
+    #: the remedy is different: not "choose a policy" but "check this notice
+    #: against the schedule before binding anything".
+    POLICY_IDENTITY_CONFLICT = "policy_identity_conflict"
     POSSIBLE_DUPLICATE = "possible_duplicate"
     MISSING_CRITICAL_INFORMATION = "missing_critical_information"
     HIGH_SEVERITY = "high_severity"
@@ -398,6 +478,13 @@ class AnalysisKind(StrEnum):
     COMPLETENESS = "completeness"
     DUPLICATES = "duplicates"
     POLICY_MATCH = "policy_match"
+    #: The identification engine's whole answer for a case: the signals it read off
+    #: the notice, the ranked candidates, and the near misses below the threshold.
+    #: Stored as an analysis rather than in a table of its own because it *is* a
+    #: computed reading fingerprinted by its inputs, which is exactly what this
+    #: table holds — and because the candidates that can be *acted* on already have
+    #: a table, `fnol_policy_matches`.
+    POLICY_IDENTIFICATION = "policy_identification"
     CATASTROPHE = "catastrophe"
     TRIAGE = "triage"
 
@@ -429,6 +516,8 @@ class AuditEventType(StrEnum):
     EXTRACTION_COMPLETED = "fnol.extraction_completed"
     FIELD_CHANGED = "fnol.field_changed"
     POLICY_SELECTED = "fnol.policy_selected"
+    POLICY_IDENTIFIED = "fnol.policy_identified"
+    POLICY_REFERRED = "fnol.policy_referred"
     DUPLICATE_RESOLVED = "fnol.duplicate_resolved"
     SEVERITY_OVERRIDDEN = "fnol.severity_overridden"
     CLASSIFICATION_OVERRIDDEN = "fnol.classification_overridden"

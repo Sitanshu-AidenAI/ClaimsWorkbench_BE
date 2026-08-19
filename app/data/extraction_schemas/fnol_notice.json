@@ -12,7 +12,13 @@
       "group_label": "Notification",
       "data_type": "string",
       "description": "The name of the person who reported this loss to us — the broker, the insured, the risk manager or the third-party administrator who sent the notification. Usually in the email signature, the sign-off, or a 'reported by' or 'contact' line on a claim form.",
-      "aliases": ["notifier", "contact name", "advised by", "notified by", "reported by"],
+      "aliases": [
+        "notifier",
+        "contact name",
+        "advised by",
+        "notified by",
+        "reported by"
+      ],
       "required": true,
       "position": 0
     },
@@ -22,7 +28,13 @@
       "group_label": "Notification",
       "data_type": "string",
       "description": "The company the person reporting the loss works for — the broking house, the managing agent, the TPA or the insured's own company. Often in the email signature block, the letterhead, or the sender's domain name.",
-      "aliases": ["broker", "broking house", "agency", "firm", "company"],
+      "aliases": [
+        "broker",
+        "broking house",
+        "agency",
+        "firm",
+        "company"
+      ],
       "position": 1
     },
     {
@@ -31,7 +43,11 @@
       "group_label": "Notification",
       "data_type": "string",
       "description": "The job title or capacity of the person reporting — account handler, claims broker, risk manager, fleet manager, loss adjuster. Stated under a name in a signature block or beside a contact on a claim form.",
-      "aliases": ["job title", "position", "capacity"],
+      "aliases": [
+        "job title",
+        "position",
+        "capacity"
+      ],
       "position": 2
     },
     {
@@ -40,7 +56,11 @@
       "group_label": "Notification",
       "data_type": "string",
       "description": "The email address to reply to about this notification. The sender's address on the notifying email, or a contact email printed on a claim form or in a signature block.",
-      "aliases": ["email address", "e-mail", "contact email"],
+      "aliases": [
+        "email address",
+        "e-mail",
+        "contact email"
+      ],
       "extraction_hint": "Return the address only, with no display name and no 'mailto:' prefix.",
       "required": true,
       "position": 3
@@ -51,7 +71,13 @@
       "group_label": "Notification",
       "data_type": "string",
       "description": "A telephone number for the person reporting the loss — direct dial, mobile or switchboard. Found in an email signature, on a letterhead, or beside a contact name on a claim form.",
-      "aliases": ["telephone", "mobile", "tel", "direct dial", "contact number"],
+      "aliases": [
+        "telephone",
+        "mobile",
+        "tel",
+        "direct dial",
+        "contact number"
+      ],
       "position": 4
     },
     {
@@ -74,14 +100,38 @@
       "position": 5
     },
     {
+      "key": "policy.broker_reference",
+      "label": "Broker reference",
+      "group_label": "Policy",
+      "data_type": "string",
+      "description": "The broking house's own reference for this policy or this claim, as printed in their signature block, their subject line or their claim form. Usually slash-delimited and made from initials — 'HVB/NL/0041', 'MER/AF/7781', 'our ref', 'your ref', 'scheme reference', 'client reference'. Not our policy number and not a claim number we issued.",
+      "aliases": [
+        "our ref",
+        "our reference",
+        "broker ref",
+        "broker reference",
+        "scheme reference",
+        "client reference",
+        "your ref"
+      ],
+      "extraction_hint": "Copy it exactly, keeping its slashes. Brokers quote their own reference far more consistently than they quote the carrier's policy number, so this is worth reading carefully. Leave it blank rather than repeating the policy number here.",
+      "required": false,
+      "position": 6
+    },
+    {
       "key": "policy.insured_name",
       "label": "Insured",
       "group_label": "Policy",
       "data_type": "string",
       "description": "The name of the party insured under the policy — the person or business whose loss this is. Shown against 'insured', 'assured', 'policyholder' or 'named insured' on a schedule, slip or claim form.",
-      "aliases": ["assured", "policyholder", "named insured", "client"],
+      "aliases": [
+        "assured",
+        "policyholder",
+        "named insured",
+        "client"
+      ],
       "required": true,
-      "position": 6
+      "position": 7
     },
     {
       "key": "policy.insured_organisation",
@@ -89,8 +139,30 @@
       "group_label": "Policy",
       "data_type": "string",
       "description": "The legal entity name of the insured business, including its suffix — Ltd, PLC, GmbH, Inc, BV. Distinct from a trading name or a group name; this is the entity that would appear on the contract.",
-      "aliases": ["legal entity", "company name", "corporate name"],
-      "position": 7
+      "aliases": [
+        "legal entity",
+        "company name",
+        "corporate name"
+      ],
+      "position": 8
+    },
+    {
+      "key": "policy.broker_name",
+      "label": "Broker",
+      "group_label": "Policy",
+      "data_type": "string",
+      "description": "The broking house or intermediary that placed the risk and is notifying the claim on the insured's behalf. Read from the signature block, the letterhead, the covering email's footer or the 'broker' line of a claim form. The broker is the agent of the insured, not of the insurer.",
+      "aliases": [
+        "broker",
+        "brokers",
+        "intermediary",
+        "producing broker",
+        "agent",
+        "broking house"
+      ],
+      "extraction_hint": "Name the firm, not the individual who signed. If the notice came from the insured directly with no broker involved, leave this blank rather than repeating the insured's name.",
+      "required": false,
+      "position": 9
     },
     {
       "key": "policy.policy_type",
@@ -98,8 +170,30 @@
       "group_label": "Policy",
       "data_type": "string",
       "description": "The class or product the policy is written under — commercial property, motor fleet, marine cargo, hull and machinery, employers liability, public liability, cyber, construction all-risks. Named on the schedule or in the section headings of a slip.",
-      "aliases": ["class of business", "product", "cover type", "line of business"],
-      "position": 8
+      "aliases": [
+        "class of business",
+        "product",
+        "cover type",
+        "line of business"
+      ],
+      "position": 10
+    },
+    {
+      "key": "policy.policy_period_stated",
+      "label": "Policy period as stated",
+      "group_label": "Policy",
+      "data_type": "string",
+      "description": "The period of cover as printed on the notice or on an attached schedule or certificate — '01/01/2026 to 31/12/2026', 'period of insurance', 'from … to …'. The dates the document states, not the dates of the loss.",
+      "aliases": [
+        "period of insurance",
+        "policy period",
+        "period of cover",
+        "cover from",
+        "inception to expiry"
+      ],
+      "extraction_hint": "Copy both dates as printed, in the order printed. This corroborates a policy number that is close but not exact — if the number is a near miss and the period agrees, it is very likely the same policy.",
+      "required": false,
+      "position": 11
     },
     {
       "key": "loss.date_of_loss",
@@ -107,10 +201,16 @@
       "group_label": "Loss",
       "data_type": "datetime",
       "description": "The date, and the time if it is stated, on which the loss or incident happened — not the date it was reported to us and not the date of the notifying email. Labelled 'date of loss', 'date of incident', 'occurrence date' or 'DOL', or written into the narrative of what happened.",
-      "aliases": ["date of incident", "occurrence date", "DOL", "loss date", "incident date"],
+      "aliases": [
+        "date of incident",
+        "occurrence date",
+        "DOL",
+        "loss date",
+        "incident date"
+      ],
       "extraction_hint": "Copy the date exactly as written, including the time if one is stated. Do not reformat it and do not infer it from the date of the email.",
       "required": true,
-      "position": 9
+      "position": 12
     },
     {
       "key": "loss.loss_location",
@@ -118,9 +218,32 @@
       "group_label": "Loss",
       "data_type": "text",
       "description": "Where the loss happened — the street address, site name, port, depot, junction or coordinates of the incident. Given as a risk address on a schedule, a place name in the narrative, or a location block on a claim form.",
-      "aliases": ["place of loss", "risk address", "site", "situation", "incident location"],
+      "aliases": [
+        "place of loss",
+        "risk address",
+        "site",
+        "situation",
+        "incident location"
+      ],
       "required": true,
-      "position": 10
+      "position": 13
+    },
+    {
+      "key": "loss.loss_postcode",
+      "label": "Loss postcode",
+      "group_label": "Loss",
+      "data_type": "string",
+      "description": "The postcode or ZIP code of the place the loss happened, on its own. Read out of the loss address, the site address, the claim form's address block or the incident report.",
+      "aliases": [
+        "postcode",
+        "post code",
+        "zip",
+        "zip code",
+        "postal code"
+      ],
+      "extraction_hint": "Give the full postcode in its printed form, outward and inward halves separated by a space — 'LS11 8AX'. If only a partial postcode appears, give what is printed. Never infer one from a town name.",
+      "required": false,
+      "position": 14
     },
     {
       "key": "loss.loss_country",
@@ -128,8 +251,30 @@
       "group_label": "Loss",
       "data_type": "string",
       "description": "The country the loss occurred in, as a full country name. Read from the loss address, the port of the incident or the territory named in the narrative.",
-      "aliases": ["territory", "jurisdiction", "country of loss"],
-      "position": 11
+      "aliases": [
+        "territory",
+        "jurisdiction",
+        "country of loss"
+      ],
+      "position": 15
+    },
+    {
+      "key": "loss.risk_location",
+      "label": "Risk or site address",
+      "group_label": "Loss",
+      "data_type": "string",
+      "description": "The address of the insured risk, where it differs from where the loss happened. On a liability claim the loss may occur at a third party's premises while the insured risk is elsewhere; on a construction claim the risk is the works site. Read from the schedule of locations, the contract particulars or the claim form's 'situation of risk'.",
+      "aliases": [
+        "situation of risk",
+        "risk address",
+        "site address",
+        "insured location",
+        "premises",
+        "situation"
+      ],
+      "extraction_hint": "Only fill this in when the notice states a risk or site address distinct from the loss address. If they are the same place, leave it blank — the loss location already holds it.",
+      "required": false,
+      "position": 16
     },
     {
       "key": "loss.cause_of_loss",
@@ -137,8 +282,14 @@
       "group_label": "Loss",
       "data_type": "string",
       "description": "The peril or event that caused the damage — fire, flood, storm, escape of water, theft, collision, grounding, machinery breakdown, impact, malicious damage, cyber incident. Often stated as a cause on a claim form, or evident from the first sentence of the narrative.",
-      "aliases": ["peril", "cause", "type of loss", "nature of loss", "how it happened"],
-      "position": 12
+      "aliases": [
+        "peril",
+        "cause",
+        "type of loss",
+        "nature of loss",
+        "how it happened"
+      ],
+      "position": 17
     },
     {
       "key": "loss.loss_description",
@@ -146,10 +297,16 @@
       "group_label": "Loss",
       "data_type": "text",
       "description": "The narrative of what happened: the sequence of events, what was damaged and the circumstances of the incident. The main body of the notification, an incident report, or a 'description of loss' or 'circumstances' section on a claim form.",
-      "aliases": ["circumstances", "narrative", "what happened", "incident details", "details of loss"],
+      "aliases": [
+        "circumstances",
+        "narrative",
+        "what happened",
+        "incident details",
+        "details of loss"
+      ],
       "extraction_hint": "Summarise faithfully in the source's own words and terms. Do not add facts that are not stated.",
       "required": true,
-      "position": 13
+      "position": 18
     },
     {
       "key": "loss.affected_assets",
@@ -168,7 +325,7 @@
         "stock",
         "equipment"
       ],
-      "position": 14
+      "position": 19
     },
     {
       "key": "loss.injuries",
@@ -176,9 +333,14 @@
       "group_label": "Loss",
       "data_type": "integer",
       "description": "How many people were injured in the incident. Stated as a count of casualties, injured persons or people hurt, or as an explicit statement that nobody was injured.",
-      "aliases": ["casualties", "injured persons", "people hurt", "injured parties"],
+      "aliases": [
+        "casualties",
+        "injured persons",
+        "people hurt",
+        "injured parties"
+      ],
       "extraction_hint": "Return a number. 'No injuries' and 'nobody was hurt' are both zero, which is a real answer and not a missing one.",
-      "position": 15
+      "position": 20
     },
     {
       "key": "loss.fatalities",
@@ -186,9 +348,13 @@
       "group_label": "Loss",
       "data_type": "integer",
       "description": "How many people died as a result of the incident. Stated as a count of fatalities or deaths, or as an explicit statement that there were none.",
-      "aliases": ["deaths", "deceased", "fatal injuries"],
+      "aliases": [
+        "deaths",
+        "deceased",
+        "fatal injuries"
+      ],
       "extraction_hint": "Return a number. An explicit 'no fatalities' is zero.",
-      "position": 16
+      "position": 21
     },
     {
       "key": "loss.business_interruption",
@@ -196,8 +362,14 @@
       "group_label": "Loss",
       "data_type": "boolean",
       "description": "Whether the incident stopped or reduced the insured's trading — production halted, premises closed, operations suspended, a business interruption or loss of profits claim mentioned.",
-      "aliases": ["BI", "loss of profits", "downtime", "trading interrupted", "consequential loss"],
-      "position": 17
+      "aliases": [
+        "BI",
+        "loss of profits",
+        "downtime",
+        "trading interrupted",
+        "consequential loss"
+      ],
+      "position": 22
     },
     {
       "key": "loss.structural_damage",
@@ -205,8 +377,13 @@
       "group_label": "Loss",
       "data_type": "boolean",
       "description": "Whether the fabric of a building or structure was damaged — collapse, cracking, roof or wall damage, a structural engineer instructed, a building declared unsafe.",
-      "aliases": ["building damage", "collapse", "structural engineer", "unsafe structure"],
-      "position": 18
+      "aliases": [
+        "building damage",
+        "collapse",
+        "structural engineer",
+        "unsafe structure"
+      ],
+      "position": 23
     },
     {
       "key": "loss.environmental_exposure",
@@ -214,8 +391,14 @@
       "group_label": "Loss",
       "data_type": "boolean",
       "description": "Whether anything escaped into the environment — a spill, a leak, contamination, pollution, an oil or chemical release, or an environmental regulator being notified.",
-      "aliases": ["pollution", "contamination", "spill", "leak", "environment agency"],
-      "position": 19
+      "aliases": [
+        "pollution",
+        "contamination",
+        "spill",
+        "leak",
+        "environment agency"
+      ],
+      "position": 24
     },
     {
       "key": "financial.estimated_loss",
@@ -223,10 +406,16 @@
       "group_label": "Financial",
       "data_type": "money",
       "description": "The estimated value of the loss or the amount being claimed. Given as a reserve, an estimate, a claimed amount or a total loss figure on a claim form, in the narrative, or at the foot of a schedule of damage.",
-      "aliases": ["reserve", "claim amount", "estimated quantum", "loss estimate", "amount claimed"],
+      "aliases": [
+        "reserve",
+        "claim amount",
+        "estimated quantum",
+        "loss estimate",
+        "amount claimed"
+      ],
       "extraction_hint": "Copy the amount as written, including its currency symbol or code. Do not convert between currencies.",
       "required": true,
-      "position": 20
+      "position": 25
     },
     {
       "key": "financial.currency",
@@ -234,9 +423,12 @@
       "group_label": "Financial",
       "data_type": "string",
       "description": "The currency the loss amounts are stated in, as a three-letter ISO code such as GBP, USD or EUR. Read from the currency symbol or code beside the figures.",
-      "aliases": ["ccy", "currency code"],
+      "aliases": [
+        "ccy",
+        "currency code"
+      ],
       "extraction_hint": "Return the three-letter ISO code, converting a symbol if that is all the source gives.",
-      "position": 21
+      "position": 26
     },
     {
       "key": "financial.repair_estimate",
@@ -244,8 +436,14 @@
       "group_label": "Financial",
       "data_type": "money",
       "description": "The quoted cost to repair or reinstate what was damaged. Found on a repairer's quotation, a contractor's estimate, a surveyor's costing, or a 'cost to reinstate' line.",
-      "aliases": ["quotation", "quote", "cost to reinstate", "repair cost", "estimate of repairs"],
-      "position": 22
+      "aliases": [
+        "quotation",
+        "quote",
+        "cost to reinstate",
+        "repair cost",
+        "estimate of repairs"
+      ],
+      "position": 27
     },
     {
       "key": "parties.claimant_name",
@@ -253,9 +451,15 @@
       "group_label": "Parties",
       "data_type": "string",
       "description": "The name of the person or business making the claim, when it differs from the insured — a third party pursuing the insured, an injured employee, or a cargo receiver. Named as claimant, third party, or the party bringing the claim.",
-      "aliases": ["claimant", "third party", "TP", "pursuer", "plaintiff"],
+      "aliases": [
+        "claimant",
+        "third party",
+        "TP",
+        "pursuer",
+        "plaintiff"
+      ],
       "required": true,
-      "position": 23
+      "position": 28
     },
     {
       "key": "parties.people",
@@ -264,7 +468,7 @@
       "data_type": "json",
       "description": "Everyone named in connection with the incident and their contact details — claimants, third parties, witnesses, drivers, injured persons, attending authorities, surveyors and loss adjusters.",
       "extraction_hint": "Return a JSON array. Each element is an object with the keys role, name, organisation, email and phone; use null for anything the source does not state. Valid roles are claimant, insured, broker, third_party, witness, authority, other. Return [] when nobody beyond the reporter is named.",
-      "position": 24
+      "position": 29
     },
     {
       "key": "additional.police_reference",
@@ -272,8 +476,13 @@
       "group_label": "Additional",
       "data_type": "string",
       "description": "The crime number or reference the police issued for this incident. Labelled crime reference, police reference, CAD number or incident number, and usually a mix of digits and letters.",
-      "aliases": ["crime number", "crime reference", "CAD", "police report number"],
-      "position": 25
+      "aliases": [
+        "crime number",
+        "crime reference",
+        "CAD",
+        "police report number"
+      ],
+      "position": 30
     },
     {
       "key": "additional.incident_reference",
@@ -281,8 +490,14 @@
       "group_label": "Additional",
       "data_type": "string",
       "description": "A reference given to the incident by someone other than the police or ourselves — the insured's own internal incident number, a site accident report number, a port or terminal reference, or a broker's file reference.",
-      "aliases": ["internal reference", "file reference", "our ref", "your ref", "report number"],
-      "position": 26
+      "aliases": [
+        "internal reference",
+        "file reference",
+        "our ref",
+        "your ref",
+        "report number"
+      ],
+      "position": 31
     },
     {
       "key": "additional.authorities_involved",
@@ -290,8 +505,14 @@
       "group_label": "Additional",
       "data_type": "text",
       "description": "Which authorities or emergency services attended or were notified — police, fire brigade, ambulance, coastguard, HSE, the environment agency, a port authority or a local council.",
-      "aliases": ["emergency services", "fire brigade", "police attended", "regulator", "HSE"],
-      "position": 27
+      "aliases": [
+        "emergency services",
+        "fire brigade",
+        "police attended",
+        "regulator",
+        "HSE"
+      ],
+      "position": 32
     },
     {
       "key": "additional.potential_litigation",
@@ -299,8 +520,14 @@
       "group_label": "Additional",
       "data_type": "boolean",
       "description": "Whether legal proceedings are threatened or under way — solicitors instructed, a letter of claim received, proceedings issued, a claim form served, or a party stating it will sue.",
-      "aliases": ["solicitors", "legal action", "proceedings", "letter of claim", "litigation"],
-      "position": 28
+      "aliases": [
+        "solicitors",
+        "legal action",
+        "proceedings",
+        "letter of claim",
+        "litigation"
+      ],
+      "position": 33
     },
     {
       "key": "documents.supporting",
@@ -308,8 +535,69 @@
       "group_label": "Additional",
       "data_type": "text",
       "description": "What supporting material is enclosed or promised — photographs, a survey report, an invoice, a repair quotation, a police report, a schedule of values, witness statements or a claim form.",
-      "aliases": ["enclosures", "attachments", "attached", "enclosed", "please find"],
-      "position": 29
+      "aliases": [
+        "enclosures",
+        "attachments",
+        "attached",
+        "enclosed",
+        "please find"
+      ],
+      "position": 34
+    },
+    {
+      "key": "project.project_name",
+      "label": "Project",
+      "group_label": "Project",
+      "data_type": "string",
+      "description": "The name of the construction project or works the loss relates to — 'Riverside Quarter Phase 2', 'Gasworks Lane Regeneration'. Read from the subject line, the contract particulars, the site diary or the claim form. Often the site's street name is used in place of the contractual project name.",
+      "aliases": [
+        "project",
+        "project name",
+        "the works",
+        "scheme",
+        "development",
+        "contract title"
+      ],
+      "extraction_hint": "Copy the name as the notice writes it, including any phase number. Leave blank for a risk that is not a construction or engineering one.",
+      "required": false,
+      "position": 35
+    },
+    {
+      "key": "project.contract_number",
+      "label": "Contract number",
+      "group_label": "Project",
+      "data_type": "string",
+      "description": "The contract, works order or job reference the project is carried out under, as printed on the contract particulars, the order, the site paperwork or the claim form. On a construction risk this identifies the policy more reliably than any name does.",
+      "aliases": [
+        "contract no",
+        "contract reference",
+        "works order",
+        "job number",
+        "job reference",
+        "order number"
+      ],
+      "extraction_hint": "Copy the reference exactly. Employer's contract reference, contractor's job number and the insurer's project reference are three different numbers all called 'the contract number' — give the one the notice prints, and do not construct one.",
+      "required": false,
+      "position": 36
+    },
+    {
+      "key": "project.contract_parties",
+      "label": "Contract parties",
+      "group_label": "Project",
+      "data_type": "string",
+      "description": "The employer or principal, the main contractor and any subcontractor named in connection with the works. A construction policy is written in joint names, so the party reporting a loss is often an insured for their interest without being the named insured.",
+      "aliases": [
+        "employer",
+        "principal",
+        "main contractor",
+        "contractor",
+        "subcontractor",
+        "joint names",
+        "developer"
+      ],
+      "extraction_hint": "List each party and the role the notice gives them, one per line. Leave blank when the notice names no contract parties.",
+      "required": false,
+      "position": 37
     }
   ]
 }

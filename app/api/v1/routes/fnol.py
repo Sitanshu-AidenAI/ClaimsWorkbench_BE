@@ -27,19 +27,23 @@ from app.api.deps.services import FNOLContext, FNOLContextDep
 from app.core.errors import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.core.security import Principal
+from app.domain import policy_identification as engine
 from app.domain.enums import (
     FNOL_DELETE_ROLES,
     FNOL_READ_ROLES,
     FNOL_WRITE_ROLES,
+    AnalysisKind,
     AuditEventType,
     DocumentIndexStatus,
     DuplicateResolution,
     ExceptionStatus,
     FNOLChannel,
     FNOLStatus,
+    PolicyIdentificationStatus,
     Severity,
+    SignalOutcome,
 )
-from app.domain.lifecycle import BLOCKING_EXCEPTIONS
+from app.domain.lifecycle import BLOCKING_EXCEPTIONS, can_transition
 from app.domain.normalisation import parse_line_of_business
 from app.domain.rules import valid_loss_type
 from app.models.fnol import FNOLCase
@@ -725,6 +729,150 @@ async def _document_of(context: FNOLContext, case: FNOLCase, document_id: uuid.U
     return document
 
 
+async def _identification_view(
+    context: FNOLContext, case: FNOLCase
+) -> api.PolicyIdentificationOut:
+    """Assemble the identification stage's whole answer.
+
+    The near misses are read out of the stored analysis and re-hydrated against the
+    policy rows they name. A policy that has since been deleted from the book simply
+    drops out rather than being reported as a candidate that cannot be opened — a
+    stale explanation is worth less than a short one.
+    """
+    signals = engine.searched_on(await context.identification.notice_signals(case))
+    stored = await context.cases.get_analysis(case.id, AnalysisKind.POLICY_IDENTIFICATION)
+    payload: dict[str, Any] = (stored.result or {}) if stored is not None else {}
+
+    matches = await context.cases.list_policy_matches(case.id)
+    candidates: list[api.PolicyCandidateOut] = []
+    for match in matches:
+        policy = await context.policies.get(match.policy_id)
+        if policy is not None:
+            candidates.append(api.to_policy_candidate(match, policy))
+
+    near_misses: list[api.PolicyCandidateOut] = []
+    for entry in payload.get("near_misses", []) or []:
+        candidate = await _near_miss(context, entry)
+        if candidate is not None:
+            near_misses.append(candidate)
+
+    selected = next((match for match in matches if match.selected), None)
+    present = [signal for signal in signals if signal.outcome is SignalOutcome.MATCH]
+
+    return api.PolicyIdentificationOut(
+        reference=case.reference,
+        status=case.policy_identification_status,
+        strength=str(payload.get("strength", "none")),
+        ran_at=case.policy_identification_ran_at,
+        engine_version=str(payload.get("engine_version") or engine.ENGINE_VERSION),
+        policies_compared=int(payload.get("policies_compared", 0) or 0),
+        extracted_signals=[_extracted_signal(signal) for signal in signals],
+        signals_present=len(present),
+        signals_missing=len(signals) - len(present),
+        candidates=candidates,
+        near_misses=near_misses,
+        recommended_policy_id=_optional_uuid(payload.get("recommended_policy_id")),
+        selected_policy_id=selected.policy_id if selected is not None else None,
+        policy_confirmed=bool(case.policy_confirmed),
+        confirmed_by=case.policy_confirmed_by,
+        confirmed_at=case.policy_confirmed_at,
+        referral_reason=case.policy_referral_reason,
+        referred_by=case.policy_referred_by,
+        decided=bool(case.policy_confirmed)
+        or case.policy_identification_status == PolicyIdentificationStatus.REFERRED,
+    )
+
+
+async def _near_miss(context: FNOLContext, entry: dict[str, Any]) -> api.PolicyCandidateOut | None:
+    """One below-threshold candidate, read back out of the stored analysis.
+
+    Shown because an officer recognises the right policy at 0.3 far more often than
+    the arithmetic does, and labelled by its `rejected` confidence so nothing about
+    the row suggests the engine put it forward.
+    """
+    policy_id = _optional_uuid(entry.get("policy_id"))
+    if policy_id is None:
+        return None
+    policy = await context.policies.get(policy_id)
+    if policy is None:
+        return None
+    return api.to_policy_candidate(_StoredCandidate(policy_id, entry), policy)
+
+
+class _StoredCandidate:
+    """A candidate from the analysis blob, in the shape the row mapper reads.
+
+    A shim rather than a second mapper: the near misses and the persisted candidates
+    are the same thing at different stages of a decision, and drawing them through
+    two code paths is how the two lists start disagreeing about what a score means.
+    """
+
+    __slots__ = (
+        "confidence",
+        "display",
+        "engine_version",
+        "match_strength",
+        "matched_on",
+        "origin",
+        "period_outcome",
+        "policy_id",
+        "rank",
+        "reasoning",
+        "recommended",
+        "score",
+        "selected",
+        "selected_at",
+        "selected_by",
+        "signals",
+        "warnings",
+    )
+
+    def __init__(self, policy_id: uuid.UUID, entry: dict[str, Any]) -> None:
+        self.policy_id = policy_id
+        self.match_strength = str(entry.get("match_strength", "none"))
+        self.confidence = str(entry.get("confidence", "rejected"))
+        self.score = float(entry.get("score", 0.0) or 0.0)
+        self.rank = int(entry.get("rank", 0) or 0)
+        self.matched_on = entry.get("matched_on") or {}
+        self.signals = entry.get("signals") or []
+        self.warnings = entry.get("warnings") or []
+        self.display = entry.get("display") or {}
+        self.period_outcome = str(entry.get("period_outcome", "unknown"))
+        self.reasoning = entry.get("reasoning")
+        self.origin = "engine"
+        self.recommended = False
+        self.selected = False
+        self.selected_by = None
+        self.selected_at = None
+        self.engine_version = entry.get("engine_version")
+
+
+def _extracted_signal(signal: Any) -> api.ExtractedSignalOut:
+    return api.ExtractedSignalOut(
+        signal=signal.signal,
+        label=signal.label,
+        axis=signal.axis.value,
+        outcome=signal.outcome.value,
+        value=signal.notice_value,
+        explanation=signal.explanation,
+        confidence=signal.score,
+        weight=signal.weight,
+        evidence_field_key=signal.evidence_field_key,
+        document_id=signal.document_id if isinstance(signal.document_id, uuid.UUID) else None,
+        page_number=signal.page_number,
+        quote=signal.quote,
+    )
+
+
+def _optional_uuid(value: Any) -> uuid.UUID | None:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Human review
 # ---------------------------------------------------------------------------
@@ -755,10 +903,80 @@ async def update_fields(
     return await build_detail(context, case)
 
 
+# ---------------------------------------------------------------------------
+# Policy identification
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{reference}/policy-identification",
+    response_model=api.PolicyIdentificationOut,
+    summary="Which policy this notice belongs to, and why",
+)
+async def policy_identification(
+    reference: str,
+    context: FNOLContextDep,
+    principal: ReadAccess,
+) -> api.PolicyIdentificationOut:
+    """The whole first-stage answer in one call.
+
+    Three things, and they are read from three places on purpose. The **signals**
+    are rebuilt from the case every time, because an officer who has just corrected
+    an insured name must see the corrected one. The **candidates** come from the
+    rows an officer can act on, which is what makes the selection rule enforceable.
+    The **near misses** come from the stored analysis, because they were compared
+    and rejected — they are an explanation, not an option, until someone chooses one.
+    """
+    del principal
+    case = await context.fnol.get(reference)
+    return await _identification_view(context, case)
+
+
+@router.post(
+    "/{reference}/policy-identification",
+    response_model=api.PolicyIdentificationOut,
+    summary="Identify the policy again",
+)
+async def rerun_policy_identification(
+    reference: str,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.PolicyIdentificationOut:
+    """Re-run identification alone, without re-reading the notice.
+
+    Its own endpoint rather than a flag on `/process` because the two answer
+    different questions. Re-reading the notice costs a model call and moves every
+    extracted value; re-identifying costs one query and a few hundred comparisons,
+    and is what an officer wants after a policy has been loaded into the book or
+    after they have corrected the insured's name.
+
+    A notice that has already been confirmed is left alone: re-running would
+    reshuffle candidates behind a decision somebody has already taken.
+    """
+    del principal
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+
+    if case.policy_confirmed:
+        raise ValidationError(
+            "A policy has already been confirmed on this notification. Change the "
+            "selection instead of re-running identification."
+        )
+
+    result = await context.identification.identify(case)
+    await context.commit()
+    logger.info(
+        "fnol_policy_identification_rerun",
+        reference=case.reference,
+        candidates=len(result.candidates),
+    )
+    return await _identification_view(context, case)
+
+
 @router.post(
     "/{reference}/policy-selection",
     response_model=api.FNOLDetail,
-    summary="Choose the policy this notice belongs to",
+    summary="Confirm the policy this notice belongs to",
 )
 async def select_policy(
     reference: str,
@@ -766,16 +984,29 @@ async def select_policy(
     context: FNOLContextDep,
     principal: WriteAccess,
 ) -> api.FNOLDetail:
+    """The officer's decision, recorded and made authoritative.
+
+    The policy has to be a **record in the database**, and that is the whole of the
+    safety rule: an id that does not resolve is refused, so no AI output and no
+    mistyped request can attach a claim to a policy that does not exist. It does not
+    have to be one the engine ranked — a policy an officer found in the book is
+    scored and persisted as a candidate first, which keeps "the bound policy is one
+    of this case's candidates" true while letting the search actually be used.
+
+    The pipeline is re-run afterwards because confirming a policy changes the
+    coverage read, the limit check and the exception list — a response that returned
+    only the selection would leave five panels describing the case as it was.
+    """
     case = await context.fnol.get(reference)
     _refuse_if_converted(case)
 
-    policy = await context.policy_matching.select(
-        case, payload.policy_id, actor=actor_of(principal)
+    policy = await context.identification.confirm(
+        case, payload.policy_id, actor=actor_of(principal), reason=payload.reason
     )
     if policy is None:
         raise ValidationError(
-            "That policy is not one of the candidates on this notification. "
-            "Search for it first so the match is recorded."
+            "No policy with that identifier exists in the policy book. Search for the "
+            "policy and select it from the results."
         )
 
     context.audit.fnol(
@@ -792,6 +1023,47 @@ async def select_policy(
     return await build_detail(context, case)
 
 
+@router.post(
+    "/{reference}/policy-referral",
+    response_model=api.FNOLDetail,
+    summary="Record that no policy could be identified",
+)
+async def refer_no_policy(
+    reference: str,
+    payload: api.PolicyReferralRequest,
+    context: FNOLContextDep,
+    principal: WriteAccess,
+) -> api.FNOLDetail:
+    """The honest ending when the book holds no answer.
+
+    A decision, not a gap, which is why it takes a reason and why it moves the
+    notice to `referred` rather than leaving it in the queue looking unworked. The
+    next person to open it needs to know what was already tried.
+    """
+    case = await context.fnol.get(reference)
+    _refuse_if_converted(case)
+
+    await context.identification.refer(case, actor=actor_of(principal), reason=payload.reason)
+
+    context.audit.fnol(
+        case,
+        event_type=AuditEventType.POLICY_REFERRED,
+        summary=f"No policy identified; referred by {actor_of(principal)}.",
+        actor=actor_of(principal),
+        context={"reason": payload.reason},
+    )
+
+    # Moved to `referred` when the state machine allows it. A notice that is
+    # already terminal keeps its status: a referral of something that has become a
+    # claim is refused above, and one that was cancelled is not worth reopening.
+    if can_transition(FNOLStatus(case.status), FNOLStatus.REFERRED):
+        await context.fnol.transition(
+            case, FNOLStatus.REFERRED, actor=actor_of(principal), reason=payload.reason
+        )
+    await context.commit()
+    return await build_detail(context, case)
+
+
 @router.get(
     "/{reference}/policy-search",
     response_model=api.PolicySearchResult,
@@ -803,21 +1075,26 @@ async def search_policies(
     principal: ReadAccess,
     q: Annotated[str, Query(min_length=2, max_length=120)],
 ) -> api.PolicySearchResult:
-    """What an officer uses when nothing matched automatically.
+    """What an officer uses when the engine ranked the wrong policies.
 
-    Returns candidates in the same shape as the automatic ones so the frontend
-    draws one list, and so selecting a searched policy goes through exactly the
-    same confirmation path as selecting a suggested one.
+    Results carry the same per-signal working the ranked candidates do, scored
+    against this notice. That is the difference between a fallback and an
+    afterthought: an officer comparing four policies they found by hand needs to see
+    why each does and does not fit, or they are choosing blind.
+
+    Nothing is persisted. Searching is looking; only confirming is deciding.
     """
     del principal
     case = await context.fnol.get(reference)
-    policies = await context.policies.find_candidates(
-        policy_number=q, insured_name=q, organisation=q, broker=q, limit=20
-    )
-    matches = {match.policy_id: match for match in await context.cases.list_policy_matches(case.id)}
-    return api.PolicySearchResult(
-        items=[api.to_policy_candidate(matches.get(policy.id), policy) for policy in policies]
-    )
+    scored = await context.identification.search(case, q)
+
+    items: list[api.PolicyCandidateOut] = []
+    for candidate in scored:
+        policy = await context.policies.get(candidate.policy_id)
+        if policy is not None:
+            items.append(api.to_scored_candidate(candidate, policy))
+
+    return api.PolicySearchResult(items=items, term=q, exhausted=not items)
 
 
 @router.post(
@@ -1216,6 +1493,15 @@ async def build_detail(context: FNOLContext, case: FNOLCase) -> api.FNOLDetail:
         policy_type=case.policy_type,
         policy_id=case.policy_id,
         policy_confirmed=bool(case.policy_confirmed),
+        policy_identification_status=case.policy_identification_status,
+        policy_referral_reason=case.policy_referral_reason,
+        broker_name=case.broker_name,
+        broker_reference=case.broker_reference,
+        risk_location=case.risk_location,
+        loss_postcode=case.loss_postcode,
+        project_name=case.project_name,
+        contract_number=case.contract_number,
+        policy_period_stated=case.policy_period_stated,
         line_of_business=case.line_of_business,
         claim_type=case.claim_type,
         loss_type=case.loss_type,

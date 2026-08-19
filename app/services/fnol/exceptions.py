@@ -64,12 +64,16 @@ class ExceptionService:
         extraction_confidence: float | None,
         unreadable_documents: int,
         raw_loss_date: str | None = None,
+        #: The top candidate's reference agrees and its insured name does not.
+        #: Defaulted so every existing caller and test is unaffected.
+        identity_conflict: bool = False,
     ) -> list[RaisedException]:
         """Recompute the whole exception list and persist the difference."""
         raised = self._collect(
             case,
             policy_strength=policy_strength,
             policy_candidates=policy_candidates,
+            identity_conflict=identity_conflict,
             policy=policy,
             duplicates=duplicates,
             completeness=completeness,
@@ -118,6 +122,7 @@ class ExceptionService:
         extraction_confidence: float | None,
         unreadable_documents: int,
         raw_loss_date: str | None,
+        identity_conflict: bool = False,
     ) -> list[RaisedException]:
         raised: list[RaisedException] = []
 
@@ -135,7 +140,25 @@ class ExceptionService:
 
         # --- Policy ---------------------------------------------------------
         if not case.policy_confirmed:
-            if policy_strength is PolicyMatchStrength.NONE:
+            if identity_conflict:
+                # Its own code, and it outranks the others: a reference that agrees
+                # while the insured named does not is not "choose between these
+                # candidates", it is "do not bind anything until you have read the
+                # schedule". A policy number is the strongest signal the engine has,
+                # so a notice that carries one and still names the wrong client is
+                # the one case where the strongest signal is the least trustworthy.
+                raised.append(
+                    RaisedException(
+                        ExceptionCode.POLICY_IDENTITY_CONFLICT,
+                        ExceptionSeverity.CRITICAL,
+                        "Policy reference and insured do not agree",
+                        "The reference quoted matches a policy, but the insured named on "
+                        "the notification is not the insured on that policy. Check the "
+                        "notice against the schedule before binding it.",
+                        {"candidates": policy_candidates},
+                    )
+                )
+            elif policy_strength is PolicyMatchStrength.NONE:
                 raised.append(
                     RaisedException(
                         ExceptionCode.NO_POLICY_MATCH,

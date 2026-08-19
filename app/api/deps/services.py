@@ -44,11 +44,11 @@ from app.services.fnol.deletion import FNOLDeletionService
 from app.services.fnol.evidence import FNOLEvidenceService
 from app.services.fnol.exceptions import ExceptionService
 from app.services.fnol.extraction import FNOLExtractionService
+from app.services.fnol.identification import PolicyIdentificationService
 from app.services.fnol.ingestion import FNOLIngestionService
 from app.services.fnol.matching import (
     CatastropheMatchingService,
     DuplicateDetectionService,
-    PolicyMatchingService,
 )
 from app.services.fnol.pipeline import FNOLPipeline
 from app.services.fnol.service import FNOLService
@@ -118,7 +118,12 @@ class FNOLContext:
     #: index and the mailbox ledger — collaborators the case service has no other
     #: reason to know about.
     deletion: FNOLDeletionService
-    policy_matching: PolicyMatchingService
+    #: Policy identification: the first decision on a notice, and the one the
+    #: assessment and the claim both reason against. Held on the context because the
+    #: identification route reads and re-runs it directly rather than through the
+    #: whole pipeline — an officer correcting a candidate should not have to wait for
+    #: the fraud score to be recomputed.
+    identification: PolicyIdentificationService
     triage: TriageService
     assignment: AssignmentService
     documents: DocumentProcessingService
@@ -208,7 +213,7 @@ def build_pipeline(
             cases, provider=provider, evidence=FNOLEvidenceService(retrieval)
         ),
         classification=ClassificationService(provider=provider),
-        policy_matching=PolicyMatchingService(policies, cases),
+        identification=PolicyIdentificationService(policies, cases),
         duplicates=DuplicateDetectionService(cases, claims),
         catastrophe=CatastropheMatchingService(cat_events),
         assessments=AssessmentServices(cases),
@@ -245,7 +250,7 @@ def build_context(
 
     triage = TriageService(claims)
     assignment = AssignmentService(handlers, claims)
-    policy_matching = PolicyMatchingService(policies, cases)
+    identification = PolicyIdentificationService(policies, cases)
 
     chunks, retrieval, index = build_intelligence(session, embeddings=embeddings, vectors=vectors)
     pipeline = build_pipeline(session, provider=provider, embeddings=embeddings, vectors=vectors)
@@ -282,7 +287,7 @@ def build_context(
             documents=documents,
             vectors=vectors,
         ),
-        policy_matching=policy_matching,
+        identification=identification,
         triage=triage,
         assignment=assignment,
         documents=documents,

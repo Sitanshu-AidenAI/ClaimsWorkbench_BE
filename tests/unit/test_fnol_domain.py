@@ -3,6 +3,11 @@
 Everything in `app.domain` is a pure function over plain objects, which is the
 whole reason it lives there: these tests are the ones that have to keep working
 when the language model, the schema and the API all change around them.
+
+Policy identification is tested in `test_policy_identification.py` rather than
+here. It moved out with the engine: the tests it needs are about signal outcomes,
+confidence bands and the wording of reasons rather than about a score, and they
+are worth reading as a group.
 """
 
 from __future__ import annotations
@@ -13,14 +18,13 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.config import FNOLSettings
-from app.domain import assessment, catastrophe, duplicates, matching, normalisation, policy_match
+from app.domain import assessment, catastrophe, duplicates, matching, normalisation
 from app.domain import triage as triage_rules
 from app.domain.enums import (
     CoverageIndicator,
     ExceptionCode,
     FNOLStatus,
     LineOfBusiness,
-    PolicyMatchStrength,
     Priority,
     RiskLevel,
     Severity,
@@ -194,49 +198,6 @@ class TestMatching:
         leeds_to_york = matching.haversine_km(53.8008, -1.5491, 53.9599, -1.0873)
         assert leeds_to_york is not None
         assert 30 < leeds_to_york < 45
-
-
-# ---------------------------------------------------------------------------
-# Policy matching
-# ---------------------------------------------------------------------------
-
-
-class TestPolicyMatching:
-    def test_an_exact_number_on_an_in_force_policy_is_an_exact_match(self) -> None:
-        case = make_case(
-            policy_number="POL-2026-0041",
-            insured_name="Northline Logistics Ltd",
-            date_of_loss=datetime(2026, 8, 3, tzinfo=UTC),
-        )
-        candidate = policy_match.score_policy(case, make_policy(), config=CONFIG)
-        assert candidate.strength is PolicyMatchStrength.EXACT
-        assert "the policy number matches exactly" in candidate.reasoning
-
-    def test_a_policy_out_of_force_is_still_ranked_but_says_so(self) -> None:
-        case = make_case(
-            policy_number="POL-2026-0041", date_of_loss=datetime(2027, 8, 3, tzinfo=UTC)
-        )
-        candidate = policy_match.score_policy(case, make_policy(), config=CONFIG)
-        assert candidate.strength is not PolicyMatchStrength.EXACT
-        assert "NOT in force" in candidate.reasoning
-
-    def test_a_notice_with_no_identifying_signal_matches_nothing(self) -> None:
-        # Line of business and dates describe the claim, not the insured. A
-        # candidate list built from those alone would be the whole book.
-        case = make_case(line_of_business="property")
-        assert policy_match.rank_candidates(case, [make_policy()], config=CONFIG) == []
-
-    def test_two_strong_candidates_is_a_choice_for_a_human(self) -> None:
-        case = make_case(insured_name="Northline Logistics", policy_number="POL-2026")
-        candidates = policy_match.rank_candidates(
-            case,
-            [make_policy(), make_policy(id="policy-2", policy_number="POL-2026-0198")],
-            config=CONFIG,
-        )
-        assert len(candidates) == 2
-        assert policy_match.overall_strength(candidates, config=CONFIG) is (
-            PolicyMatchStrength.POSSIBLE
-        )
 
 
 # ---------------------------------------------------------------------------
