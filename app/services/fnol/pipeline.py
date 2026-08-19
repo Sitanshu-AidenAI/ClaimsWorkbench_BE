@@ -6,7 +6,7 @@ match a policy before you have read the notice. Written as one readable sequence
 rather than buried in a controller, so the order is reviewable by someone who
 knows claims and not Python.
 
-    index documents → extract → classify → match policy → check completeness
+    index documents → extract → classify → identify the policy → check completeness
     → detect duplicates → assess severity, fraud and coverage → match catastrophe
     → summarise → raise exceptions → set status
 
@@ -63,10 +63,10 @@ from app.services.fnol.body import NotificationBodyDocumentService
 from app.services.fnol.classification import ClassificationService
 from app.services.fnol.exceptions import ExceptionService
 from app.services.fnol.extraction import FNOLExtractionService
+from app.services.fnol.identification import PolicyIdentificationService
 from app.services.fnol.matching import (
     CatastropheMatchingService,
     DuplicateDetectionService,
-    PolicyMatchingService,
 )
 from app.services.fnol.summary import FNOLSummaryService
 from app.services.intelligence.indexing import CaseIndexOutcome, DocumentIndexService
@@ -116,7 +116,7 @@ class FNOLPipeline:
         policies: PolicyRepository,
         extraction: FNOLExtractionService,
         classification: ClassificationService,
-        policy_matching: PolicyMatchingService,
+        identification: PolicyIdentificationService,
         duplicates: DuplicateDetectionService,
         catastrophe: CatastropheMatchingService,
         assessments: AssessmentServices,
@@ -161,7 +161,7 @@ class FNOLPipeline:
         self._policies = policies
         self._extraction = extraction
         self._classification = classification
-        self._policy_matching = policy_matching
+        self._identification = identification
         self._duplicates = duplicates
         self._catastrophe = catastrophe
         self._assessments = assessments
@@ -455,23 +455,29 @@ class FNOLPipeline:
                 confidence=classification.confidence,
             )
 
-        # --- 3. Policy matching ---------------------------------------------
-        policy_outcome = await self._policy_matching.match(case)
+        # --- 3. Policy identification ---------------------------------------
+        # The first decision on the notice, and the one the rest of the pipeline
+        # depends on: coverage, the limit check and the claim all reason against a
+        # policy. The whole answer is stored — the signals read off the notice, the
+        # ranked candidates and the near misses below the line — because "why is my
+        # policy not in the list" has to be answerable, and only the candidates an
+        # officer can *act* on become rows.
+        identification = await self._identification.identify(case)
         await self._repository.record_analysis(
             case.id,
-            kind=AnalysisKind.POLICY_MATCH,
+            kind=AnalysisKind.POLICY_IDENTIFICATION,
             provider="deterministic",
             model=None,
             input_fingerprint=fingerprint,
-            result=policy_outcome.as_dict(),
-            confidence=policy_outcome.best.score if policy_outcome.best else None,
+            result=identification.as_dict(),
+            confidence=identification.best.score if identification.best else None,
         )
         # The best candidate stands in for the bound policy while the match is
         # unconfirmed, so coverage can say "review required" rather than "no
         # policy located" about a notice that plainly has one. Nothing treats it
         # as authoritative: `policy_confirmed` is what the coverage verdict and
         # the exception engine read.
-        policy = await self._resolve_policy(case, policy_outcome)
+        policy = await self._resolve_policy(case, identification)
 
         # --- 4. Duplicates ---------------------------------------------------
         duplicate_outcome = await self._duplicates.detect(case)
@@ -538,8 +544,9 @@ class FNOLPipeline:
         # --- 8. Exceptions ----------------------------------------------------
         raised = await self._exceptions.evaluate(
             case,
-            policy_strength=policy_outcome.strength,
-            policy_candidates=len(policy_outcome.candidates),
+            policy_strength=identification.strength,
+            policy_candidates=len(identification.candidates),
+            identity_conflict=_identity_conflict(identification),
             policy=policy,
             duplicates=duplicate_rows,
             completeness=assessment.completeness,
@@ -711,7 +718,7 @@ class FNOLPipeline:
             retrieval_used=outcome.run.retrieval_strategy not in (None, "none", "whole-corpus"),
         )
 
-    async def _resolve_policy(self, case: FNOLCase, outcome: Any) -> Any | None:
+    async def _resolve_policy(self, case: FNOLCase, identification: Any) -> Any | None:
         """The policy the rest of the pipeline reasons against.
 
         The bound policy when there is one, otherwise the strongest candidate.
@@ -722,8 +729,8 @@ class FNOLPipeline:
         """
         if case.policy_id:
             return await self._policies.get(case.policy_id)
-        if outcome.best is not None:
-            return await self._policies.get(outcome.best.policy_id)
+        if identification.best is not None:
+            return await self._policies.get(identification.best.policy_id)
         return None
 
     async def _policy_line(self, case: FNOLCase) -> LineOfBusiness | None:
@@ -809,6 +816,23 @@ def _summary_facts(
         "severity": assessment.severity.severity.value,
         "coverage": assessment.coverage.indicator.value,
     }
+
+
+def _identity_conflict(identification: Any) -> bool:
+    """The top candidate's reference agrees and its insured name does not.
+
+    Raised as its own exception rather than folded into "unconfirmed match",
+    because the remedy is different: not "choose a policy" but "check this notice
+    against the schedule before binding anything". It is the shape of a broker
+    quoting a reference off the wrong covering schedule, and it is precisely the
+    case where binding automatically would attach a claim to the wrong client.
+    """
+    best = identification.best
+    if best is None:
+        return False
+    return any(
+        warning.code == "identity_conflict" for warning in best.warnings
+    )
 
 
 def _casualties(injuries: int | None, fatalities: int | None) -> str:

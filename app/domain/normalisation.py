@@ -200,6 +200,30 @@ def parse_phone(value: str | None) -> str | None:
     return cleaned if 7 <= len(cleaned.lstrip("+")) <= 15 else None
 
 
+#: A UK postcode, and only a UK postcode. Written strictly because the value of
+#: this field is that it is *exact*: a partial match on a loose pattern would put
+#: two unrelated businesses in the same candidate list and cost the signal its
+#: whole discriminating power.
+_POSTCODE_RE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b", re.IGNORECASE)
+
+
+def parse_postcode(value: str | None) -> str | None:
+    """A postcode in its canonical printed form, or `None`.
+
+    Normalised to `LS11 8AX` — outward and inward halves, one space, uppercase —
+    so that a postcode read from a claim form and one read from an email compare
+    equal. Anything the pattern does not recognise reads as missing rather than
+    being stored as a guess: this field exists to be compared exactly, and an
+    approximate postcode is worse than none.
+    """
+    if not value:
+        return None
+    found = _POSTCODE_RE.search(value)
+    if not found:
+        return None
+    return f"{found.group(1).upper()} {found.group(2).upper()}"
+
+
 def parse_line_of_business(value: str | None) -> LineOfBusiness | None:
     """A configured line, or `None`. Never a new one.
 

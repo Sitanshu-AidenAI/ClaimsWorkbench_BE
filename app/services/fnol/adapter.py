@@ -80,11 +80,16 @@ FNOL_WRITEBACK: dict[str, WriteBack] = {
         "reporter_phone", "notification", normalisation.parse_phone
     ),
     "policy.policy_number": WriteBack("policy_number", "policy", _text(64)),
+    "policy.broker_reference": WriteBack("broker_reference", "policy", _text(128)),
     "policy.insured_name": WriteBack("insured_name", "policy", _text(255)),
     "policy.insured_organisation": WriteBack("insured_organisation", "policy", _text(255)),
+    "policy.broker_name": WriteBack("broker_name", "policy", _text(255)),
     "policy.policy_type": WriteBack("policy_type", "policy", _text(64)),
+    "policy.policy_period_stated": WriteBack("policy_period_stated", "policy", _text(128)),
     "loss.date_of_loss": WriteBack("date_of_loss", "loss", normalisation.parse_datetime),
     "loss.loss_location": WriteBack("loss_location", "loss", _text(2000)),
+    "loss.loss_postcode": WriteBack("loss_postcode", "loss", normalisation.parse_postcode),
+    "loss.risk_location": WriteBack("risk_location", "loss", _text(2000)),
     "loss.loss_country": WriteBack("loss_country", "loss", _text(64)),
     "loss.loss_description": WriteBack("loss_description", "loss", _text(4000)),
     "loss.cause_of_loss": WriteBack("cause_of_loss", "loss", _text(255)),
@@ -114,6 +119,15 @@ FNOL_WRITEBACK: dict[str, WriteBack] = {
     "parties.claimant_name": WriteBack(None, "parties", _text(255)),
     "parties.people": WriteBack(None, "parties"),
     "documents.supporting": WriteBack(None, "documents", _text(2000)),
+    # Construction. On a project risk these two identify the policy more reliably
+    # than any name does, which is why they have columns rather than living only in
+    # the extracted values: the identification engine reads case columns.
+    "project.project_name": WriteBack("project_name", "project", _text(255)),
+    "project.contract_number": WriteBack("contract_number", "project", _text(128)),
+    #: The joint-names list. No column of its own — the engine matches against the
+    #: *policy's* principal and contractor, and this is the notice's side of the
+    #: same question kept as provenance for the officer to read.
+    "project.contract_parties": WriteBack(None, "project", _text(2000)),
 }
 
 #: The dataset field carrying everyone named on the notice, as JSON. Handled

@@ -1,19 +1,26 @@
 """Matching a notice against records that already exist.
 
-Three services, one shape: fetch a candidate set from a repository, score it with
-a pure function from `app.domain`, persist the ranked result, and never decide.
-Every one of them can be pointed at an external system later by swapping the
-repository, because none of the ranking logic is in SQL.
+Two services, one shape: fetch a candidate set from a repository, score it with a
+pure function from `app.domain`, persist the ranked result, and never decide. Both
+can be pointed at an external system later by swapping the repository, because
+none of the ranking logic is in SQL.
 
 The rule they share is the one this module exists to enforce: an AI never
-introduces a policy, a claim or a catastrophe event that is not already a record
-in the database. Candidates come *from* the repository, so a hallucinated policy
-number cannot become a policy match — it can only fail to match one.
+introduces a claim or a catastrophe event that is not already a record in the
+database. Candidates come *from* the repository, so a hallucinated reference
+cannot become a match — it can only fail to be one.
+
+Policy identification used to live here too and now has a module of its own,
+`app.services.fnol.identification`, over an engine of its own,
+`app.domain.policy_identification`. It outgrew the shared shape: identifying a
+policy is a review stage with its own evidence, its own decision states and its
+own explanation structure, and squeezing that into the same twelve-line service as
+the catastrophe matcher was costing the thing that matters most about it — that an
+officer can see why each candidate was ranked where it was.
 """
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,117 +28,11 @@ from app.core.config import FNOLSettings, settings
 from app.core.logging import get_logger
 from app.domain import catastrophe as cat_rules
 from app.domain import duplicates as duplicate_rules
-from app.domain import policy_match as policy_rules
-from app.domain.enums import PolicyMatchStrength
 from app.repositories.catastrophe import CatEventRepository
 from app.repositories.claim import ClaimRepository
 from app.repositories.fnol import FNOLRepository
-from app.repositories.policy import PolicyRepository
 
 logger = get_logger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Policies
-# ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class PolicyMatchOutcome:
-    candidates: list[policy_rules.PolicyCandidate]
-    strength: PolicyMatchStrength
-
-    @property
-    def best(self) -> policy_rules.PolicyCandidate | None:
-        return self.candidates[0] if self.candidates else None
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "strength": self.strength.value,
-            "candidates": [
-                {
-                    **candidate.as_dict(),
-                    "policy_id": str(candidate.policy_id),
-                    "policy_number": candidate.policy_number,
-                }
-                for candidate in self.candidates
-            ],
-        }
-
-
-class PolicyMatchingService:
-    def __init__(
-        self,
-        policies: PolicyRepository,
-        fnol: FNOLRepository,
-        *,
-        config: FNOLSettings | None = None,
-    ) -> None:
-        self._policies = policies
-        self._fnol = fnol
-        self._config = config or settings.fnol
-
-    async def match(self, case: Any) -> PolicyMatchOutcome:
-        """Rank candidate policies and persist them against the case."""
-        loss_date = case.date_of_loss.date() if case.date_of_loss else None
-        candidates_pool = await self._policies.find_candidates(
-            policy_number=case.policy_number,
-            insured_name=case.insured_name,
-            organisation=case.insured_organisation,
-            broker=case.reporter_organisation,
-            email=case.reporter_email,
-            country=case.loss_country,
-            line_of_business=case.line_of_business,
-            loss_date=loss_date,
-        )
-
-        ranked = policy_rules.rank_candidates(case, list(candidates_pool), config=self._config)
-        strength = policy_rules.overall_strength(ranked, config=self._config)
-
-        await self._fnol.replace_policy_matches(
-            case.id, [candidate.as_dict() for candidate in ranked]
-        )
-
-        # An unambiguous exact match is *bound* automatically because there is no
-        # judgement in it — the policy number matched a unique record that was in
-        # force. Everything short of that stays a candidate for a human.
-        if strength is PolicyMatchStrength.EXACT and ranked and not case.policy_confirmed:
-            case.policy_id = ranked[0].policy_id
-
-        logger.info(
-            "fnol_policy_match",
-            reference=case.reference,
-            candidates=len(ranked),
-            strength=strength.value,
-        )
-        return PolicyMatchOutcome(candidates=ranked, strength=strength)
-
-    async def select(self, case: Any, policy_id: uuid.UUID, *, actor: str) -> Any:
-        """Bind the policy an officer chose.
-
-        The policy must be one of the candidates already on the case. That is not
-        pedantry: accepting an arbitrary id from the client would let a mistyped
-        request attach a claim to somebody else's policy.
-        """
-        match = await self._fnol.get_policy_match(case.id, policy_id)
-        if match is None:
-            return None
-
-        for candidate in await self._fnol.list_policy_matches(case.id):
-            candidate.selected = candidate.policy_id == policy_id
-            candidate.selected_by = actor if candidate.selected else None
-
-        case.policy_id = policy_id
-        case.policy_confirmed = True
-
-        policy = await self._policies.get(policy_id)
-        if policy is not None:
-            # The officer confirmed the policy, so the policy is now the authority
-            # on the insured's identity — not the broker's spelling of it.
-            case.policy_number = policy.policy_number
-            if not case.insured_name:
-                case.insured_name = policy.insured_name
-        return policy
 
 
 # ---------------------------------------------------------------------------

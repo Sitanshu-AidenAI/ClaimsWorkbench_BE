@@ -10,6 +10,7 @@ repository can be backed by a table or by a client.
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from typing import Any
 
@@ -18,6 +19,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
@@ -25,7 +27,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -72,12 +74,100 @@ class Policy(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     perils_covered: Mapped[list[str]] = mapped_column(JSONB, default=list)
     exclusions: Mapped[list[str]] = mapped_column(JSONB, default=list)
     endorsements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    #: The schedule as the source system published it. Superseded for *matching* by
+    #: the `policy_locations` rows, which are searchable and nameable, and kept as
+    #: the raw form so a synchronising integration has somewhere to land whatever
+    #: shape it holds.
     locations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+
+    # --- Identity, for matching ---------------------------------------------
+    # Domains rather than addresses, and two of them rather than one. Most
+    # commercial notices arrive from a broking house, so the sender's domain is
+    # evidence about the *broker*; the insured's own domain is a different fact
+    # about a different party. One column for both is the defect this pair fixes.
+    broker_domain: Mapped[str | None] = mapped_column(String(255))
+    insured_domain: Mapped[str | None] = mapped_column(String(255))
+    #: A string, not an entity. A single-carrier deployment does not need an
+    #: `Insurer` table, and one added before it is needed is a migration of every
+    #: row for no matching gain. Promote it when a second carrier's book arrives.
+    insurer_name: Mapped[str | None] = mapped_column(String(255))
+    #: The policy this one renewed. Losses are discovered late, so a notice whose
+    #: date of loss falls before inception is routine — and the useful answer is
+    #: "you matched this year's policy, the loss is in last year's, here it is".
+    prior_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("policies.id", ondelete="SET NULL")
+    )
+
+    # --- Construction --------------------------------------------------------
+    # Fields on the flat table rather than a `Project` entity, deliberately: for
+    # matching purposes the project *is* the risk and these are its identifiers.
+    # A CAR policy is identified by its project and contract far more reliably
+    # than by an insured name, because the party reporting the loss is often a
+    # subcontractor who is insured for their interest and is not the named insured.
+    project_name: Mapped[str | None] = mapped_column(String(255))
+    project_reference: Mapped[str | None] = mapped_column(String(128))
+    contract_number: Mapped[str | None] = mapped_column(String(128))
+    principal_name: Mapped[str | None] = mapped_column(String(255))
+    contractor_name: Mapped[str | None] = mapped_column(String(255))
+    #: The works site, which is not the insured's registered address.
+    site_address: Mapped[str | None] = mapped_column(Text)
+    practical_completion_date: Mapped[date | None] = mapped_column(Date)
+    #: The defects liability period, in months after practical completion. A defect
+    #: discovered eight months after handover is in cover, and a date check that
+    #: reads only the works period calls that loss uninsured.
+    maintenance_period_months: Mapped[int | None] = mapped_column(Integer)
+
+    locations_scheduled: Mapped[list[PolicyLocation]] = relationship(
+        back_populates="policy",
+        cascade="all, delete-orphan",
+        order_by="PolicyLocation.location_ref",
+        lazy="selectin",
+    )
 
     __table_args__ = (
         CheckConstraint("expiry_date >= effective_date", name="policy_period_ordered"),
         Index("ix_policies_insured_name_lower", "insured_name"),
+        Index("ix_policies_broker_reference", "broker_reference"),
+        Index("ix_policies_contract_number", "contract_number"),
+        Index("ix_policies_project_name", "project_name"),
     )
+
+
+class PolicyLocation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """One place insured under a policy.
+
+    A table rather than a JSONB blob, and this is the one place in the reference
+    data where that is worth the migration. Property matching has to *search*
+    locations and then *name* the one that matched, because the sum insured and the
+    deductible attach to the location and not to the policy — so a candidate card
+    showing the head office beside a loss at warehouse seven is showing the wrong
+    excess. Neither of those is possible against a JSON array.
+
+    `Policy.primary_location` stays as a denormalised convenience so nothing that
+    reads it breaks; both are populated.
+    """
+
+    __tablename__ = "policy_locations"
+
+    policy_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("policies.id", ondelete="CASCADE"), index=True
+    )
+    #: "Location 007", as printed on the schedule. What the reason names.
+    location_ref: Mapped[str | None] = mapped_column(String(64))
+    description: Mapped[str | None] = mapped_column(String(255))
+    address: Mapped[str] = mapped_column(Text)
+    #: Indexed because in the UK it is the highest-value token in an address: an
+    #: exact postcode agreement is worth far more than a fuzzy street-name overlap.
+    postcode: Mapped[str | None] = mapped_column(String(16), index=True)
+    country: Mapped[str | None] = mapped_column(String(64))
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6, asdecimal=False))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6, asdecimal=False))
+    #: Per-location sums insured and deductibles, which is how a schedule is written.
+    sum_insured_minor: Mapped[int | None] = mapped_column(BigInteger)
+    deductible_minor: Mapped[int | None] = mapped_column(BigInteger)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    policy: Mapped[Policy] = relationship(back_populates="locations_scheduled")
 
 
 class CatEvent(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -160,4 +250,4 @@ class ReferenceSequence(Base, TimestampMixin):
     last_value: Mapped[int] = mapped_column(Integer, default=0)
 
 
-__all__ = ["CatEvent", "Handler", "Policy", "ReferenceSequence"]
+__all__ = ["CatEvent", "Handler", "Policy", "PolicyLocation", "ReferenceSequence"]

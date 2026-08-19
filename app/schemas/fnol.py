@@ -24,6 +24,7 @@ from app.domain.enums import (
     FNOLStatus,
     Severity,
 )
+from app.domain.policy_identification import STRENGTH_FOR_CONFIDENCE
 from app.schemas.common import SchemaBase
 
 # ---------------------------------------------------------------------------
@@ -206,6 +207,78 @@ class FNOLPartyOut(SchemaBase):
     confidence: float | None
 
 
+class SignalResultOut(SchemaBase):
+    """One signal compared against one policy, with its working shown.
+
+    `evidence_field_key` is what makes a reason clickable: it names the extraction
+    dataset field the notice's side of this signal was read from, which the review
+    screen hands to the evidence endpoint to open the page and mark the passage. A
+    signal with none — the envelope's own sender domain — says so by holding null,
+    and the panel simply does not offer a link rather than offering a dead one.
+    """
+
+    signal: str
+    label: str
+    #: `policy` | `insured` | `broker` | `project` | `risk` | `cover`. The axis of
+    #: identity this signal speaks to, which is how the panel groups them.
+    axis: str
+    #: `match` | `partial` | `mismatch` | `missing` | `not_compared`. `missing` and
+    #: `not_compared` are separate: the first is a gap in the notice an officer can
+    #: fill, the second is a signal that does not apply to this risk.
+    outcome: str
+    weight: float
+    #: The number the weighted mean used. Null only when nothing was compared.
+    score: float | None
+    #: This signal's answer is a yes or a no, so the panel prints no percentage
+    #: beside it — "100%" against "the loss date falls inside the policy period" is a
+    #: number pretending to be a measurement.
+    binary: bool = False
+    explanation: str
+    notice_value: str | None
+    policy_value: str | None
+    evidence_field_key: str | None
+    document_id: uuid.UUID | None
+    page_number: int | None
+    quote: str | None
+
+
+class CandidateWarningOut(SchemaBase):
+    """Something about the cover rather than about the identification.
+
+    Kept apart from the signals because a candidate can be certainly the right
+    policy and a poor answer to this loss at the same time, and collapsing the two
+    into one percentage hides the thing the officer most needs to see.
+    """
+
+    code: str
+    detail: str
+    severity: str
+
+
+class CandidateDisplayOut(SchemaBase):
+    """The candidate card's face, formatted once on the server.
+
+    `limit` and `excess` are the *matched location's* where the schedule gives it
+    one, because the sum insured and the deductible attach to the location rather
+    than to the policy — a card printing the policy's headline excess beside a loss
+    at a location with its own is printing the wrong number.
+    """
+
+    insured_name: str
+    line_of_business: str
+    policy_type: str | None
+    policy_period: str
+    status: str
+    limit: Money | None
+    excess: Money | None
+    location: str | None
+    #: "Location 007", as printed on the schedule, when a scheduled entry matched.
+    location_label: str | None
+    broker_name: str | None
+    project_name: str | None
+    contract_number: str | None
+
+
 class PolicyCandidateOut(SchemaBase):
     policy_id: uuid.UUID
     policy_number: str
@@ -223,6 +296,26 @@ class PolicyCandidateOut(SchemaBase):
     reasoning: str | None
     selected: bool
     selected_by: str | None
+
+    # -- Identification --------------------------------------------------------
+    rank: int = 0
+    #: `exact` | `strong` | `possible` | `weak` | `rejected`. Finer than
+    #: `match_strength`, which stays as the coarse band the queue filters on.
+    confidence: str = "possible"
+    #: `in_force` | `in_maintenance_period` | `prior_term` | `outside_period` |
+    #: `unknown`.
+    period_outcome: str = "unknown"
+    signals: list[SignalResultOut] = Field(default_factory=list)
+    warnings: list[CandidateWarningOut] = Field(default_factory=list)
+    display: CandidateDisplayOut | None = None
+    #: `engine` | `officer_search`. A candidate a person found rather than one the
+    #: engine ranked, which the card says out loud.
+    origin: str = "engine"
+    recommended: bool = False
+    recommendation_reason: str | None = None
+    compared_signal_count: int = 0
+    signal_count: int = 0
+    selected_at: datetime | None = None
 
 
 class DuplicateReasonOut(SchemaBase):
@@ -363,6 +456,20 @@ class FNOLDetail(SchemaBase):
     policy_type: str | None
     policy_id: uuid.UUID | None
     policy_confirmed: bool
+    #: Where identification has got to, as its own axis. `policy_confirmed` says
+    #: whether a policy is bound; this says whether the *question* is settled, and a
+    #: notice referred with no policy is settled without one.
+    policy_identification_status: str
+    policy_referral_reason: str | None
+    #: The notice's side of the identification signals, so the review screen can show
+    #: them without a second call.
+    broker_name: str | None
+    broker_reference: str | None
+    risk_location: str | None
+    loss_postcode: str | None
+    project_name: str | None
+    contract_number: str | None
+    policy_period_stated: str | None
 
     line_of_business: str | None
     claim_type: str | None
@@ -694,6 +801,81 @@ class AuditEventOut(SchemaBase):
 
 class PolicySearchResult(SchemaBase):
     items: list[PolicyCandidateOut]
+    term: str
+    #: True when nothing in the book matched the term at all, which is a different
+    #: answer from "the engine found nothing" and is worth saying differently.
+    exhausted: bool = False
+
+
+class ExtractedSignalOut(SchemaBase):
+    """One thing the notice gave the engine to search on, or did not.
+
+    Rendered as the "what we matched on" panel, and rendered even when nothing
+    matched: an officer who can see the search ran on a policy number and an insured
+    name knows the book is the problem rather than the reading.
+    """
+
+    signal: str
+    label: str
+    axis: str
+    #: `match` when the notice stated it, `missing` when it did not. Never a
+    #: judgement about a policy — this panel is about the notice alone.
+    outcome: str
+    value: str | None
+    explanation: str
+    confidence: float | None
+    weight: float
+    evidence_field_key: str | None
+    document_id: uuid.UUID | None
+    page_number: int | None
+    quote: str | None
+
+
+class PolicyIdentificationOut(SchemaBase):
+    """The whole first-stage answer for one notice, in one call.
+
+    One request rather than four, for the same reason the review workspace reads a
+    whole case in one: a screen assembled from four calls shows four different
+    moments of the same decision.
+    """
+
+    reference: str
+    #: `not_run` | `no_match` | `needs_review` | `confident_match` | `confirmed` |
+    #: `referred`.
+    status: str
+    #: The coarse band the queue and the exception engine work from.
+    strength: str
+    ran_at: datetime | None
+    engine_version: str | None
+    policies_compared: int
+
+    #: What the notice said, signal by signal, including what it did not say.
+    extracted_signals: list[ExtractedSignalOut]
+    signals_present: int
+    signals_missing: int
+
+    candidates: list[PolicyCandidateOut]
+    #: Compared and rejected, kept because "why is my policy not in the list" needs
+    #: an answer and an officer recognises the right policy at 0.3 more often than
+    #: the arithmetic does. Never ranked with the others; confirming one goes through
+    #: the same path as confirming a searched policy.
+    near_misses: list[PolicyCandidateOut]
+    recommended_policy_id: uuid.UUID | None
+    selected_policy_id: uuid.UUID | None
+    policy_confirmed: bool
+    confirmed_by: str | None
+    confirmed_at: datetime | None
+    referral_reason: str | None
+    referred_by: str | None
+    #: True once the decision is settled either way — a policy bound, or the notice
+    #: referred with no policy identified. What the decision bar gates on.
+    decided: bool
+
+
+class PolicyReferralRequest(SchemaBase):
+    """No policy could be identified. A decision, so it carries a reason."""
+
+    reason: str = Field(min_length=3, max_length=2000)
 
 
 class FNOLDeletionResult(SchemaBase):
@@ -913,6 +1095,13 @@ def to_party(party: Any) -> FNOLPartyOut:
 
 
 def to_policy_candidate(match: Any, policy: Any) -> PolicyCandidateOut:
+    """A persisted candidate, or a policy nobody has scored yet.
+
+    Both shapes go through one mapper so the frontend draws one list. A policy with
+    no candidate row — one an officer has just found in the book — reports honestly
+    as having nothing compared, rather than being dressed up as a zero-scoring match.
+    """
+    signals = [_signal_result(entry) for entry in (match.signals or [])] if match else []
     return PolicyCandidateOut(
         policy_id=policy.id,
         policy_number=policy.policy_number,
@@ -932,7 +1121,155 @@ def to_policy_candidate(match: Any, policy: Any) -> PolicyCandidateOut:
         reasoning=match.reasoning if match else None,
         selected=bool(match.selected) if match else False,
         selected_by=match.selected_by if match else None,
+        rank=int(match.rank) if match else 0,
+        confidence=match.confidence if match else "possible",
+        period_outcome=match.period_outcome if match else "unknown",
+        signals=signals,
+        warnings=[
+            CandidateWarningOut(
+                code=str(entry.get("code", "")),
+                detail=str(entry.get("detail", "")),
+                severity=str(entry.get("severity", "warning")),
+            )
+            for entry in (match.warnings or [])
+        ]
+        if match
+        else [],
+        display=_candidate_display(match.display, policy) if match else None,
+        origin=match.origin if match else "officer_search",
+        recommended=bool(match.recommended) if match else False,
+        recommendation_reason=None,
+        compared_signal_count=sum(
+            1
+            for entry in signals
+            if entry.outcome in ("match", "partial", "mismatch")
+        ),
+        signal_count=len(signals),
+        selected_at=match.selected_at if match else None,
     )
+
+
+def to_scored_candidate(candidate: Any, policy: Any) -> PolicyCandidateOut:
+    """A candidate the engine has just scored but nothing has persisted.
+
+    The manual search path: an officer's search is *looking*, not deciding, so
+    nothing is written until they confirm — but the results still carry the full
+    per-signal working, because a fallback that showed less than the thing it falls
+    back from would be a worse tool.
+    """
+    display = candidate.display.as_dict()
+    return PolicyCandidateOut(
+        policy_id=policy.id,
+        policy_number=policy.policy_number,
+        insured_name=policy.insured_name,
+        line_of_business=policy.line_of_business,
+        status=policy.status,
+        effective_date=policy.effective_date.isoformat(),
+        expiry_date=policy.expiry_date.isoformat(),
+        primary_location=policy.primary_location,
+        limit=money(policy.limit_amount_minor, policy.currency),
+        deductible=money(policy.deductible_amount_minor, policy.currency),
+        match_strength=STRENGTH_FOR_CONFIDENCE[candidate.confidence].value,
+        score=round(candidate.score, 4),
+        matched_on={
+            result.signal: round(result.score, 3)
+            for result in candidate.signal_results
+            if result.compared and result.score is not None
+        },
+        reasoning=candidate.recommendation_reason or None,
+        selected=False,
+        selected_by=None,
+        rank=candidate.rank,
+        confidence=candidate.confidence.value,
+        period_outcome=candidate.period_outcome.value,
+        signals=[_signal_result(result.as_dict()) for result in candidate.signal_results],
+        warnings=[
+            CandidateWarningOut(
+                code=warning.code, detail=warning.detail, severity=warning.severity
+            )
+            for warning in candidate.warnings
+        ],
+        display=_candidate_display(display, policy),
+        origin="officer_search",
+        recommended=False,
+        recommendation_reason=candidate.recommendation_reason or None,
+        compared_signal_count=len(candidate.compared_signals),
+        signal_count=len(candidate.signal_results),
+        selected_at=None,
+    )
+
+
+def _signal_result(entry: dict[str, Any]) -> SignalResultOut:
+    return SignalResultOut(
+        signal=str(entry.get("signal", "")),
+        label=str(entry.get("label", "")),
+        axis=str(entry.get("axis", "policy")),
+        outcome=str(entry.get("outcome", "not_compared")),
+        weight=float(entry.get("weight", 0.0) or 0.0),
+        score=None if entry.get("score") is None else float(entry["score"]),
+        binary=bool(entry.get("binary", False)),
+        explanation=str(entry.get("explanation", "")),
+        notice_value=_text_or_none(entry.get("notice_value")),
+        policy_value=_text_or_none(entry.get("policy_value")),
+        evidence_field_key=_text_or_none(entry.get("evidence_field_key")),
+        document_id=_uuid_or_none(entry.get("document_id")),
+        page_number=entry.get("page_number"),
+        quote=_text_or_none(entry.get("quote")),
+    )
+
+
+def _candidate_display(stored: dict[str, Any] | None, policy: Any) -> CandidateDisplayOut:
+    """The card's face, falling back to the policy row when nothing was stored.
+
+    The fallback matters for a candidate written before the engine existed, and for
+    one an officer found by hand: an empty card would be a worse answer than the
+    policy's own headline figures.
+    """
+    stored = stored or {}
+    currency = str(stored.get("currency") or policy.currency or "GBP")
+    return CandidateDisplayOut(
+        insured_name=str(stored.get("insured_name") or policy.insured_name),
+        line_of_business=str(stored.get("line_of_business") or policy.line_of_business),
+        policy_type=_text_or_none(stored.get("policy_type")) or policy.policy_type,
+        policy_period=str(
+            stored.get("policy_period")
+            or f"{policy.effective_date:%d %b %Y} – {policy.expiry_date:%d %b %Y}"
+        ),
+        status=str(stored.get("status") or policy.status),
+        limit=money(
+            stored.get("limit_minor")
+            if stored.get("limit_minor") is not None
+            else policy.limit_amount_minor,
+            currency,
+        ),
+        excess=money(
+            stored.get("excess_minor")
+            if stored.get("excess_minor") is not None
+            else policy.deductible_amount_minor,
+            currency,
+        ),
+        location=_text_or_none(stored.get("location")) or policy.primary_location,
+        location_label=_text_or_none(stored.get("location_label")),
+        broker_name=_text_or_none(stored.get("broker_name")) or policy.broker_name,
+        project_name=_text_or_none(stored.get("project_name")) or policy.project_name,
+        contract_number=_text_or_none(stored.get("contract_number")) or policy.contract_number,
+    )
+
+
+def _text_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _uuid_or_none(value: Any) -> uuid.UUID | None:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
 
 
 def to_duplicate(candidate: Any) -> DuplicateCandidateOut:

@@ -14,11 +14,11 @@ from app.services.fnol.claims import ClaimCreationService
 from app.services.fnol.classification import ClassificationService
 from app.services.fnol.exceptions import ExceptionService
 from app.services.fnol.extraction import ExtractionOutcome, FNOLExtractionService
+from app.services.fnol.identification import PolicyIdentificationService
 from app.services.fnol.ingestion import FNOLIngestionService, IncomingEmail, IncomingNotification
 from app.services.fnol.matching import (
     CatastropheMatchingService,
     DuplicateDetectionService,
-    PolicyMatchingService,
 )
 from app.services.fnol.pipeline import FNOLPipeline
 from app.services.fnol.service import FNOLService
@@ -42,6 +42,6 @@ __all__ = [
     "FNOLSummaryService",
     "IncomingEmail",
     "IncomingNotification",
-    "PolicyMatchingService",
+    "PolicyIdentificationService",
     "TriageService",
 ]
