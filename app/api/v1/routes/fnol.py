@@ -729,9 +729,7 @@ async def _document_of(context: FNOLContext, case: FNOLCase, document_id: uuid.U
     return document
 
 
-async def _identification_view(
-    context: FNOLContext, case: FNOLCase
-) -> api.PolicyIdentificationOut:
+async def _identification_view(context: FNOLContext, case: FNOLCase) -> api.PolicyIdentificationOut:
     """Assemble the identification stage's whole answer.
 
     The near misses are read out of the stored analysis and re-hydrated against the

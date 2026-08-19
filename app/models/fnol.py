@@ -142,9 +142,7 @@ class FNOLCase(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     policy_identification_status: Mapped[str] = mapped_column(
         String(24), default=PolicyIdentificationStatus.NOT_RUN, index=True
     )
-    policy_identification_ran_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
-    )
+    policy_identification_ran_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     #: Why no policy could be identified, when an officer referred it.
     policy_referral_reason: Mapped[str | None] = mapped_column(Text)
     policy_referred_by: Mapped[str | None] = mapped_column(String(255))
@@ -548,9 +546,7 @@ class FNOLPolicyMatch(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     display: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     #: `in_force` | `in_maintenance_period` | `prior_term` | `outside_period` |
     #: `unknown`. Five outcomes because property and construction both need them.
-    period_outcome: Mapped[str] = mapped_column(
-        String(24), default=PolicyPeriodOutcome.UNKNOWN
-    )
+    period_outcome: Mapped[str] = mapped_column(String(24), default=PolicyPeriodOutcome.UNKNOWN)
     reasoning: Mapped[str | None] = mapped_column(Text)
     #: How this candidate came to be on the case: ranked by the engine, found by an
     #: officer searching the book, or listed below the threshold as a near miss.

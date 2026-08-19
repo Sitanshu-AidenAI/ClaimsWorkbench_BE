@@ -859,9 +859,7 @@ class FNOLRepository:
         return note
 
 
-def _apply_candidate(
-    match: FNOLPolicyMatch, candidate: dict[str, Any], *, rank: int
-) -> None:
+def _apply_candidate(match: FNOLPolicyMatch, candidate: dict[str, Any], *, rank: int) -> None:
     """Write one scored candidate onto its row.
 
     In one place because two callers write the same shape, and a row half-written

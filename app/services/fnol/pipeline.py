@@ -830,9 +830,7 @@ def _identity_conflict(identification: Any) -> bool:
     best = identification.best
     if best is None:
         return False
-    return any(
-        warning.code == "identity_conflict" for warning in best.warnings
-    )
+    return any(warning.code == "identity_conflict" for warning in best.warnings)
 
 
 def _casualties(injuries: int | None, fatalities: int | None) -> str:
