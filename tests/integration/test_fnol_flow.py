@@ -15,6 +15,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import delete, select
@@ -37,6 +38,7 @@ from app.models.fnol import (
     FNOLPolicyMatch,
 )
 from app.models.reference_data import CatEvent, Handler, Policy
+from app.services.documents.store import FilesystemDocumentStore, set_document_store
 from app.services.fnol.claims import ClaimCreationBlocked
 from app.services.fnol.ingestion import IncomingAttachment, IncomingEmail
 
@@ -76,6 +78,22 @@ Estimated loss: GBP 320,000
             )
         ],
     )
+
+
+@pytest.fixture(autouse=True)
+def _documents(tmp_path: Path) -> AsyncIterator[None]:
+    """Attachment bytes go to a temporary directory, not to the configured store.
+
+    Every other integration module already does this; this one did not, and it was
+    the only one that uploaded through whatever `CWB_FNOL_DOCUMENT_STORE` happened
+    to name. The default is `s3`, so on any machine without MinIO — CI, or a laptop
+    with no `.env` — five tests failed inside `put_object` against an endpoint
+    nothing serves. What they exist to prove is the FNOL journey, and that does not
+    depend on where the bytes land.
+    """
+    set_document_store(FilesystemDocumentStore(tmp_path))
+    yield
+    set_document_store(None)
 
 
 @pytest.fixture(autouse=True)
