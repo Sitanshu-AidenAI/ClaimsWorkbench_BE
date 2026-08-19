@@ -20,6 +20,14 @@ class AuthConfig(BaseModel):
     authority: str
     client_id: str
     realm: str
+    #: Whether the single sign-on button should render at all.
+    #:
+    #: The redirect flow needs the confidential client's secret, so a deployment
+    #: without one cannot complete it. Answered here rather than assumed in the
+    #: bundle, because it is a deployment fact and the whole point of this endpoint
+    #: is that one build artefact is promoted through environments. A button that
+    #: answers 401 is worse than no button.
+    sso_enabled: bool
 
 
 class ClientConfig(BaseModel):
@@ -47,6 +55,7 @@ async def client_config() -> ClientConfig:
             authority=settings.keycloak.realm_url,
             client_id=settings.keycloak.client_id,
             realm=settings.keycloak.realm,
+            sso_enabled=settings.sso_available,
         ),
     )
 

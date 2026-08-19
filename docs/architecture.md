@@ -59,6 +59,61 @@ non-event rather than an outage.
 `Principal` is a projection of the token, not a database lookup. Nothing on the
 request path needs a user table read to authorise a call.
 
+There is now exactly one accepted credential. The unsigned `dev.<base64url(json)>`
+format was removed along with the flag that honoured it: a bypass that exists in
+code is a bypass, and the argument for it — that a laptop running only Postgres
+and Redis could not otherwise exercise the API — is answered by a realm the
+bootstrap script creates in one command.
+
+---
+
+## The browser holds a token it cannot keep
+
+The SPA is deliberately **not** an OAuth client. It has no client id and never
+receives an authorization code. Either the API exchanges an email and password for
+tokens on its behalf (`POST /auth/login`, the primary path), or it runs the
+authorization-code flow server-side (`GET /auth/sso` and `/auth/callback`). Both
+leave the browser with the same thing: an opaque handle in an `HttpOnly` cookie plus
+an access token held in a JavaScript variable.
+
+Collecting the password ourselves is a deliberate trade rather than an oversight.
+What it costs is MFA, required actions and federation on that path — the grant cannot
+ask a second question — which is why the redirect path is kept alongside it rather
+than deleted. What it buys is a sign-in screen that belongs to the product. The
+password never touches a database of ours, and the endpoint that receives it is the
+only one in the API that is rate-limited on two axes and refuses in one sentence.
+
+The split is the point. Two credentials exist and they have different exposures:
+
+| | Where it lives | What an XSS can do with it |
+| --- | --- | --- |
+| Access token | JS memory, ~5 min | Use it until the tab closes |
+| Refresh token | Redis, server-side | Nothing — it never enters the browser |
+
+So script injection buys an attacker the length of a session in an open tab rather
+than a credential they can take away. That is a meaningfully smaller prize than a
+token in `localStorage`, which is what this replaced.
+
+**Why not a full BFF**, with the access token server-side too and every request
+authenticated by cookie? Because it would put a cookie on every API call, and a
+cookie on every call requires the SPA and the API to be same-site — which
+`CWB_CORS_ORIGINS` exists precisely to avoid requiring. Under the model chosen,
+ordinary requests are plain bearer with no cookie, so cross-origin deployment
+still works, `app/api/deps/auth.py` needs no cookie branch, and CSRF shrinks from
+the whole API surface to two non-navigable POSTs.
+
+The cost is that the access token is reachable by script while the tab is open.
+That is the trade, stated rather than hidden: a `SecurityHeadersMiddleware` CSP is
+the control that reduces the chance of injection in the first place, and it sits
+in the middleware stack beside the session it protects for that reason.
+
+**Rotation with reuse detection** is what makes the cookie worth less than it
+looks. Each refresh retires its handle; a retired handle presented again destroys
+the whole grant family, because two parties holding one cookie has no innocent
+explanation worth being wrong about. A retired handle is therefore *kept* in Redis
+rather than deleted — deleting it would make a replay look like an ordinary
+expiry, and the theft would pass unnoticed.
+
 ---
 
 ## One error shape
@@ -137,9 +192,17 @@ same-origin requests in development and CORS stays out of the local loop.
 `CWB_CORS_ORIGINS` still lists the frontend origin for the deployed case, where
 the two are served from different hosts.
 
-`GET /api/v1/meta/config` gives the client its OIDC endpoints at runtime rather
-than baking them into the bundle per environment — one build artefact can be
-promoted through environments.
+`GET /api/v1/meta/config` gives the client its runtime configuration rather than
+baking it into the bundle per environment — one build artefact can be promoted
+through environments. It no longer needs to carry OIDC endpoints for the client to
+use, because the client does not perform the handshake; they remain in the payload
+as deployment facts a support screen can display.
+
+The cookie does constrain deployment in one place: it is scoped to
+`Path=/api/v1/auth`, so the SPA and the API must agree on that origin for the two
+session endpoints. Same-origin behind a reverse proxy is the simple answer, and is
+what the Vite dev proxy already produces locally. Genuinely cross-site hosting
+works, but needs `CWB_AUTH_COOKIE_SAMESITE=none`.
 
 ---
 

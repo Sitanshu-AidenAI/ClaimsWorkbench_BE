@@ -156,6 +156,109 @@ class KeycloakSettings(BaseSettings):
     def token_url(self) -> str:
         return f"{self.realm_url}/protocol/openid-connect/token"
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def authorization_url(self) -> str:
+        return f"{self.realm_url}/protocol/openid-connect/auth"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def end_session_url(self) -> str:
+        """Where a sign-out sends the browser to end the *Keycloak* session.
+
+        Clearing our own cookie is not signing out: the realm's SSO session would
+        still be live, and the next `/auth/login` would sail through it without
+        asking for a password.
+        """
+        return f"{self.realm_url}/protocol/openid-connect/logout"
+
+
+class AuthSettings(BaseSettings):
+    """The browser's session: a short-lived access token and how it is renewed.
+
+    The access token is handed to the SPA and held in memory there — never in
+    `localStorage`, never in a cookie. The *refresh* token never reaches the
+    browser at all: it is kept in Redis behind an opaque handle, and the handle is
+    what travels in an `HttpOnly` cookie. So the worst an XSS can do is use the
+    session while the tab is open; it cannot walk away with a durable credential.
+    """
+
+    model_config = _ENV_CONFIG | SettingsConfigDict(env_prefix="CWB_AUTH_")
+
+    #: Where Keycloak sends the browser back to. Must be registered on the client
+    #: as a valid redirect URI, exactly.
+    redirect_url: str = "http://localhost:8000/api/v1/auth/callback"
+
+    #: Where the callback forwards the browser once the grant is stored. The SPA
+    #: takes it from there and calls `/auth/token` for its first access token.
+    frontend_url: str = "http://localhost:5173"
+
+    #: Where a signed-out or refused browser lands.
+    #:
+    #: The sign-in screen rather than the marketing root: somebody who has just
+    #: pressed "sign out" is at a keyboard and means to sign in again or hand the
+    #: machine over, and the landing page makes them find the way back in. Must be
+    #: covered by the client's registered post-logout redirect URIs, which the
+    #: bootstrap script sets to the frontend origin plus a wildcard.
+    sign_in_path: str = "/sign-in"
+
+    #: Whether the single sign-on redirect is offered at all.
+    #:
+    #: Off for now, by decision rather than by omission. The whole path is built and
+    #: tested — `GET /auth/sso`, the callback, PKCE, the nonce check — and turning
+    #: this on is all that is needed to have it back. It stays in the tree because it
+    #: is the only route that can carry MFA, a forced password change or federation
+    #: to an external directory; the password grant cannot ask a second question.
+    #:
+    #: Gating the *route* as well as the button is the point. A hidden control whose
+    #: URL still works is not a disabled feature, it is an undocumented one.
+    sso_enabled: bool = False
+
+    #: Requested at the authorize endpoint. `openid` is what makes it OIDC rather
+    #: than bare OAuth; the other two populate the principal's name and email.
+    scopes: str = "openid profile email"
+
+    #: The cookie carrying the refresh handle. Scoped to the auth routes by
+    #: `cookie_path`, so it is not attached to a single other request.
+    cookie_name: str = "cwb_refresh"
+    cookie_path: str = "/api/v1/auth"
+    cookie_domain: str | None = None
+
+    #: `None` derives it: on everywhere except a `local` environment. Never a
+    #: plain `False` default — a cookie that forgets `Secure` in production is the
+    #: kind of mistake that does not announce itself.
+    cookie_secure: bool | None = None
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+
+    #: The in-flight OIDC handshake: the PKCE verifier, the state and the nonce,
+    #: held in their own cookie between `/auth/login` and `/auth/callback`.
+    transaction_cookie_name: str = "cwb_oidc_tx"
+    transaction_ttl_seconds: int = 300
+
+    #: How long a grant survives without being used, and how long it may live at
+    #: all. A desk leaves tabs open all day, so an idle bound alone would never
+    #: expire; an absolute bound alone would sign someone out mid-sentence.
+    idle_timeout_seconds: int = 1800
+    absolute_timeout_seconds: int = 43_200
+
+    #: Refresh a little before the access token actually expires, so a request is
+    #: never issued with a token that dies in flight.
+    refresh_margin_seconds: int = 30
+
+    #: Failed sign-in attempts allowed per window, counted per IP and per email.
+    #: Keycloak locks a single account after its own threshold, but is blind to one
+    #: source trying ten thousand accounts once each — which is what this catches.
+    login_max_attempts: int = 10
+    login_window_seconds: int = 300
+
+    #: Required on the two cookie-bearing endpoints. A cross-site form cannot set
+    #: a custom header, and these routes are POST-only, so this plus the origin
+    #: check is what stands in for a CSRF token.
+    required_header: str = "X-Requested-With"
+
+    timeout_seconds: float = 10.0
+    max_attempts: int = 3
+
 
 class S3Settings(BaseSettings):
     """S3-compatible object storage (MinIO locally)."""
@@ -634,21 +737,6 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:5173"]
     )
 
-    # --- Authentication ---
-    # Accept locally-minted development tokens instead of Keycloak-issued ones.
-    # Guarded by `dev_auth_enabled` below, which refuses outright outside
-    # local/test: the flag existing is not the same as the flag being honoured.
-    dev_auth: bool = False
-    dev_auth_default_roles: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: [
-            "fnol-officer",
-            "claims-handler",
-            "claims-manager",
-            "claims-admin",
-            "business-admin",
-        ]
-    )
-
     # --- Knowledge graph ---
     # Emit the scaffolding entities described in `app.domain.knowledge_graph` — a
     # loss adjuster, SIU indicators and a historical claim — covering the entities
@@ -662,6 +750,7 @@ class Settings(BaseSettings):
     postgres: PostgresSettings = Field(default_factory=PostgresSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     keycloak: KeycloakSettings = Field(default_factory=KeycloakSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     s3: S3Settings = Field(default_factory=S3Settings)
     celery: CelerySettings = Field(default_factory=CelerySettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
@@ -671,7 +760,7 @@ class Settings(BaseSettings):
     docint: DocumentIntelligenceSettings = Field(default_factory=DocumentIntelligenceSettings)
     extraction: ExtractionSettings = Field(default_factory=ExtractionSettings)
 
-    @field_validator("cors_origins", "dev_auth_default_roles", mode="before")
+    @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_cors_origins(cls, value: object) -> object:
         """Accept either a JSON array or a comma-separated list."""
@@ -687,14 +776,32 @@ class Settings(BaseSettings):
         return self.environment in ("staging", "production")
 
     @property
-    def dev_auth_enabled(self) -> bool:
-        """Development tokens are only ever honoured outside staging/production.
+    def sso_available(self) -> bool:
+        """Whether the redirect flow can actually complete.
 
-        The environment check is here rather than at the call site so there is one
-        place to read: setting `CWB_DEV_AUTH=true` on a production deployment
-        changes nothing.
+        Both halves are required, and for different reasons: the flag is a decision,
+        and the client secret is a capability. Reporting `true` without the secret
+        would render a button that answers 401.
         """
-        return self.dev_auth and not self.is_production
+        return self.auth.sso_enabled and bool(self.keycloak.client_secret)
+
+    @property
+    def sign_in_url(self) -> str:
+        """The absolute sign-in URL, for the realm and for redirects."""
+        return f"{self.auth.frontend_url.rstrip('/')}{self.auth.sign_in_path}"
+
+    @property
+    def cookies_secure(self) -> bool:
+        """Whether auth cookies carry `Secure`.
+
+        Derived unless explicitly set, and derived to `True` everywhere except a
+        `local` environment — including `test`, so a suite can only ever assert the
+        production flag shape. Overriding it is possible and is meant to be a
+        deliberate act rather than the default that a forgotten variable produces.
+        """
+        if self.auth.cookie_secure is not None:
+            return self.auth.cookie_secure
+        return self.environment != "local"
 
     @property
     def log_as_json(self) -> bool:

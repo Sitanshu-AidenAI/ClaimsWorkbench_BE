@@ -9,12 +9,26 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.routes import claims, extraction, fnol, health, mail_intake, meta, notifications
+from app.api.v1.routes import (
+    access,
+    auth,
+    claims,
+    extraction,
+    fnol,
+    health,
+    mail_intake,
+    meta,
+    notifications,
+)
 
 api_router = APIRouter()
 
 api_router.include_router(health.router)
+# Registered before everything else because it is the only unauthenticated router
+# besides health: nothing below it is reachable until these routes have run.
+api_router.include_router(auth.router)
 api_router.include_router(meta.router)
+api_router.include_router(access.router)
 api_router.include_router(fnol.router)
 api_router.include_router(claims.router)
 api_router.include_router(mail_intake.router)

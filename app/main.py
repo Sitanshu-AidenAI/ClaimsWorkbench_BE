@@ -17,8 +17,13 @@ from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import AccessLogMiddleware, RequestContextMiddleware
+from app.core.middleware import (
+    AccessLogMiddleware,
+    RequestContextMiddleware,
+    SecurityHeadersMiddleware,
+)
 from app.core.observability import setup_metrics
+from app.core.oidc import close_oidc_client
 from app.db.pool import close_pool, init_pool
 from app.db.session import dispose_engine, init_engine
 from app.integrations.graph.client import close_mail_client
@@ -53,6 +58,28 @@ async def _seed_extraction_schemas(config: Settings) -> None:
         logger.warning("extraction_schema_seed_failed", error=type(exc).__name__, detail=str(exc))
 
 
+async def _seed_access_matrix(config: Settings) -> None:
+    """Install the documented role-capability defaults if they are missing.
+
+    On boot rather than in the migration, for the reason `_seed_extraction_schemas`
+    gives: the seed is additive configuration, a release that adds a capability should
+    deliver it to a deployment that has already migrated, and a grant an administrator
+    has removed must not come back on the next start.
+
+    Never fatal. `AccessService` falls back to the same defaults when the table is
+    empty, so a desk whose seed failed behaves as documented rather than locking
+    everybody out of every board.
+    """
+    from app.db.session import session_scope
+    from app.services.access.service import AccessService
+
+    try:
+        async with session_scope() as session:
+            await AccessService(session).seed()
+    except Exception as exc:
+        logger.warning("access_matrix_seed_failed", error=type(exc).__name__, detail=str(exc))
+
+
 def create_app(
     config: Settings | None = None,
     metrics_registry: CollectorRegistry | None = None,
@@ -76,6 +103,7 @@ def create_app(
         await init_pool(config)
         await init_redis(config)
         await _seed_extraction_schemas(config)
+        await _seed_access_matrix(config)
         logger.info("application_started")
         try:
             yield
@@ -83,6 +111,7 @@ def create_app(
             await close_redis()
             await close_pool()
             await close_mail_client()
+            await close_oidc_client()
             await close_embedding_provider()
             await close_vector_store()
             await dispose_engine()
@@ -101,9 +130,14 @@ def create_app(
     # Middleware is applied bottom-up, so the request-context layer is
     # registered last to make sure it wraps everything above it.
     app.add_middleware(AccessLogMiddleware)
+    # Registered inside CORS so its headers survive on a preflight response too.
+    app.add_middleware(SecurityHeadersMiddleware, config=config)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_origins,
+        # Required by the refresh cookie: without it the browser will not send the
+        # cookie to `/auth/token` when the SPA is on another origin, and the
+        # session cannot be restored after a reload.
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
