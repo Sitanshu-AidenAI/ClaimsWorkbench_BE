@@ -1,8 +1,19 @@
 """Role-based access control: the grants an administrator edits
 
-Revision ID: 0007_role_capabilities
-Revises: 0006_notifications
+Revision ID: 0008_role_capabilities
+Revises: 0007_policy_identification
 Create Date: 2026-08-18
+
+Renumbered from 0007 and re-parented. It was written against 0006 at the same time
+as `0007_policy_identification` was, on a different branch, so merging the two left
+Alembic with two heads and `upgrade head` ambiguous. This one chains after the other
+rather than the other way round: that revision is already on the branch this merges
+into, so anyone tracking it has applied it, and re-parenting *it* would rewrite
+history somebody else has already run.
+
+Nothing here depends on the policy-identification tables — the order is a linear
+history rather than a real dependency, which is why re-parenting was enough and no
+merge revision was needed.
 
 One table, hand-written as explicit SQL in the style the earlier revisions set, so
 the DDL that runs in production is exactly what a reviewer read.
@@ -34,8 +45,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0007_role_capabilities"
-down_revision = "0006_notifications"
+revision = "0008_role_capabilities"
+down_revision = "0007_policy_identification"
 branch_labels = None
 depends_on = None
 
