@@ -135,8 +135,7 @@ class PolicyIdentificationService:
             facts,
             config=self._config,
             confirmed_policy_id=case.policy_id if case.policy_confirmed else None,
-            referred=case.policy_identification_status
-            == PolicyIdentificationStatus.REFERRED,
+            referred=case.policy_identification_status == PolicyIdentificationStatus.REFERRED,
         )
 
         await self._fnol.replace_policy_matches(
@@ -468,9 +467,7 @@ def _facts(policy: Any, prior: Any | None) -> engine.PolicyFacts:
         contractor_name=policy.contractor_name,
         practical_completion_date=policy.practical_completion_date,
         maintenance_period_months=policy.maintenance_period_months,
-        prior_term=(
-            (prior.effective_date, prior.expiry_date) if prior is not None else None
-        ),
+        prior_term=((prior.effective_date, prior.expiry_date) if prior is not None else None),
         prior_policy_number=prior.policy_number if prior is not None else None,
         currency=policy.currency,
         limit_amount_minor=policy.limit_amount_minor,

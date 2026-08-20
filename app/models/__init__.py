@@ -12,6 +12,7 @@ asyncpg with hand-written SQL and are created by migrations directly.
 from __future__ import annotations
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.access import RoleCapability
 from app.models.audit import AuditEvent
 from app.models.claim import Claim, ClaimAssignment, ClaimTriage
 from app.models.extraction import (
@@ -64,6 +65,7 @@ __all__ = [
     "NotificationRead",
     "Policy",
     "ReferenceSequence",
+    "RoleCapability",
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
 ]

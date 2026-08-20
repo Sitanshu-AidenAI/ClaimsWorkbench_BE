@@ -9,6 +9,7 @@ task registry.
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from celery import Celery
@@ -40,6 +41,16 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=settings.celery.worker_prefetch_multiplier,
     worker_max_tasks_per_child=settings.celery.worker_max_tasks_per_child,
+    # Prefork needs fork(); Windows only has spawn, where billiard's shared
+    # semaphores fail with WinError 5/6 and the pool respawns in a loop without
+    # ever running a task. Solo is the only pool this codebase can use there
+    # anyway: `run_async` in app/workers/tasks.py keeps one event loop per
+    # *process*, so a threaded pool would raise "this event loop is already
+    # running" the moment two tasks overlapped.
+    #
+    # `--pool` on the command line still overrides this, so the Linux containers
+    # in docker-compose keep prefork at their configured concurrency.
+    worker_pool="solo" if sys.platform == "win32" else "prefork",
     worker_hijack_root_logger=False,
     result_expires=86400,
     broker_connection_retry_on_startup=True,

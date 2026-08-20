@@ -9,6 +9,7 @@ everything below it is the real code path.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -177,6 +178,7 @@ def build_pipeline(
     provider: AIProvider | None,
     embeddings: EmbeddingProvider | None,
     vectors: VectorStore | None,
+    checkpoint: Callable[[], Awaitable[None]] | None = None,
 ) -> FNOLPipeline:
     """Assemble the pipeline.
 
@@ -190,6 +192,11 @@ def build_pipeline(
     silently break the seam this whole module exists to provide: in this codebase
     `None` *means* something — the deterministic reader, keyword-only retrieval — so a
     test that overrides a provider to `None` must not be handed the real one back.
+
+    `checkpoint` is optional and defaulted, unlike those three, because it is a
+    property of the *caller's* transaction rather than of the pipeline: the worker
+    owns its session outright and passes `session.commit`, while a route's session
+    is committed at the request boundary and must not be cut in half mid-handler.
     """
     cases = FNOLRepository(session)
     claims = ClaimRepository(session)
@@ -225,6 +232,7 @@ def build_pipeline(
         engine=SchemaExtractionEngine(runs, retrieval=retrieval, provider=provider),
         adapter=FNOLWriteBackAdapter(cases),
         body=NotificationBodyDocumentService(cases, documents),
+        checkpoint=checkpoint,
     )
 
 

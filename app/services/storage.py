@@ -7,7 +7,6 @@ free. The client is created lazily and reused — boto3 clients are thread-safe.
 from __future__ import annotations
 
 import asyncio
-from functools import lru_cache
 from typing import Any, BinaryIO
 
 import boto3
@@ -21,9 +20,43 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-@lru_cache
+#: The process-wide boto3 client. One per process so the connection pool and its
+#: keep-alives are shared, which is the same reasoning `get_document_store`,
+#: `get_mail_client` and `get_oidc_client` all give for the same shape.
+_client: Any | None = None
+
+
 def get_s3_client(config: S3Settings | None = None) -> Any:
-    config = config or settings.s3
+    """The bucket client, built once per process.
+
+    A module-level singleton rather than `@lru_cache`, and that is a fix rather than a
+    preference. `lru_cache` hashes its arguments, and `S3Settings` is a pydantic model —
+    which defines `__eq__` and is therefore unhashable. So the only caller that passes a
+    config, `ObjectStorage.__init__`, raised `TypeError: unhashable type: 'S3Settings'`
+    and **the documented default document store could not be constructed at all**.
+
+    It survived because a developer `.env` setting `CWB_FNOL_DOCUMENT_STORE=filesystem`
+    never reaches this line. CI, which has no `.env` and so takes the `s3` default, found
+    it — as would any deployment using object storage, which `.env.example` calls the
+    deployed answer.
+
+    `config` is honoured on the first call and ignored afterwards, exactly as the other
+    factories here behave. Tests that need a different client call `set_s3_client`.
+    """
+    global _client
+    if _client is None:
+        config = config or settings.s3
+        _client = _build(config)
+    return _client
+
+
+def set_s3_client(client: Any | None) -> None:
+    """Override the process client. For tests."""
+    global _client
+    _client = client
+
+
+def _build(config: S3Settings) -> Any:
     return boto3.client(
         "s3",
         endpoint_url=config.endpoint_url,

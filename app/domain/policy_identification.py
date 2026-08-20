@@ -307,9 +307,7 @@ _CONFUSABLES: dict[str, str] = {
 #: A UK postcode, the highest-value token in a British address. Captured in two
 #: halves because the outward code alone ("LS11") already narrows a book to a
 #: handful of locations, and an outward-only agreement is worth saying out loud.
-_POSTCODE_RE = re.compile(
-    r"\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b", re.IGNORECASE
-)
+_POSTCODE_RE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -951,9 +949,7 @@ def _compare_policy_number(
     left = normalise_reference(stated.value)
     right = normalise_reference(policy.policy_number)
     if not left or not right:
-        return _uncompared(
-            definition, policy_value=policy.policy_number, notice_value=stated.value
-        )
+        return _uncompared(definition, policy_value=policy.policy_number, notice_value=stated.value)
 
     def answer(outcome: SignalOutcome, score: float, explanation: str) -> SignalResult:
         return _result(
@@ -1653,9 +1649,7 @@ def _compare_line_of_business(
             policy.line_of_business,
             outcome=SignalOutcome.MATCH,
             score=1.0,
-            explanation=(
-                "This policy covers the line of business the notice was classified as."
-            ),
+            explanation=("This policy covers the line of business the notice was classified as."),
         )
     return _result(
         definition,

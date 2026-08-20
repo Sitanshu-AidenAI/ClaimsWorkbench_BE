@@ -184,6 +184,15 @@ services:
     image: quay.io/keycloak/keycloak@sha256:89aae522be5c945670620f61bdabed612835fb151de8d5aa7091d093e1718a30
     command: ["start-dev", "--http-port=8080"]
     environment:
+      # Both spellings, deliberately. `KEYCLOAK_ADMIN` is what 25 reads;
+      # `KC_BOOTSTRAP_ADMIN_*` replaced it in 26. Setting only the newer pair on
+      # the pinned 25.0 image meant both were ignored and **no admin user was
+      # created at all** — the realm came up fine and every admin API call
+      # answered 401 with `user_not_found`, which reads as a wrong password
+      # rather than a missing account. Keeping both makes the image tag and the
+      # credentials independent.
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_DB: postgres

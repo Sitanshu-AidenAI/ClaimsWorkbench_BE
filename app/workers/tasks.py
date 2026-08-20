@@ -133,6 +133,19 @@ def poll_mail_intake(limit: int | None = None) -> dict[str, int | str]:
         logger.error("mail_intake_poll_failed", error=str(exc), exc_info=exc)
         raise
 
+    if summary.ingested:
+        # Hand the new notices straight on rather than leaving them for the next
+        # `process_queued_cases` tick. Collection and processing stay separate tasks
+        # — an officer must still be able to trigger either alone, and a pipeline
+        # failure must not read as a collection failure — but a notice that has just
+        # landed should not wait out a whole beat interval before anything looks at
+        # it. The beat entry remains the backstop for notices this misses: anything
+        # left `queued` by a crash between the commit here and the enqueue below.
+        #
+        # Safe to call unconditionally. The claim is `FOR UPDATE SKIP LOCKED`, so
+        # this and a concurrent beat tick divide the work instead of doubling it.
+        process_queued_cases.delay()
+
     return {
         "status": "ok",
         "mailbox": summary.mailbox,

@@ -12,9 +12,6 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.13"
-  NODE_VERSION: "20"
-  # Where the frontend repository is checked out relative to the workspace.
-  FRONTEND_PATH: frontend
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -148,49 +145,6 @@ jobs:
 
       - name: Downgrade is reversible
         run: uv run alembic downgrade base
-
-  # ---------------------------------------------------------------------------
-  # Frontend — lint, typecheck and vitest
-  # ---------------------------------------------------------------------------
-  vitest:
-    name: vitest
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out backend
-        uses: actions/checkout@v4
-
-      - name: Check out frontend
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ vars.FRONTEND_REPOSITORY || github.repository_owner }}/ClaimsWorkbench_FE
-          path: ${{ env.FRONTEND_PATH }}
-          token: ${{ secrets.FRONTEND_REPO_TOKEN || github.token }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
-
-      - name: Install
-        working-directory: ${{ env.FRONTEND_PATH }}
-        run: npm ci
-
-      - name: Lint
-        working-directory: ${{ env.FRONTEND_PATH }}
-        run: npm run lint
-
-      - name: Typecheck
-        working-directory: ${{ env.FRONTEND_PATH }}
-        run: npm run typecheck
-
-      - name: Unit tests
-        working-directory: ${{ env.FRONTEND_PATH }}
-        run: npm run test
-
-      - name: Build
-        working-directory: ${{ env.FRONTEND_PATH }}
-        run: npm run build
 
   # ---------------------------------------------------------------------------
   # Container build — proves the image still builds

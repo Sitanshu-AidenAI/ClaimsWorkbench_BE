@@ -174,10 +174,12 @@ uv run alembic check                                     # models vs. migrations
 
 ## Authentication
 
-Keycloak issues tokens; this service verifies them in-app against the realm
-JWKS (`pyjwt[crypto]`) and never calls introspection on the request path. The
-JWKS is cached, and an unrecognised `kid` triggers a single refresh, so realm
-key rotation is a non-event.
+**There is exactly one credential this API accepts: a Keycloak-issued access
+token, verified in-app against the realm JWKS (`pyjwt[crypto]`).** There is no
+second token format and no development bypass — `app/core/devauth.py`, which
+accepted unsigned `dev.<base64url(json)>` tokens, is gone. Introspection is never
+called on the request path; the JWKS is cached, and an unrecognised `kid` triggers
+a single refresh, so realm key rotation is a non-event.
 
 ```python
 from app.api.deps.auth import CurrentPrincipal, require_roles
@@ -194,16 +196,91 @@ async def create_claim(): ...
 `GET /api/v1/meta/whoami` echoes the decoded principal — the quickest end-to-end
 check that the auth chain is wired correctly.
 
+### How a browser gets one of those tokens
+
+Two doors, and on neither of them is the SPA an OAuth client: it holds no client id
+and never receives an authorization code.
+
+**Email and password — the primary path.** The form is ours; the credential is
+Keycloak's. `POST /auth/login` forwards it to the realm's token endpoint using the
+direct access grant, and Keycloak verifies it against its own database. There is no
+user table in `claims_workbench` and nothing reads one.
+
+**Single sign-on — off for now.** `GET /auth/sso` redirects to the realm. The whole
+path is built and tested, and `CWB_AUTH_SSO_ENABLED=false` is the only switch: it
+gates the button *and* the route, so a hidden control never has a live URL behind it.
+Turning it on also needs the client secret, which is why `/meta/config` reports the
+two combined.
+
+It stays in the tree because it is the only route that can carry MFA, a forced
+password change, or federation to an external directory — the password grant has no
+way to ask a second question.
+
+```
+POST /api/v1/auth/login     → {email, password} in, a session out
+GET  /api/v1/auth/sso       → 307 to Keycloak (PKCE S256, state, nonce)
+GET  /api/v1/auth/callback  → redeems the code, stores the refresh token,
+                              sets an HttpOnly cookie, 303 into the SPA
+POST /api/v1/auth/token     → cookie in, short-lived access token out
+POST /api/v1/auth/logout    → destroys the grant, returns the end-session URL
+```
+
+Both doors converge: whichever grant produced the tokens, the refresh token goes to
+Redis and the same `SessionResponse` comes back, so nothing above these routes can
+tell which was used.
+
+`POST /auth/login` is the only endpoint in this API that receives a password, and
+three things follow. It is rate-limited per IP **and** per email
+(`CWB_AUTH_LOGIN_MAX_ATTEMPTS`, default 10 per 300s) — Keycloak locks a single
+account, but is blind to one source trying many accounts once each. Its refusal is
+one generic sentence, because passing the realm's wording through would make it a
+username-enumeration oracle; a lockout is the single exception, since somebody whose
+correct password has stopped working needs to know why. And validation errors never
+echo `input`, so a malformed body cannot return the password.
+
+
+**The refresh token never reaches the browser.** It is held in Redis behind a
+256-bit opaque handle, and the handle is what travels in the cookie
+(`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/api/v1/auth`). The SPA holds its
+access token in memory only — no `localStorage`, no `sessionStorage` — so a
+reload re-mints rather than restoring a saved credential, and the worst an XSS can
+do is act as the user while the tab is open.
+
+Three properties are worth relying on, each covered by
+`tests/unit/test_auth_session.py`:
+
+* **Rotation.** Every refresh issues a new handle and retires the old one.
+* **Reuse detection.** A retired handle presented again means two parties hold
+  one cookie, so the whole grant family is destroyed and the person signs in
+  again. This is what makes a captured cookie announce itself rather than work.
+* **Two clocks.** `CWB_AUTH_IDLE_TIMEOUT_SECONDS` and
+  `CWB_AUTH_ABSOLUTE_TIMEOUT_SECONDS`. A desk leaves tabs open all day, so an
+  idle bound alone would never fire; an absolute bound alone would sign someone
+  out mid-sentence.
+
+CSRF is a concern for those two POSTs and nothing else — every other authenticated
+route is bearer-only and carries no cookie, so it is not forgeable cross-site in
+the first place. Both require an `Origin` in `CWB_CORS_ORIGINS` and an
+`X-Requested-With` header, neither of which a cross-site form can set.
+
 ### Local realm setup
 
 Keycloak starts in dev mode with no realm. Create one once:
 
 ```bash
+docker compose up -d keycloak
 ./scripts/bootstrap-keycloak.sh
 ```
 
-That creates the `claims-workbench` realm, the `claims-workbench-api` client,
-the `claims-adjuster` / `claims-admin` roles, and a `demo` / `demo` user.
+That creates the `claims-workbench` realm with brute-force protection and a
+password policy, the confidential `claims-workbench-api` client (standard flow
+enabled, since it is also what the API redeems codes with), an **audience mapper**
+so tokens carry `aud: claims-workbench-api` rather than Keycloak's catch-all
+`account`, the six realm roles in `app.domain.enums.Role`, and one user per role.
+
+It prints the client secret. **Sign-in cannot work without it** —
+`CWB_KEYCLOAK_CLIENT_SECRET` is no longer optional, and `/auth/login` says so
+plainly rather than failing later at the token endpoint.
 
 ---
 

@@ -1140,9 +1140,7 @@ def to_policy_candidate(match: Any, policy: Any) -> PolicyCandidateOut:
         recommended=bool(match.recommended) if match else False,
         recommendation_reason=None,
         compared_signal_count=sum(
-            1
-            for entry in signals
-            if entry.outcome in ("match", "partial", "mismatch")
+            1 for entry in signals if entry.outcome in ("match", "partial", "mismatch")
         ),
         signal_count=len(signals),
         selected_at=match.selected_at if match else None,
@@ -1184,9 +1182,7 @@ def to_scored_candidate(candidate: Any, policy: Any) -> PolicyCandidateOut:
         period_outcome=candidate.period_outcome.value,
         signals=[_signal_result(result.as_dict()) for result in candidate.signal_results],
         warnings=[
-            CandidateWarningOut(
-                code=warning.code, detail=warning.detail, severity=warning.severity
-            )
+            CandidateWarningOut(code=warning.code, detail=warning.detail, severity=warning.severity)
             for warning in candidate.warnings
         ],
         display=_candidate_display(display, policy),

@@ -1,0 +1,36 @@
+# Line-ending and diff handling.
+#
+# This file exists because `demo-data/` is now tracked and `core.autocrlf` is on for
+# most contributors here. Without it git treats a PDF as text, "helpfully" rewrites LF
+# to CRLF on checkout, and the file that lands is a corrupt PDF — which
+# `tests/unit/test_demo_documents.py` would then fail on with a parse error rather than
+# anything that names the cause. Committing binaries without this is worse than not
+# committing them at all.
+
+# Normalise text in the repository, and let each platform check it out natively.
+* text=auto
+
+# Documents and archives are bytes. Never touch them, never try to diff them.
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.zip   binary
+*.gz    binary
+
+# Sample messages carry RFC 5322 headers and are parsed byte for byte by the mail
+# intake tests. Held at LF so a checkout on Windows does not change what is being
+# parsed — the `Message-ID` dedupe and the MIME boundaries both depend on it.
+*.eml   text eol=lf
+
+# Kept at LF because the intake tests assert on exact cell content, and a CSV whose
+# rows gained carriage returns compares unequal for a reason nobody would guess.
+*.csv   text eol=lf
+
+# Shell scripts must stay LF or they will not run: a CRLF shebang makes the kernel
+# look for an interpreter whose name ends in a carriage return.
+*.sh    text eol=lf

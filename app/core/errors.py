@@ -77,18 +77,39 @@ class PermissionDeniedError(AppError):
     message = "You do not have permission to perform this action."
 
 
+class RateLimitedError(AppError):
+    """Too many attempts. Carries the wait in `details.retry_after_seconds`.
+
+    The `rate_limited` code was already in the `HTTPException` status map below,
+    which is what a route raising a bare 429 would have produced. This gives the
+    same shape a type to raise, so the sign-in throttle does not have to reach for
+    `HTTPException` and lose the stable code the client switches on.
+    """
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "rate_limited"
+
+
 class ExternalServiceError(AppError):
     status_code = status.HTTP_502_BAD_GATEWAY
     code = "external_service_error"
     message = "A dependency returned an unexpected response."
 
 
-def _error_response(
+def error_response(
     status_code: int,
     code: str,
     message: str,
     details: dict[str, Any] | None = None,
 ) -> JSONResponse:
+    """The one error envelope, as a response object.
+
+    Public because a handler is not always the right place to build it. A route
+    that must both fail *and* set a header — clearing a session cookie on the way
+    out, say — cannot raise: the registered handler constructs its own response
+    and every header the route set on the injected one is discarded with it. Such
+    a route returns this instead, and the shape stays identical either way.
+    """
     payload: dict[str, Any] = {
         "error": {"code": code, "message": message, "details": details or {}},
         "request_id": get_request_id(),
@@ -107,10 +128,18 @@ def _serialisable_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
     `ctx` is dropped rather than coerced: its useful content is already in `msg`,
     and the remainder is Pydantic internals no API client should be reading.
     `url` goes with it — a link to pydantic.dev is not part of this API.
+
+    **`input` is dropped too, and that one is a security property rather than
+    tidiness.** Pydantic puts the value that failed validation in it, so echoing it
+    back hands the caller their own payload — which is claim data on most routes and
+    a *password* on `POST /auth/login`. A 422 on the login body would otherwise
+    return the password in the response, and from there into any client-side error
+    log. Nothing needs its own submission read back to it: `loc` says which field,
+    `msg` says what was wrong with it.
     """
     cleaned: list[dict[str, Any]] = []
     for error in exc.errors():
-        entry = {key: value for key, value in error.items() if key not in ("ctx", "url")}
+        entry = {key: value for key, value in error.items() if key not in ("ctx", "url", "input")}
         # `loc` is a tuple and may carry non-string parts for a list index.
         entry["loc"] = [str(part) for part in error.get("loc", ())]
         cleaned.append(entry)
@@ -124,7 +153,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             logger.error("app_error", code=exc.code, message=exc.message, exc_info=exc)
         else:
             logger.info("app_error", code=exc.code, message=exc.message)
-        return _error_response(exc.status_code, exc.code, exc.message, exc.details)
+        return error_response(exc.status_code, exc.code, exc.message, exc.details)
 
     @app.exception_handler(StarletteHTTPException)
     async def _handle_http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -135,13 +164,13 @@ def register_exception_handlers(app: FastAPI) -> None:
             status.HTTP_409_CONFLICT: "conflict",
             status.HTTP_429_TOO_MANY_REQUESTS: "rate_limited",
         }.get(exc.status_code, "http_error")
-        return _error_response(exc.status_code, code, str(exc.detail))
+        return error_response(exc.status_code, code, str(exc.detail))
 
     @app.exception_handler(RequestValidationError)
     async def _handle_request_validation(
         _request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        return _error_response(
+        return error_response(
             HTTP_422_UNPROCESSABLE,
             "validation_error",
             "The request payload is invalid.",
@@ -151,7 +180,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def _handle_unexpected(_request: Request, exc: Exception) -> JSONResponse:
         logger.exception("unhandled_exception", error=str(exc))
-        return _error_response(
+        return error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "internal_error",
             "An unexpected error occurred.",
