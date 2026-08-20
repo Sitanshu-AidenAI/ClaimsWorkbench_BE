@@ -1,0 +1,254 @@
+
+FRONT RANGE MUTUAL CASUALTY INSURANCE COMPANY
+Inland Marine Department  |  1801 Broadway, Suite 2200, Denver, CO 80202  |  NAIC No. 26315
+
+INLAND MARINE COVERAGE PART
+CONTRACTORS EQUIPMENT AND INSTALLATION FLOATER
+DECLARATIONS AND SCHEDULES
+
+POLICY NUMBER:  IM-7741-15530
+POLICY PERIOD:  From 08/01/2025 to 08/01/2026 at 12:01 A.M. Standard Time
+COVERAGE FORM:  FRM-IM 500 (04-25) Combined Contractors Equipment and Installation Floater
+COMPANION TO:   Commercial General Liability Policy GL-8804-27153 (same Named Insured)
+
+NAMED INSURED:  Beacon Mechanical Services, Inc.
+                DBA Beacon Mechanical  |  Beacon HVAC & Plumbing
+ADDITIONAL NAMED INSUREDS:
+                Beacon Mechanical Service & Maintenance, LLC
+                Beacon Sheet Metal Fabrication, LLC
+MAILING ADDRESS: 5580 East 56th Avenue
+                 Commerce City, CO 80022
+PREMISES:       (1) 5580 East 56th Avenue, Commerce City, CO 80022 - office, shop and fabrication,
+                    31,000 sq ft, fenced yard, alarmed, camera monitored
+                (2) 2712 Aviation Way, Colorado Springs, CO 80916 - branch warehouse, 8,400 sq ft, leased
+OPERATIONS:     Commercial mechanical contractor - HVAC, hydronic and chilled water piping, sheet metal
+                fabrication, plumbing, boiler and chiller installation, controls, 24-hour service
+
+PRODUCER:       Front Range Commercial Insurance Group, Inc.
+                Producer Code CO-5540
+                    Broker Reference: FRC/IM/2025/7741
+                7900 East Union Avenue, Suite 1100, Denver, CO 80237
+                Producer: Hollis Baumgartner-Reyes  |  (303) 555-0198  |  hbaumgartner@frcig.example
+
+--------------------------------------------------------------------------------------------------
+SECTION 1 - INSTALLATION FLOATER
+--------------------------------------------------------------------------------------------------
+
+Covers materials, supplies, machinery, fixtures, equipment and other property of a like nature that is
+owned by the Insured, or for which the Insured is legally liable, and that is intended to become a
+permanent part of a building, structure or installation project on which the Insured is performing work.
+Coverage attaches from the time the property comes into the Insured's care, custody or control and ceases
+on the earliest of: installation and acceptance by the owner or general contractor; the property being put
+to its intended use; ninety (90) days after installation is complete; or the expiry of this policy.
+
+  Limit any one project or jobsite                                       $ 3,000,000
+  Limit any one occurrence, all projects                                 $ 5,000,000
+  Property in Transit (owned or non-owned conveyance)                    $   500,000 any one conveyance
+  Property in Temporary Off-Site Storage (declared or undeclared)        $   750,000 any one location
+  Property at the Insured's Premises Awaiting Installation               $ 1,000,000
+  Property at a Fabricator's or Supplier's Premises                      $   500,000
+  Theft of Copper, Copper Pipe, Brass, Wire and Fittings                 $   150,000 per occurrence
+  Sheet Metal Duct and Fabricated Assemblies at a Jobsite                $   500,000 per occurrence
+  Debris Removal                                                         25% of loss, plus $ 100,000
+  Expediting Expense (air freight, overtime, premium shipping)           $   200,000
+  Testing and Commissioning of Installed Systems                         $   500,000
+  Soft Costs and Delay                                                   NOT COVERED
+
+--------------------------------------------------------------------------------------------------
+SECTION 2 - CONTRACTORS EQUIPMENT (SCHEDULED AND UNSCHEDULED)
+--------------------------------------------------------------------------------------------------
+
+  A.  Scheduled Equipment (see Schedule of Equipment below)              $ 1,317,500 total
+  B.  Unscheduled Equipment, per item replacement cost $ 7,500 or less   $   400,000 per occurrence
+      Maximum any one unscheduled item                                   $     7,500
+  C.  Small Tools, Hand Tools and Power Tools (blanket)                  $   200,000 per occurrence
+      Maximum any one tool                                              $     3,500
+  D.  Employee-Owned Tools used in the Insured's business                $    75,000 per occurrence
+      Maximum any one employee                                          $     4,000
+  E.  Rented, Leased or Borrowed Equipment from Others                   $   750,000 per occurrence
+      Loss of Use / Continuing Rental Charges                            $ 2,500 per day / $ 60,000
+  F.  Newly Acquired Equipment (report within 60 days)                   $   500,000 per item
+  G.  Equipment in Transit                                              $   400,000 any one conveyance
+  H.  Rental Reimbursement Following Covered Loss to Owned Equipment     $ 1,500 per day / $ 45,000
+  I.  Employee Theft of Tools, Equipment or Installation Materials       $   100,000 annual aggregate
+  J.  Property of Others in the Insured's Care, Custody or Control       $   250,000
+
+  MAXIMUM ANY ONE OCCURRENCE, SECTIONS 1 AND 2 COMBINED                  $ 5,000,000
+
+--------------------------------------------------------------------------------------------------
+SCHEDULE OF EQUIPMENT (SECTION 2, COVERAGE A) - as of 08/01/2025
+--------------------------------------------------------------------------------------------------
+
+ Item  Year  Description                                    Make / Model         Serial No.        Limit
+ ----  ----  ---------------------------------------------  -------------------  --------------  ---------
+ E-01  2023  Pipe threading and grooving machine, 4 in.     Ridgid 1224          RID1224230771   $  18,500
+ E-02  2022  Roll groover, hydraulic                        Ridgid 918-I         RID918I220884   $  14,200
+ E-03  2024  Plasma cutting table, 5 ft x 10 ft, CNC        Hypertherm XPR170     HYP170XPR24118  $ 214,000
+ E-04  2021  Coil line / duct fabrication line              Lockformer Vulcan     LOCVUL21007719  $ 386,000
+ E-05  2023  Sheet metal shear, 10 ft hydraulic             Cincinnati 1010       CIN1010230447   $  96,000
+ E-06  2022  Press brake, 90 ton                            Accurpress 7259       ACC7259220196   $ 128,000
+ E-07  2024  Rough terrain forklift, 8,000 lb               JLG G10-55A           JLGG1055A24771  $  92,000
+ E-08  2023  Scissor lift, 32 ft electric (x4 units)        Genie GS-3246         Multiple        $  74,000
+ E-09  2022  Towable articulating boom lift, 40 ft          Genie TZ-34/20        GENTZ3420220884 $  36,500
+ E-10  2024  Portable chiller, 40 ton (rental fleet)        Trane RTAC040         TRN040RTAC2411  $  84,000
+ E-11  2023  Refrigerant recovery machines (12 units)       Appion / Yellow Jkt   Multiple        $  22,000
+ E-12  2022  Nitrogen and welding equipment, engine drives  Miller Trailblazer    Multiple        $  38,000
+ E-13  2024  Hydrostatic test pumps and leak detection      Multiple              Multiple        $  16,800
+ E-14  2023  Job trailers and secured tool cribs (6 units)  Custom                Multiple        $  68,500
+ E-15  2024  Thermal imaging, air balancing and             Fluke / TSI /         Multiple        $  29,000
+             commissioning instruments                      Shortridge
+                                                                                                 ----------
+                                                             TOTAL SCHEDULED VALUE                $1,317,500
+
+Valuation: Replacement Cost for items under six (6) years old; Actual Cash Value thereafter.
+Installation materials are valued at the Insured's cost, including freight, taxes and the labour expended
+to the date of loss, plus the Insured's overhead and profit at the rate in the contract, not exceeding the
+contract value of the installed work.
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+  Installation Floater - all perils                                     $ 10,000 per occurrence
+  Installation Floater - theft of copper, brass and wire                $ 25,000 per occurrence
+  Installation Floater - water damage from testing of installed systems $ 25,000 per occurrence
+  Scheduled Equipment - items $ 100,000 or more                         $ 10,000 per occurrence
+  Scheduled Equipment - items under $ 100,000                           $  2,500 per occurrence
+  Unscheduled Equipment, Small Tools and Employee Tools                 $  1,000 per occurrence
+  Theft from an unattended vehicle or unsecured jobsite                 $ 10,000 per occurrence
+  Equipment in Transit                                                  $  2,500 per occurrence
+  Rented, Leased or Borrowed Equipment                                  $  2,500 per occurrence
+  Employee Theft                                                        $ 10,000 per occurrence
+
+--------------------------------------------------------------------------------------------------
+COVERED CAUSES OF LOSS
+--------------------------------------------------------------------------------------------------
+
+All risks of direct physical loss of or damage to covered property, except as excluded, while at a jobsite,
+at the Insured's premises, at a declared or undeclared temporary storage location, or in transit within the
+United States and Canada. Perils insured include fire, lightning, explosion and smoke; windstorm and hail;
+weight of snow, ice and sleet; freezing and frozen pipe damage to installation property; theft, burglary and
+attempted theft; vandalism and malicious mischief; collision, overturn and upset of a transporting
+conveyance; falling objects and dropped loads; collapse; accidental discharge of water; flood and earth
+movement (sublimited); riot and civil commotion; and sudden and accidental physical damage occurring during
+the testing or commissioning of systems installed by the Insured.
+
+  Flood and Earth Movement sublimit: $ 500,000 per occurrence / $ 500,000 annual aggregate, applicable to
+  Sections 1 and 2 combined, excluding any location in a FEMA Special Flood Hazard Area.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS
+--------------------------------------------------------------------------------------------------
+
+  1.  Faulty workmanship, materials, design or specification - the cost of making good the defective work
+      or material itself. Resulting physical damage to other covered property from a Covered Cause of Loss
+      is insured.
+  2.  Wear and tear, gradual deterioration, rust, corrosion, scaling, oxidation, inherent vice and latent
+      defect.
+  3.  Mechanical, electrical, electronic or hydraulic breakdown or derangement of equipment, including
+      compressor, motor, control board and refrigerant circuit failure. Resulting fire, explosion or
+      collision damage IS covered.
+  4.  Damage to any system caused by its own testing pressure exceeding the manufacturer's rating, or by
+      testing performed outside the Insured's normal working hours without an attendant present, or in
+      breach of the Water Damage Control Condition below.
+  5.  Property after installation is complete and accepted, after the property is put to its intended use,
+      or more than ninety (90) days after installation, whichever occurs first.
+  6.  Property that is or becomes the subject of a builders risk policy carried by the project owner or
+      general contractor, to the extent that policy provides valid and collectible insurance. This policy is
+      excess over any such builders risk or installation coverage.
+  7.  Mysterious disappearance, unexplained shortage or shortage disclosed on taking inventory.
+  8.  Theft from an unlocked and unattended vehicle unless there are visible marks of forced entry, or from
+      an open jobsite where the property was not stored in a locked container, secured room or fenced
+      compound.
+  9.  Dishonest acts of the Insured, its partners, officers or directors (employee theft is covered under
+      Coverage I of Section 2 subject to its aggregate limit).
+  10. Loss of use, delay, loss of contract, liquidated damages, penalties, soft costs, and all consequential
+      loss.
+  11. Contractors equipment while being used for demolition, underground mining, pile driving, or lifted or
+      suspended in the air except as part of a normal installation operation.
+  12. Licensed highway vehicles, trucks, tractors, trailers, service vans and any vehicle subject to motor
+      vehicle registration (insure under commercial auto), and aircraft, watercraft and drones.
+  13. Property while waterborne.
+  14. Mould, fungus, wet rot, dry rot and bacteria, and any resulting remediation.
+  15. Pollution and contamination, other than pollutant cleanup necessitated by a covered loss up to
+      $ 100,000 annual aggregate.
+  16. War, terrorism (TRIA rejected), nuclear hazard, governmental seizure, confiscation and repossession.
+  17. Cyber incident, malicious code and electronic data corruption, including building automation and
+      controls programming and configuration data.
+  18. Refrigerant loss, leakage, contamination or the cost of refrigerant itself, except where lost as a
+      direct result of a Covered Cause of Loss, sublimited to $ 50,000 per occurrence.
+
+--------------------------------------------------------------------------------------------------
+ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+FRM-IM 500 (04-25)   Combined Contractors Equipment and Installation Floater
+FRM-INST 510 (04-25) Installation Floater Extension - Transit, Storage and Fabricator Premises
+FRM-TEST 520 (04-25) Testing and Commissioning of Installed Systems
+FRM-FRZ 525 (04-25)  Freezing and Frozen Pipe Coverage for Installation Property
+FRM-RENT 530 (04-25) Rented, Leased and Borrowed Equipment with Loss of Use
+FRM-RR 535 (04-25)   Rental Reimbursement
+FRM-EMP 540 (04-25)  Employee Tools and Employee Theft
+FRM-FLD 545 (04-25)  Limited Flood and Earth Movement - Non-SFHA Locations
+FRM-REF 550 (04-25)  Refrigerant Sublimit
+FRM-WTR 555 (04-25)  Water Damage Control Condition - Pressure Testing and System Charging
+FRM-SEC 610 (04-25)  Jobsite and Premises Security Condition
+FRM-CYB 501 (01-25)  Cyber Incident and Electronic Data Exclusion
+FRM-LP 505 (04-25)   Loss Payable Provisions
+FRM-CO STAT (02-25)  Colorado Amendatory
+FRM-TRIA 900 (01-21) TRIA - Coverage REJECTED
+
+--------------------------------------------------------------------------------------------------
+WATER DAMAGE CONTROL CONDITION (FRM-WTR 555) AND SECURITY CONDITION (FRM-SEC 610)
+--------------------------------------------------------------------------------------------------
+
+WATER DAMAGE CONTROL. It is a condition of coverage under Sections 1 and 2 that: (a) hydrostatic and
+pressure testing of any piping system installed by the Insured is performed only during the Insured's normal
+working hours with a qualified employee present; (b) no system is left charged, pressurised or filled
+outside working hours unless the building water supply is isolated or leak detection with automatic shut-off
+is installed and operational; (c) a written and signed test record is completed for each system tested; and
+(d) the general contractor or building owner is notified in writing before any system is filled or charged.
+This condition mirrors the condition in companion policy GL-8804-27153.
+
+SECURITY CONDITION. Copper pipe, fittings, wire, condensing units, compressors, packaged rooftop units and
+similar high-theft property must be stored in a locked conex container, a locked job trailer, or a secured
+interior room, and must not be left in the open at a jobsite overnight. Service vans must be locked and
+tool compartments secured when unattended. Where this condition is not met, the theft deductible is doubled
+and the recoverable amount is limited to 50% of the loss.
+
+--------------------------------------------------------------------------------------------------
+LOSS PAYEES AND ADDITIONAL INTERESTS
+--------------------------------------------------------------------------------------------------
+
+  Item E-03 (Hypertherm plasma table) and Item E-04 (Lockformer coil line):
+      Rocky Mountain Equipment Credit, LLC, Loan No. RMEC-2023-4471 and RMEC-2021-3308
+  General Loss Payee, all Sections:
+      Mile High Commercial Bank, N.A., ISAOA/ATIMA, Revolving Credit Facility dated 05/2022
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING
+--------------------------------------------------------------------------------------------------
+
+1.  NOTICE. Report any loss as soon as practicable and within seventy-two (72) hours of discovery to:
+        Front Range Mutual - Inland Marine Claims
+        imclaims@frontrangemutual.example   |   (866) 555-0344, option 4
+    Do not repair, replace, discard or dispose of any damaged component before we have had a reasonable
+    opportunity to inspect. Preserve the failed pipe, fitting, valve, coil, hose, compressor or component.
+2.  THEFT. Report to the police within twenty-four (24) hours and provide the incident number, the serial
+    numbers of stolen items, purchase invoices, jobsite security arrangements, and the names of the
+    employees who had access.
+3.  PROOF OF LOSS within sixty (60) days of our request. For installation losses the Insured must furnish
+    the subcontract or purchase order, the schedule of values, the pay applications, the material invoices,
+    the delivery tickets and the daily job reports.
+4.  MITIGATION. Reasonable emergency expense up to $ 10,000 may be incurred without prior approval.
+5.  OTHER INSURANCE. This policy is EXCESS over any builders risk or installation coverage provided by the
+    project owner or general contractor, and over any coverage on rented equipment provided by the rental
+    company. It is PRIMARY as to the Insured's own scheduled and unscheduled equipment.
+6.  SUIT LIMITATION. Two (2) years from the date of loss.
+7.  PREMIUM. Annual premium $ 61,450. Installation floater rate $ 0.184 per $ 100 of annual installation
+    values reported ($ 21,400,000 estimated); equipment rate $ 1.610 per $ 100 of scheduled value.
+
+Countersigned at Denver, Colorado, July 17, 2025.
+
+    ___________________________________     ___________________________________
+    Authorized Representative               Inland Marine Underwriting Manager

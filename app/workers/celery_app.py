@@ -87,6 +87,27 @@ if settings.docint.enabled and settings.docint.queue_poll_enabled:
         interval_seconds=settings.docint.queue_poll_interval_seconds,
     )
 
+# The policy library's own sweep. Registered separately from the document-intelligence
+# entries above because the two are independently switchable: a deployment can run
+# claim-document indexing with no policy library, and can load a policy library into an
+# environment where mailbox intake is not configured at all.
+if settings.policy_library.enabled:
+    # The backstop for an upload whose enqueue never reached a worker. A minute is
+    # frequent enough that an administrator watching the screen sees it move, and rare
+    # enough that an empty queue costs one indexed query per tick.
+    celery_app.conf.beat_schedule["ingest-pending-policy-documents"] = {
+        "task": "app.workers.tasks.ingest_pending_policy_documents",
+        "schedule": 60.0,
+    }
+    celery_app.conf.beat_schedule["reap-stale-policy-ingest"] = {
+        "task": "app.workers.tasks.reap_stale_policy_ingest",
+        "schedule": 3600.0,
+    }
+    logger.info(
+        "policy_library_schedule_registered",
+        collection=settings.policy_library.qdrant_collection,
+    )
+
 if settings.graph.poll_enabled and settings.graph.configured:
     celery_app.conf.beat_schedule["poll-mail-intake"] = {
         "task": "app.workers.tasks.poll_mail_intake",

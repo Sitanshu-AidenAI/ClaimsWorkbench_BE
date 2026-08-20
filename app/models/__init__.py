@@ -35,7 +35,14 @@ from app.models.fnol import (
 )
 from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage
 from app.models.notification import Notification, NotificationRead
-from app.models.reference_data import CatEvent, Handler, Policy, ReferenceSequence
+from app.models.policy_document import PolicyDocument, PolicyDocumentChunk
+from app.models.reference_data import (
+    CatEvent,
+    Handler,
+    Policy,
+    PolicyLocation,
+    ReferenceSequence,
+)
 
 __all__ = [
     "AuditEvent",
@@ -64,6 +71,9 @@ __all__ = [
     "Notification",
     "NotificationRead",
     "Policy",
+    "PolicyDocument",
+    "PolicyDocumentChunk",
+    "PolicyLocation",
     "ReferenceSequence",
     "RoleCapability",
     "TimestampMixin",

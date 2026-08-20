@@ -1,0 +1,277 @@
+
+PINNACLE INLAND INSURANCE COMPANY
+Builders Risk & Inland Marine Division
+620 South Tryon Street, Suite 1400, Charlotte, NC 28202  |  NAIC No. 34519
+
+BUILDERS RISK POLICY - COMPLETED VALUE FORM
+DECLARATIONS
+
+POLICY NUMBER:      BR-3358-20471
+POLICY PERIOD:      From 04/15/2025 to 10/15/2026 (18 months), 12:01 A.M. Standard Time at the project site
+TYPE:               Single Project, Completed Value, Non-Reporting
+QUOTE / BINDER REF: PIN-BR-2025-1188
+
+NAMED INSUREDS (as their respective interests may appear):
+    1.  Rivergate Development Partners, LLC ................ Project Owner / Developer
+    2.  Vanterra Construction Group, LLC .................... General Contractor
+    3.  Subcontractors of every tier, but only for their interest in materials, supplies, equipment and
+        temporary works forming part of the insured project, and only while such property is at the project
+        site, in temporary storage, or in transit.
+
+MAILING ADDRESS (First Named Insured):
+    Rivergate Development Partners, LLC
+    3400 South Boulevard, Suite 600
+    Charlotte, NC 28209
+
+GENERAL CONTRACTOR ADDRESS:
+    Vanterra Construction Group, LLC
+    8815 Nations Ford Road
+    Charlotte, NC 28217
+    NC General Contractor Licence No. 71204 (Unlimited - Building)
+
+PRODUCER:   Ashcombe Vail Commercial Insurance Services
+            Producer Code NC-3312
+                    Broker Reference: AV/BR/2025/3358
+            201 South College Street, Suite 2100, Charlotte, NC 28244
+            Producer: Gerald Nwosu-Fitzgerald  |  (704) 555-0731  |  gnwosu@ashcombevail.example
+
+--------------------------------------------------------------------------------------------------
+PROJECT DESCRIPTION AND SITE
+--------------------------------------------------------------------------------------------------
+
+PROJECT NAME:       Rivergate Commons - Phase II
+PROJECT ADDRESS:    2650 Rivergate Parkway
+                    Charlotte, NC 28273 (Mecklenburg County)
+                    Parcel ID 199-441-08; bounded by Rivergate Parkway to the north and Steele Creek
+                    tributary to the south.
+
+SCOPE OF WORK:      New ground-up construction of a five-story, 214-unit multifamily residential building
+                    over a two-level precast concrete parking podium, together with a detached 5,800 sq ft
+                    amenity clubhouse, resort-style pool, surface parking for 88 vehicles, site utilities,
+                    stormwater management structures and hardscape.
+
+CONSTRUCTION TYPE:  Type III-A over Type I-A podium. Podium: precast concrete plank on cast-in-place
+                    columns. Superstructure: light-gauge metal stud and wood-framed floors 2 through 5.
+                    Exterior: fibre cement lap siding, brick veneer at podium level, EIFS accent bands.
+                    Roof: TPO single-ply membrane, mechanically fastened.
+                    Fire protection: NFPA 13R sprinkler system, standpipes; system to be charged at
+                    substantial completion of each floor.
+
+PROJECT VALUES:
+    Hard costs (construction contract sum) ...................... $ 62,400,000
+    Owner-supplied materials and equipment ......................  $  3,150,000
+    Site work included in the contract sum ......................  $  6,800,000
+    Soft costs (declared, see Soft Costs Endorsement) ...........  $  8,200,000
+    TOTAL PROJECT VALUE ......................................... $ 73,750,000
+
+CONTRACT DOCUMENTS: AIA A102-2017 Standard Form of Agreement, Owner and Contractor (Cost of the Work Plus
+                    a Fee with a Guaranteed Maximum Price) dated 02/28/2025.
+SCHEDULED SUBSTANTIAL COMPLETION: 08/31/2026
+GROUNDBREAKING:     04/28/2025
+
+--------------------------------------------------------------------------------------------------
+LIMITS OF INSURANCE
+--------------------------------------------------------------------------------------------------
+
+  LIMIT OF INSURANCE - PER OCCURRENCE, ALL COVERAGES COMBINED       $ 65,550,000
+  (Completed value of the insured project including owner-supplied materials; NOT including land,
+   excavation, site preparation completed prior to inception, or soft costs, which are separately limited.)
+
+  SUBLIMITS (part of, and not in addition to, the Limit of Insurance):
+
+    Temporary Structures, Scaffolding, Formwork, Falsework, Cribbing,
+      Hoists, Fencing and Construction Trailers                        $ 1,500,000
+    Property in Transit (any one conveyance)                           $ 1,000,000
+    Property in Temporary Off-Site Storage (any one location)          $ 2,500,000
+    Property at the Fabricator's or Supplier's Premises                $ 1,000,000
+    Theft of Materials, Supplies and Equipment Awaiting Installation   $   750,000 per occurrence
+    Theft of Copper, Wire, Cable and Metal Building Products           $   250,000 per occurrence
+    Debris Removal                                                     25% of loss, plus $ 500,000
+    Pollutant Cleanup and Removal                                      $   100,000 annual aggregate
+    Ordinance or Law - Coverages A, B and C combined                   $ 2,000,000
+    Expediting Expenses                                                $ 1,000,000
+    Extra Expense                                                      $ 1,000,000
+    Valuable Papers, Plans, Drawings, Blueprints and BIM Models        $   500,000
+    Trees, Sod, Landscaping and Site Plantings                         $   250,000
+    Fire Department Service Charge and Fire Extinguishing Expense      $   100,000
+    Pollution Cleanup from Fuel or Hydraulic Fluid Release             $   100,000
+    Water Damage from Testing of Plumbing or Fire Protection Systems   $ 2,000,000
+    Testing and Commissioning - Damage during Wet or Hot Testing       $ 1,000,000
+    Rewriting or Reconstruction of Design Documents                    $   250,000
+    Professional Fees / Claim Preparation                              $   150,000
+
+  SOFT COSTS AND DELAY IN COMPLETION (End. PIN-SOFT 410):
+    Named Insureds for Soft Costs coverage: Rivergate Development Partners, LLC ONLY
+    Aggregate Soft Costs Limit                                         $ 8,200,000
+    Indemnity Period                                                   12 months from the date the project
+                                                                       would otherwise have been completed
+    Time Deductible                                                    30 consecutive days
+    Covered soft cost categories: additional loan interest and carrying costs; extended general conditions;
+    architectural, engineering and consulting fees necessitated by the loss; real estate taxes and insurance
+    premiums during the extended period; advertising, marketing and re-leasing expenses; permit and
+    inspection re-fees; and additional legal and accounting fees directly attributable to the delay.
+    Loss of rental income is EXCLUDED under this endorsement.
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+  All Other Perils                                                    $ 50,000 per occurrence
+  Water Damage (including rain, wind-driven rain and water intrusion
+    into the structure prior to the building being dried-in)           $ 100,000 per occurrence
+  Named Windstorm                                                     2% of the completed value,
+                                                                      minimum $ 250,000
+  Wind and Hail (non-named storm)                                     $ 100,000 per occurrence
+  Theft, Vandalism and Malicious Mischief                             $ 25,000 per occurrence
+  Earth Movement (where covered by endorsement)                       $ 250,000 per occurrence
+  Flood (where covered by endorsement)                                $ 250,000 per occurrence
+  Testing and Commissioning                                           $ 100,000 per occurrence
+  Soft Costs / Delay in Completion                                    30 day time deductible
+
+--------------------------------------------------------------------------------------------------
+COVERED CAUSES OF LOSS
+--------------------------------------------------------------------------------------------------
+
+Risks of direct physical loss of or damage to Covered Property at the project site, in transit or in
+temporary storage, except as excluded. Perils contemplated include: fire and lightning; explosion; windstorm
+and hail; tornado; riot and civil commotion; vandalism and malicious mischief; theft and burglary; aircraft
+and vehicle impact; falling objects and dropped loads; collapse of any part of the structure during erection
+including collapse caused by the weight of construction materials or by shoring or formwork failure;
+accidental discharge of water from temporary or permanent plumbing, fire protection or process systems;
+rain and water intrusion into an incomplete structure; smoke; settling and subsidence caused by an insured
+peril; damage during hoisting, rigging, lifting and setting; and damage during testing and commissioning
+as endorsed.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS
+--------------------------------------------------------------------------------------------------
+
+This policy does not cover:
+  1.  Loss or damage caused by faulty, inadequate or defective design, plan, specification, survey,
+      workmanship, construction material or method of construction. This exclusion applies to the cost of
+      making good the defective work, material or design itself. However, if defective work, materials or
+      design results in physical damage from a Covered Cause of Loss to otherwise sound property, that
+      resulting damage is insured. (LEG 2/96 Defects Wording - End. PIN-DEF 305)
+  2.  The cost of correcting, redoing, replacing or repairing work that does not conform to the contract
+      documents or that fails to pass inspection, absent physical damage from a Covered Cause of Loss.
+  3.  Loss resulting from delay, loss of market, loss of use, loss of rent, liquidated damages or penalties
+      for non-completion, except as provided under the Soft Costs and Delay in Completion endorsement.
+  4.  Wear and tear, gradual deterioration, rust, corrosion, dampness or dryness of atmosphere, extremes of
+      temperature, marring, scratching or denting, unless resulting from a Covered Cause of Loss.
+  5.  Mysterious disappearance, unexplained shortage, or shortage disclosed on taking inventory.
+  6.  Theft from an unattended vehicle unless the vehicle was locked and there are visible signs of forced
+      entry, or the property was in a locked and secured enclosed body.
+  7.  Dishonest or criminal acts by any insured, any employee, or any subcontractor or its employees,
+      whether acting alone or in collusion.
+  8.  Loss to any part of the project after it has been occupied or put to its intended use, or after the
+      issuance of a certificate of occupancy or temporary certificate of occupancy for that portion, except
+      where partial occupancy has been declared to and accepted by us in writing (see Partial Occupancy
+      condition below).
+  9.  Loss to existing structures, existing improvements or the land itself.
+  10. Mould, fungus, wet rot, dry rot, bacteria, or any resulting remediation cost, except to the extent of
+      $ 100,000 annual aggregate where directly resulting from an insured water damage event that was
+      reported within 72 hours of the water event.
+  11. Contractors' tools, machinery, mobile equipment, vehicles, and equipment owned, leased, rented or
+      borrowed by any contractor or subcontractor, and not intended to become a permanent part of the
+      project. (Such property should be insured under a contractors equipment floater.)
+  12. Loss caused by the failure to take all reasonable and necessary precautions to protect the property
+      from an approaching or forecast storm, flood or freeze event, including failure to secure loose
+      materials, dry-in exposed openings or drain water lines.
+  13. Earth movement and flood, unless specifically endorsed to this policy.
+  14. Penalties, fines, and the cost of any permit, approval or inspection not directly caused by a covered
+      loss.
+  15. War, terrorism (unless elected), nuclear hazard, communicable disease, and cyber incident.
+  16. Loss occurring after the policy expiry date, after final acceptance of the project by the owner, or
+      after this policy has been cancelled, whichever occurs first, notwithstanding any extension of the
+      construction schedule not declared to and accepted by us.
+
+--------------------------------------------------------------------------------------------------
+FORMS AND ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+PIN-BR 100 (05-24)   Builders Risk Coverage Form - Completed Value, Non-Reporting
+PIN-DEF 305 (05-24)  Defects Exclusion - LEG 2/96 Consequences Wording
+PIN-SOFT 410 (05-24) Soft Costs and Delay in Completion Coverage
+PIN-TRAN 320 (05-24) Transit and Off-Site Storage Extension
+PIN-TEST 330 (05-24) Testing and Commissioning Extension
+PIN-TEMP 340 (05-24) Temporary Structures, Scaffolding and Formwork
+PIN-ORD 275 (05-24)  Ordinance or Law Coverage
+PIN-OCC 360 (05-24)  Partial Occupancy Permit - by prior written endorsement only
+PIN-WIND 370 (05-24) Named Windstorm Percentage Deductible
+PIN-PROT 610 (05-24) Site Protection Warranty - Fencing, Hot Work and Water Damage Prevention
+PIN-CYB 501 (01-25)  Cyber Incident Exclusion
+PIN-LP 505 (05-24)   Loss Payable and Mortgagee Provisions
+PIN-NC STAT (03-25)  North Carolina Amendatory Endorsement
+PIN-TRIA 900 (01-21) Terrorism Risk Insurance Act - Coverage ACCEPTED, premium $ 2,880
+
+  NOT ATTACHED / COVERAGE NOT PROVIDED: Flood, Earth Movement, Contractors Equipment, Existing Structures.
+
+--------------------------------------------------------------------------------------------------
+SITE PROTECTION WARRANTY (PIN-PROT 610)
+--------------------------------------------------------------------------------------------------
+
+As a condition precedent to coverage, the Insureds warrant that throughout the policy period:
+  (a)  The project site is enclosed by a minimum six-foot chain link perimeter fence with lockable gates,
+       secured outside working hours;
+  (b)  Site lighting and a monitored construction camera system, or a nightly security patrol logged in
+       writing, are maintained from the commencement of vertical construction;
+  (c)  A hot work permit programme meeting NFPA 51B is enforced for all cutting, welding, torching, roofing
+       and soldering, including a fire watch during the work and for sixty (60) minutes afterward;
+  (d)  Portable fire extinguishers are provided on every floor and standpipes are extended as the structure
+       rises, in accordance with NFPA 241;
+  (e)  A written Water Damage Prevention Plan is in force, requiring that pressurised water lines be capped
+       or isolated outside working hours, that a designated water shut-off attendant be identified, and that
+       all wet testing be conducted only during working hours with personnel present;
+  (f)  Prior to any forecast named storm or freeze event, loose materials are secured, openings are covered
+       or dried-in and water lines are drained where practicable.
+
+--------------------------------------------------------------------------------------------------
+LOSS PAYEES, MORTGAGEE AND ADDITIONAL INTERESTS
+--------------------------------------------------------------------------------------------------
+
+Mortgagee / Construction Lender (loss payable first):
+    Carolina Piedmont Construction Finance, LLC, ISAOA/ATIMA
+    Construction Loan Agreement dated 03/14/2025, Loan No. CLN-2025-0331
+    128 South Tryon Street, Suite 2400, Charlotte, NC 28202
+
+Additional Interest - Owner-Supplied Equipment:
+    Rivergate Development Partners, LLC (elevators, rooftop mechanical units, amenity FF&E)
+
+Additional Interest - Municipal:
+    City of Charlotte, Engineering and Property Management (stormwater structures within the public easement)
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING REQUIREMENTS
+--------------------------------------------------------------------------------------------------
+
+1.  NOTICE OF LOSS. Each Insured must give us notice of any loss, damage or occurrence as soon as
+    practicable and in no case later than seventy-two (72) hours after discovery. Notice must be given by
+    the First Named Insured or by the General Contractor and must state the project name, the policy number,
+    the date and time of the occurrence, the parties involved and a preliminary description of the damage.
+        Pinnacle Inland Claims - Construction Unit
+        constructionclaims@pinnacleinland.example   |   (855) 555-0619 (24 hour)
+        Online FNOL: fnol.pinnacleinland.example
+2.  POLICE NOTIFICATION. Any theft, vandalism or malicious mischief loss must be reported to the local law
+    enforcement agency within twenty-four (24) hours of discovery and the report number provided to us.
+3.  PROTECTION AND MITIGATION. The Insureds must take all reasonable steps to protect the property from
+    further damage, including immediate dry-in, water extraction, dehumidification and temporary shoring.
+    Emergency mitigation expense up to $ 50,000 may be incurred without our prior approval.
+4.  PRESERVATION OF EVIDENCE. Damaged materials, failed components, formwork, rigging and lifting gear must
+    be preserved and made available for inspection. Photographic and video documentation must be taken
+    before removal or repair.
+5.  PROOF OF LOSS. A signed and sworn Proof of Loss must be submitted within ninety (90) days of our request.
+6.  PARTIAL OCCUPANCY. No portion of the project may be occupied or put to its intended use without our
+    prior written consent. Occupancy without consent suspends coverage for the occupied portion.
+7.  SCHEDULE EXTENSIONS. Any extension of the construction schedule beyond the policy expiry date must be
+    requested in writing not less than thirty (30) days before expiry. Extensions are subject to additional
+    premium and are not automatic.
+8.  OTHER INSURANCE. This policy is primary with respect to the insured project. Any contractors equipment
+    floater, general liability policy or professional liability policy is not contributory with this policy.
+9.  SUIT LIMITATION. Any action must be brought within two (2) years of the date of loss.
+10. PREMIUM. Policy premium $ 214,600 for the 18 month term, fully earned at inception as to 30%.
+    Rate: $ 0.327 per $ 100 of completed value.
+
+Countersigned at Charlotte, North Carolina, April 8, 2025.
+
+    ___________________________________     ___________________________________
+    Authorized Representative               Construction Practice Leader

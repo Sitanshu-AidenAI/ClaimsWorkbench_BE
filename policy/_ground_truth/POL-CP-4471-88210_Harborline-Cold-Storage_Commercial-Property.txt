@@ -1,0 +1,272 @@
+
+MERIDIAN ATLANTIC INSURANCE COMPANY
+A Stock Insurance Company - Home Office: 1400 Chesapeake Boulevard, Suite 900, Baltimore, MD 21202
+NAIC No. 41783
+
+COMMERCIAL PROPERTY COVERAGE PART - DECLARATIONS
+Renewal of Policy No. CP-4471-88209
+
+POLICY NUMBER: CP-4471-88210
+POLICY PERIOD: From 03/01/2025 to 03/01/2026 at 12:01 A.M. Standard Time at the mailing address shown below.
+
+NAMED INSURED:      Harborline Cold Storage & Logistics, LLC
+                    dba Harborline Distribution
+MAILING ADDRESS:    2870 Patapsco Industrial Parkway, Suite 210
+                    Baltimore, MD 21226
+FORM OF BUSINESS:   Limited Liability Company
+BUSINESS DESCRIPTION: Refrigerated public warehousing, cold chain distribution and cross-dock services
+SIC/NAICS:          493120 - Refrigerated Warehousing and Storage
+
+PRODUCER:           Talbot & Rennick Insurance Brokers, Inc.
+                    Producer Code 09-33412
+                    Broker Reference: TR/PROP/2025/4471
+                    1155 Light Street, 6th Floor, Baltimore, MD 21230
+                    Account Executive: Diane Whitcomb-Reyes  |  (410) 555-0182  |  dwreyes@talbotrennick.example
+
+IN RETURN FOR PAYMENT OF THE PREMIUM AND SUBJECT TO ALL THE TERMS OF THIS POLICY, WE AGREE WITH YOU TO PROVIDE
+THE INSURANCE AS STATED IN THIS POLICY.
+
+--------------------------------------------------------------------------------------------------
+SECTION I - SCHEDULE OF COVERED PREMISES
+--------------------------------------------------------------------------------------------------
+
+Prem.  Bldg.  Location Address                                   Occupancy                  Construction / Year
+No.    No.
+001    01     2870 Patapsco Industrial Parkway                    Refrigerated warehouse     Joisted Masonry, 1998
+              Baltimore, MD 21226                                 (32 deg F / -10 deg F)     Sprinklered (dry pipe)
+              Baltimore City County                                                          Protection Class 3
+                                                                                             184,000 sq ft
+
+001    02     2870 Patapsco Industrial Parkway (rear)             Engine room / ammonia       Masonry Non-Combustible
+              Baltimore, MD 21226                                 refrigeration plant         2004, 6,200 sq ft
+
+002    01     419 Delaware Terminal Road                          Dry storage / cross-dock    Metal Frame, 2011
+              New Castle, DE 19720                                                            72,500 sq ft
+              New Castle County                                                               Protection Class 4
+
+--------------------------------------------------------------------------------------------------
+SECTION II - COVERAGES PROVIDED AND LIMITS OF INSURANCE
+--------------------------------------------------------------------------------------------------
+
+Coverage Form: HARBOR-PROP 100 (04-22) Building and Business Personal Property Coverage Form
+Causes of Loss Form: HARBOR-PROP 130 (04-22) Special Form (Open Perils), subject to policy exclusions
+
+Prem/Bldg   Coverage                                    Limit of Insurance    Valuation        Coinsurance
+001/01      Building                                    $ 24,500,000          Replacement Cost      90%
+001/01      Business Personal Property                  $  6,750,000          Replacement Cost      90%
+001/01      Personal Property of Others (bailee)        $ 18,000,000          Actual Cash Value     N/A
+001/02      Building                                    $  3,900,000          Replacement Cost      90%
+001/02      Refrigeration Machinery & Equipment         $  5,200,000          Replacement Cost      90%
+002/01      Building                                    $  8,100,000          Replacement Cost      90%
+002/01      Business Personal Property                  $  1,400,000          Replacement Cost      90%
+
+Business Income with Extra Expense (Blanket, all premises)   $ 9,000,000   Actual Loss Sustained,
+                                                                            12 month period of restoration
+Equipment Breakdown (see Endorsement HARBOR-EB 210)          Included, $ 15,000,000 per breakdown
+
+BLANKET PROPERTY LIMIT (Premises 001 and 002 combined, Building and BPP only): $ 44,650,000
+Margin Clause: 115% of the individual values reported on the Statement of Values dated 01/18/2025.
+
+--------------------------------------------------------------------------------------------------
+SECTION III - SUBLIMITS (part of, not in addition to, the applicable Limit of Insurance)
+--------------------------------------------------------------------------------------------------
+
+Debris Removal                                          25% of loss, plus $ 100,000 additional
+Pollutant Cleanup and Removal                           $ 100,000 annual aggregate
+Ammonia Contamination of Stock (see End. HARBOR-AMM 315) $ 2,500,000 per occurrence
+Spoilage - Refrigerated Goods (see End. HARBOR-SPO 320)  $ 4,000,000 per occurrence
+Off-Premises Utility Service Interruption - Direct Damage $ 1,000,000 (24 hour waiting period)
+Off-Premises Utility Service Interruption - Time Element  $ 2,000,000 (24 hour waiting period)
+Property in Transit                                     $   500,000 per conveyance
+Property at Unnamed Locations                           $   750,000 per occurrence
+Newly Acquired Buildings                                $ 5,000,000 for 180 days
+Newly Acquired Business Personal Property               $ 2,000,000 for 180 days
+Ordinance or Law - Coverage A (undamaged portion)        Included in Building limit
+Ordinance or Law - Coverage B and C combined             $ 3,000,000
+Accounts Receivable                                     $   500,000
+Valuable Papers and Records                             $   250,000
+Fine Arts                                               $    50,000
+Outdoor Property / Trees, Shrubs, Lawns                 $    50,000 ($1,000 any one tree or shrub)
+Fire Department Service Charge                          $    50,000
+Preservation of Property                                30 days
+Electronic Data                                         $   100,000 annual aggregate
+Expediting Expenses                                     $   500,000
+Claim Preparation Expense                               $    75,000
+
+--------------------------------------------------------------------------------------------------
+SECTION IV - DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+All Other Perils (per occurrence, all coverages combined)          $ 100,000
+Water Damage - Non-Weather (per occurrence)                        $ 250,000
+Named Windstorm - Premises 001 and 002                             3% of the total insured value at the
+                                                                   affected premises, minimum $ 250,000
+Hail (non-named-storm)                                             $ 150,000
+Refrigeration / Spoilage losses                                    $  50,000 per occurrence
+Equipment Breakdown - Property Damage                              $ 100,000
+Equipment Breakdown - Business Income                              48 hours
+Business Income and Extra Expense                                  72 hour waiting period
+Flood (where written back by endorsement)                          $ 500,000 per occurrence
+
+--------------------------------------------------------------------------------------------------
+SECTION V - COVERED CAUSES OF LOSS
+--------------------------------------------------------------------------------------------------
+
+This policy insures against direct physical loss of or damage to Covered Property at the premises described
+in the Declarations from any cause of loss that is not excluded or limited elsewhere in this policy. Perils
+expressly contemplated and insured, subject to the deductibles and sublimits shown, include but are not
+limited to: fire and lightning; explosion; smoke; windstorm and hail; riot, civil commotion and vandalism;
+malicious mischief; aircraft or vehicle impact; sprinkler leakage; accidental discharge or leakage of water
+or steam from plumbing, heating, air conditioning or refrigeration systems; theft and burglary; weight of
+snow, ice or sleet; collapse as specifically provided in the Additional Coverage - Collapse; and breakage of
+glass forming part of the building.
+
+--------------------------------------------------------------------------------------------------
+SECTION VI - EXCLUSIONS (summarized; refer to the coverage form for full wording)
+--------------------------------------------------------------------------------------------------
+
+A. We do not pay for loss or damage caused directly or indirectly by any of the following, regardless of any
+   other cause or event that contributes concurrently or in any sequence to the loss:
+   1.  Ordinance or law regulating construction, use, repair or demolition, except as provided under the
+       Ordinance or Law endorsement attached.
+   2.  Earth movement, including earthquake, landslide, mine subsidence, sinkhole collapse and volcanic
+       action, except ensuing fire or explosion.
+   3.  Flood, surface water, waves, tidal water, storm surge, overflow of any body of water, and water that
+       backs up or overflows from a sewer, drain or sump, except as written back by endorsement.
+   4.  Water below the surface of the ground, including water which exerts pressure on or flows, seeps or
+       leaks through foundations, walls, floors, paved surfaces, basements or doors.
+   5.  War, warlike action, insurrection, rebellion, revolution, usurped power, and nuclear hazard.
+   6.  Utility services failure originating away from the described premises, except as provided under the
+       Off-Premises Utility Service Interruption endorsement.
+   7.  Governmental action, including seizure or destruction of property by order of a governmental authority,
+       except acts of destruction ordered to prevent the spread of fire.
+
+B. We do not pay for loss or damage caused by or resulting from:
+   1.  Wear and tear, deterioration, inherent vice, latent defect, rust, corrosion, decay, hidden or latent
+       defect, or any quality in the property that causes it to damage or destroy itself.
+   2.  Smog, settling, cracking, shrinking or expansion.
+   3.  Nesting or infestation, discharge or release of waste products or secretions by insects, birds,
+       rodents or other animals.
+   4.  Mechanical breakdown, including rupture or bursting caused by centrifugal force, except as provided
+       under the Equipment Breakdown endorsement.
+   5.  Continuous or repeated seepage or leakage of water, or the presence or condensation of humidity,
+       moisture or vapor, that occurs over a period of 14 days or more.
+   6.  Dishonest or criminal acts by the Named Insured, any partner, member, officer, manager, employee,
+       director, trustee or authorized representative, whether acting alone or in collusion.
+   7.  Voluntary parting with any property by the Named Insured or anyone entrusted with the property if
+       induced by any fraudulent scheme, trick, device or false pretense.
+   8.  Rain, snow, ice or sleet to personal property in the open.
+   9.  Errors or omissions in design, specifications, workmanship, repair, construction, renovation,
+       remodeling, grading or compaction. However, if such error or omission results in a Covered Cause of
+       Loss, we will pay for the loss caused by that Covered Cause of Loss.
+   10. Fungus, wet rot, dry rot and bacteria, except as provided under the Limited Fungus Coverage
+       endorsement, sublimited to $ 25,000 annual aggregate.
+   11. Loss of or damage to property while in the course of construction, erection or fabrication, other than
+       ordinary maintenance and repair not exceeding $ 500,000 in project value.
+   12. Cyber incident, including unauthorized access to or use of any computer system, and any malicious code
+       or similar mechanism, per Endorsement HARBOR-CYB 440 (Cyber Incident Exclusion with Ensuing Fire and
+       Explosion Write-Back).
+
+--------------------------------------------------------------------------------------------------
+SECTION VII - SCHEDULE OF FORMS AND ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+HARBOR-PROP 100 (04-22)  Building and Business Personal Property Coverage Form
+HARBOR-PROP 130 (04-22)  Causes of Loss - Special Form
+HARBOR-COND 010 (01-21)  Common Policy Conditions
+HARBOR-AMM 315 (06-23)   Ammonia Contamination Coverage - Refrigerated Warehouse
+HARBOR-SPO 320 (06-23)   Spoilage Coverage - Breakdown or Contamination, Selling Price Valuation
+HARBOR-EB 210 (03-22)    Equipment Breakdown Protection Coverage
+HARBOR-BI 250 (03-22)    Business Income (and Extra Expense) Coverage - Actual Loss Sustained
+HARBOR-ORD 275 (03-22)   Ordinance or Law Coverage
+HARBOR-UTL 280 (03-22)   Off-Premises Utility Service Interruption - Direct Damage and Time Element
+HARBOR-BAI 295 (05-24)   Warehouse Legal Liability / Personal Property of Others - Bailee Coverage
+HARBOR-WIND 360 (04-22)  Named Windstorm Percentage Deductible
+HARBOR-CYB 440 (01-25)   Cyber Incident Exclusion with Fire and Explosion Write-Back
+HARBOR-MTG 505 (01-21)   Mortgage Holders and Loss Payable Provisions
+HARBOR-PROT 610 (04-22)  Protective Safeguards - Automatic Sprinkler and Refrigeration Alarm Warranty
+HARBOR-VAC 620 (04-22)   Vacancy Provisions - 60 Day
+HARBOR-STAT MD (07-24)   Maryland Amendatory Endorsement
+HARBOR-TRIA 900 (01-21)  Terrorism Risk Insurance Act Disclosure - Coverage REJECTED by insured
+
+--------------------------------------------------------------------------------------------------
+SECTION VIII - MORTGAGE HOLDERS, LOSS PAYEES AND ADDITIONAL INTERESTS
+--------------------------------------------------------------------------------------------------
+
+Premises 001, Buildings 01 and 02 - First Mortgagee:
+    Chesapeake Commerce Bank, N.A., its successors and assigns ATIMA
+    Commercial Real Estate Servicing, 700 East Pratt Street, Baltimore, MD 21202
+    Loan No. CRE-2019-44871
+
+Premises 002, Building 01 - Loss Payee (Building only):
+    Delaware River Industrial Trust, LP
+    c/o Ainsley Asset Management, 2200 Concord Pike, Suite 400, Wilmington, DE 19803
+    Lease dated 06/01/2021, Net Lease
+
+Additional Interest - Equipment Lessor (Refrigeration Compressors, Premises 001 Building 02):
+    Cascade Industrial Leasing Corp., 8800 West Bryn Mawr Avenue, Chicago, IL 60631
+    Equipment Schedule CIL-118-0442
+
+--------------------------------------------------------------------------------------------------
+SECTION IX - PROTECTIVE SAFEGUARDS WARRANTY (HARBOR-PROT 610)
+--------------------------------------------------------------------------------------------------
+
+As a condition of this insurance, the insured warrants that the following protective safeguards will be
+maintained in complete working order at Premises 001 at all times while this policy is in force:
+
+    P-1  Automatic dry-pipe sprinkler protection throughout the refrigerated envelope, inspected and tested
+         quarterly by a licensed contractor, with records retained for three years.
+    P-4  Central-station monitored ammonia detection with audible alarm at 25 ppm and automatic plant
+         shutdown at 150 ppm.
+    P-9  Central-station monitored temperature alarm on each refrigerated room, set at 5 degrees F above the
+         room set point, with a 30 minute notification protocol.
+
+Coverage is suspended for any loss occurring while a listed safeguard is impaired or out of service, unless
+the insured (a) notified us in writing within 48 hours of becoming aware of the impairment, and (b)
+implemented an approved fire watch or equivalent interim protection.
+
+--------------------------------------------------------------------------------------------------
+SECTION X - CONDITIONS AND CLAIM REPORTING REQUIREMENTS
+--------------------------------------------------------------------------------------------------
+
+1.  DUTIES IN THE EVENT OF LOSS OR DAMAGE. The insured must see that the following are done:
+    a.  Notify the police if a law may have been broken.
+    b.  Give us prompt notice of the loss or damage, and in no event later than thirty (30) days after the
+        insured knew or reasonably should have known of the loss. Notice must include a description of the
+        property involved and the time, place and circumstances of the loss.
+        Report all losses to:
+            Meridian Atlantic Claims Service Center
+            claims@meridianatlantic-ins.example  |  24-Hour First Notice: (877) 555-0410
+            Mail: P.O. Box 71155, Baltimore, MD 21279-1155
+        Reference the policy number shown in the Declarations on all correspondence.
+    c.  Take all reasonable steps to protect the Covered Property from further damage, and keep a record of
+        expenses necessary to protect the property. We will pay reasonable protective expenses; this does
+        not increase the Limit of Insurance.
+    d.  Permit us to inspect the property and records proving the loss, and cooperate with the investigation.
+    e.  Submit a signed, sworn Proof of Loss within sixty (60) days of our request, containing the
+        information we request to investigate the claim.
+    f.  Not, except at the insured's own cost, voluntarily make a payment, assume any obligation, or incur
+        any expense other than for first aid or emergency mitigation.
+2.  APPRAISAL. If we and the insured disagree on the value of the property or the amount of loss, either may
+    make written demand for an appraisal of the loss, each party selecting a competent and impartial
+    appraiser, with an umpire selected by the two appraisers.
+3.  LOSS PAYMENT. We will pay for covered loss within thirty (30) days after we receive the sworn Proof of
+    Loss, provided the amount of loss has been agreed or an appraisal award has been made.
+4.  LEGAL ACTION AGAINST US. No one may bring a legal action against us unless there has been full compliance
+    with the policy terms and the action is brought within two (2) years after the date on which the direct
+    physical loss or damage occurred.
+5.  OTHER INSURANCE. This insurance is excess over any other insurance covering the same loss, whether
+    collectible or not, except insurance written specifically as excess of the limits of this policy.
+6.  VACANCY. If the building has been vacant for more than sixty (60) consecutive days before a loss, we will
+    not pay for loss caused by vandalism, sprinkler leakage (unless the system was protected against
+    freezing), building glass breakage, water damage, theft or attempted theft; and we will reduce the amount
+    we would otherwise pay for any other covered loss by 15%.
+7.  SUBROGATION. If any person or organization to or for whom we make payment has rights to recover damages
+    from another, those rights are transferred to us. The insured may waive those rights in writing prior to
+    loss without prejudicing this insurance.
+8.  PREMIUM. Annual premium $ 486,250. Terrorism premium $ 0 (coverage rejected). Minimum earned premium 25%.
+
+Countersigned this 14th day of February, 2025.
+
+    ______________________________          ______________________________
+    Authorized Representative                Underwriting Manager, Mid-Atlantic Property

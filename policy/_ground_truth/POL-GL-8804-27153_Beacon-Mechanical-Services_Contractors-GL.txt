@@ -1,0 +1,202 @@
+
+FRONT RANGE MUTUAL CASUALTY INSURANCE COMPANY
+1801 Broadway, Suite 2200, Denver, CO 80202  |  NAIC No. 26315
+
+COMMERCIAL GENERAL LIABILITY - TRADE CONTRACTOR PROGRAM
+DECLARATIONS
+
+POLICY NUMBER:  GL-8804-27153
+POLICY PERIOD:  From 08/01/2025 to 08/01/2026, 12:01 A.M. Standard Time
+COVERAGE FORM:  FRM-CGL 100 (06-25) Commercial General Liability - Occurrence Basis
+PRIOR POLICY:   GL-8804-27152
+
+NAMED INSURED:  Beacon Mechanical Services, Inc.
+                DBA: Beacon Mechanical  |  Beacon HVAC & Plumbing
+ADDITIONAL NAMED INSUREDS:
+                Beacon Mechanical Service & Maintenance, LLC
+                Beacon Sheet Metal Fabrication, LLC
+MAILING ADDRESS: 5580 East 56th Avenue
+                 Commerce City, CO 80022
+PRINCIPAL OFFICE / SHOP: 5580 East 56th Avenue, Commerce City, CO 80022 (owned)
+BRANCH: 2712 Aviation Way, Colorado Springs, CO 80916 (leased, 8,400 sq ft)
+FORM OF BUSINESS: Corporation (Colorado)
+OPERATIONS:     Commercial mechanical contractor - HVAC installation and replacement, hydronic and
+                chilled water piping, sheet metal duct fabrication and installation, plumbing rough-in
+                and finish, boiler and chiller installation, building automation and controls, and
+                24-hour service and preventive maintenance.
+LICENCES:       Colorado Master Plumber Licence ML.0038119 (qualifying party: T. Ehrlich-Mensah);
+                Denver Mechanical Contractor Registration MC-2019-4471
+NAICS:          238220 - Plumbing, Heating and Air-Conditioning Contractors
+
+PRODUCER:       Front Range Commercial Insurance Group, Inc.
+                Producer Code CO-5540
+                    Broker Reference: FRC/GL/2025/8804
+                7900 East Union Avenue, Suite 1100, Denver, CO 80237
+                Producer: Hollis Baumgartner-Reyes  |  (303) 555-0198  |  hbaumgartner@frcig.example
+
+--------------------------------------------------------------------------------------------------
+LIMITS OF INSURANCE
+--------------------------------------------------------------------------------------------------
+
+  General Aggregate Limit (other than Products-Completed Operations)     $ 4,000,000
+  Products-Completed Operations Aggregate Limit                          $ 4,000,000
+  Personal and Advertising Injury Limit                                  $ 2,000,000
+  Each Occurrence Limit                                                  $ 2,000,000
+  Damage To Premises Rented To You (any one premises)                    $   500,000
+  Medical Expense Limit (any one person)                                 $    10,000
+
+  The General Aggregate Limit applies separately to each of the insured's PROJECTS under End. FRM-AGG 210
+  (Designated Construction Project(s) General Aggregate Limit - blanket application to any project for
+  which a written construction contract has been executed).
+
+SELF-INSURED RETENTION: $ 10,000 per occurrence, applicable to damages only (defense costs are outside the
+  retention and in addition to the limits). End. FRM-SIR 230.
+
+--------------------------------------------------------------------------------------------------
+PREMIUM BASIS AND CLASSIFICATION
+--------------------------------------------------------------------------------------------------
+
+  Class Code  Classification                                        Basis      Exposure       Premium
+  98482       Plumbing - commercial and industrial                  Payroll    $ 3,240,000    $ 128,142
+  98304       Heating, ventilating and air conditioning systems -
+              installation, servicing and repair - commercial       Payroll    $ 5,760,000    $ 241,920
+  98413       Sheet metal work - shop and outside                   Payroll    $ 1,180,000    $  49,442
+  91585       Contractors - executive supervisors                   Each       8              $   8,960
+  10073       Buildings or premises - office/shop - own occupancy   Area       31,000 sq ft   $   2,480
+                                                                                              ----------
+  Estimated Annual Advance Premium                                                            $ 430,944
+  Terrorism (TRIA) - REJECTED                                                                 $       0
+  Minimum Retained Premium                                                                    $ 322,000
+
+--------------------------------------------------------------------------------------------------
+COVERAGES
+--------------------------------------------------------------------------------------------------
+
+COVERAGE A - BODILY INJURY AND PROPERTY DAMAGE LIABILITY. We pay sums the insured becomes legally obligated
+to pay as damages because of bodily injury or property damage caused by an occurrence in the coverage
+territory during the policy period, and we have the right and duty to defend suits seeking such damages.
+Property damage caused by water escaping from piping, fittings, valves, coils, condensate systems, hydronic
+systems or fixtures installed, serviced, replaced or worked upon by the insured is covered as an occurrence,
+subject to the Water Damage Loss Control Condition and to the "your work" exclusion as modified by the
+subcontractor exception.
+
+COVERAGE B - PERSONAL AND ADVERTISING INJURY LIABILITY.
+COVERAGE C - MEDICAL PAYMENTS - expenses incurred and reported within one year of the accident.
+SUPPLEMENTARY PAYMENTS - defense expenses, bail bonds to $ 2,500, loss of earnings to $ 500 per day, court
+costs, and pre- and post-judgment interest, all in addition to the limits.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS AND LIMITATIONS
+--------------------------------------------------------------------------------------------------
+
+In addition to the standard Coverage A exclusions (expected or intended injury; contractual liability other
+than insured contracts; liquor; workers compensation; employer's liability; pollution; aircraft, auto and
+watercraft; war; damage to property owned, rented, occupied or in the care, custody or control of the
+insured; damage to that particular part of real property on which operations are being performed; damage to
+"your product"; damage to "your work" subject to the subcontractor exception; impaired property; recall;
+electronic data; and statutory distribution of material), the following apply:
+
+  1.  PROFESSIONAL SERVICES EXCLUSION (FRM-PROF 410). No coverage for liability arising out of the
+      preparation, approval or failure to prepare or approve any design, drawing, specification, load
+      calculation, equipment selection, energy model or engineering report, or the provision of design-build
+      or design-assist services. Coverage is written back for the ordinary means and methods of installation
+      performed by the insured's own forces.
+  2.  ABSOLUTE MOULD, FUNGI AND MICROBIAL MATTER EXCLUSION (FRM-MOLD 420). This exclusion applies whether or
+      not the mould, fungi or microbial matter results from an otherwise covered water event.
+  3.  ROOFING AND HOT WORK LIMITATION (FRM-ROOF 425). No coverage for property damage caused by fire arising
+      out of any torch, open flame, kettle, heat gun or other hot work performed by the insured on or within
+      three (3) feet of any roof surface, unless a written hot work permit was issued, a fire watch was
+      posted during the work and for sixty (60) minutes afterward, and a final inspection was documented.
+  4.  REFRIGERANT RELEASE LIMITATION (FRM-REF 430). Property damage and clean-up arising from the release of
+      refrigerant is sublimited to $ 250,000 per occurrence and $ 500,000 aggregate.
+  5.  WATER DAMAGE LOSS CONTROL CONDITION (FRM-WTR 435). It is a condition of coverage that: (a) all
+      pressure testing of hydronic, chilled water, domestic water and fire protection piping installed by the
+      insured is performed only during working hours with the insured's personnel present and with the
+      building water supply attended; (b) systems are not left pressurised and unattended overnight or over a
+      weekend unless leak-detection with automatic shut-off is installed and operational; (c) a written test
+      record is completed and signed for each system; and (d) the general contractor is notified in writing
+      before any system is filled or charged. Where the insured fails to comply, the self-insured retention
+      applicable to any resulting water damage claim is increased to $ 100,000.
+  6.  RESIDENTIAL AND HABITATIONAL LIMITATION (FRM-RES 440). No coverage for new construction of
+      for-sale single family dwellings, townhomes or condominiums; service, repair, replacement and
+      tenant-improvement work in habitational occupancies is covered.
+  7.  SUBSIDENCE AND EARTH MOVEMENT arising out of trenching, excavation or backfill performed by the
+      insured (FRM-SUB 445).
+  8.  SILICA, ASBESTOS and LEAD (FRM-SIL 450).
+  9.  COMMUNICABLE DISEASE (FRM-CD 455), CYBER AND DATA LIABILITY (FRM-CYB 460), and
+      EMPLOYMENT-RELATED PRACTICES (FRM-EPL 415).
+  10. CROSS-SUITS. No coverage for claims made by one insured against another insured, except for a claim
+      arising out of bodily injury to an employee of one insured brought against another insured.
+
+--------------------------------------------------------------------------------------------------
+ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+FRM-CGL 100 (06-25)  CGL Coverage Form - Occurrence
+FRM-AGG 210 (06-25)  Designated Construction Project(s) General Aggregate - Blanket
+FRM-SIR 230 (06-25)  Self-Insured Retention - Damages Only
+FRM-AI 300 (06-25)   Additional Insured - Owners, Lessees or Contractors - Ongoing Operations (blanket
+                     when required by written contract executed prior to loss)
+FRM-AI 305 (06-25)   Additional Insured - Completed Operations (blanket when required by written contract)
+FRM-AI 312 (06-25)   Additional Insured - Managers or Lessors of Premises (Colorado Springs branch:
+                     Aviation Way Industrial Partners, LLC)
+FRM-PRI 315 (06-25)  Primary and Non-Contributory Where Required by Written Contract
+FRM-WOS 320 (06-25)  Blanket Waiver of Subrogation Where Required by Written Contract
+FRM-NOC 325 (06-25)  30 Day Notice of Cancellation to Scheduled Certificate Holders
+FRM-PROF 410 (06-25) Professional Services Exclusion with Means and Methods Write-Back
+FRM-EPL 415 (06-25)  Employment-Related Practices Exclusion
+FRM-MOLD 420 (06-25) Absolute Mould, Fungi and Microbial Matter Exclusion
+FRM-ROOF 425 (06-25) Roofing and Hot Work Limitation
+FRM-REF 430 (06-25)  Refrigerant Release Sublimit
+FRM-WTR 435 (06-25)  Water Damage Loss Control Condition
+FRM-RES 440 (06-25)  Residential and Habitational Limitation
+FRM-SUB 445 (06-25)  Subsidence and Earth Movement Exclusion
+FRM-SIL 450 (06-25)  Silica, Asbestos and Lead Exclusion
+FRM-CD 455 (06-25)   Communicable Disease Exclusion
+FRM-CYB 460 (06-25)  Data and Cyber Liability Exclusion
+FRM-CO STAT (02-25)  Colorado Amendatory - Construction Defect Notice (C.R.S. 13-20-803.5)
+FRM-TRIA 900 (01-21) TRIA Disclosure - Coverage REJECTED
+
+--------------------------------------------------------------------------------------------------
+SCHEDULED CERTIFICATE HOLDERS AND ADDITIONAL INSUREDS OF RECORD
+--------------------------------------------------------------------------------------------------
+
+  -  Ironbark Constructors, Inc. (7720 West Buckeye Road, Phoenix, AZ 85043) - ongoing and completed
+     operations, mechanical scope on out-of-state projects performed as subcontractor
+  -  Aviation Way Industrial Partners, LLC - landlord, Colorado Springs branch premises
+  -  Cherry Creek Medical Campus Owner, LLC - ongoing and completed operations, chiller plant replacement
+  -  Front Range School District No. 12 - ongoing operations, HVAC replacement at three schools
+  -  Any person or organization where required by a written contract executed before the occurrence
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING
+--------------------------------------------------------------------------------------------------
+
+1.  NOTICE. The insured must notify us as soon as practicable of any occurrence or offense that may result
+    in a claim, including any water discharge, refrigerant release, fire, or injury to any person who is not
+    an employee. Notice should describe how, when and where the occurrence took place, the names and
+    addresses of injured persons and witnesses, and the nature and location of any injury or damage.
+        Front Range Mutual - Contractor Liability Claims
+        newclaim@frontrangemutual.example   |   (866) 555-0344 (24 hour)
+        Colorado Construction Defect Notices: cdnotice@frontrangemutual.example
+2.  WATER AND REFRIGERANT EVENTS. Any escape of water or release of refrigerant from work performed by the
+    insured must be reported within twenty-four (24) hours of the insured becoming aware, together with the
+    system test records, the name of the technician, the work order number, and photographs of the failed
+    component. The failed pipe, fitting, valve, coil, hose or component must be preserved and not discarded.
+3.  COLORADO CONSTRUCTION DEFECT ACTION REFORM ACT. Any Notice of Claim received under C.R.S. 13-20-803.5
+    must be forwarded to us within seven (7) days of receipt, together with the underlying contract and any
+    inspection reports.
+4.  COOPERATION. The insured must cooperate in the investigation and defense, must not voluntarily make any
+    payment or assume any obligation except for first aid, and must forward all legal papers immediately.
+5.  OTHER INSURANCE. This insurance is excess over any installation floater, contractors equipment floater,
+    builders risk or property insurance covering the same loss, and over any coverage available to the
+    insured as an additional insured on another party's policy, except where a written contract executed
+    before the occurrence requires this policy to be primary and non-contributory.
+6.  PREMIUM AUDIT. Annual audit of payroll records. The insured must retain certified payroll and
+    subcontractor certificates for three (3) years.
+7.  LEGAL ACTION AGAINST US, SEPARATION OF INSUREDS, and TRANSFER OF RIGHTS OF RECOVERY apply as stated.
+
+Countersigned at Denver, Colorado, July 17, 2025.
+
+    ___________________________________     ___________________________________
+    Authorized Representative               Underwriting Manager, Contractors

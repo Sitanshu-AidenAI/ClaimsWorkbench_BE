@@ -495,6 +495,127 @@ class DocumentIntelligenceSettings(BaseSettings):
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+class PolicyLibrarySettings(BaseSettings):
+    """Ingesting policy wordings, and matching a notice against them.
+
+    A separate block from `DocumentIntelligenceSettings` even though the two share
+    an embedding provider, and the separation is the point rather than an accident
+    of naming. Three reasons, in the order they bite:
+
+    * **The corpus is different.** A claim attachment is two pages of prose; a
+      policy is thirty pages of schedules, definitions and endorsements where a
+      sublimit and the peril it applies to are four lines apart. The chunk that
+      keeps `Label: value` together on a loss notice cuts a schedule row in half,
+      so the two want different sizes and this is where that is expressible.
+    * **The collection is different.** Policy wordings live in their own Qdrant
+      collection, never mixed with claim material: they are reference data with a
+      different retention story, a different access-control story and a different
+      lifecycle — a policy stays in the index for the length of its term, and a
+      claim's passages are destroyed with the claim.
+    * **The thresholds are different.** Retrieving evidence for a field wants six
+      passages from one case. Matching a notice against the book wants the best few
+      passages from *each* of many policies, and then a ranking over the policies
+      rather than over the passages.
+
+    The embedding provider is deliberately **not** repeated here. One provider, one
+    model, one dimension: two would mean two vector spaces, and a deployment that
+    changed one and not the other would get a policy library that silently stopped
+    matching. `DocumentIntelligenceSettings` owns it and this reads it.
+    """
+
+    model_config = _ENV_CONFIG | SettingsConfigDict(env_prefix="CWB_POLICY_")
+
+    #: Master switch. Off means uploads are refused rather than accepted and
+    #: quietly never ingested — an administrator who cannot upload knows the
+    #: feature is off, and one whose upload sits at `pending` forever does not.
+    enabled: bool = True
+
+    # --- Upload --------------------------------------------------------------
+    #: Policy wordings are PDFs. Narrower than the claim attachment allow-list on
+    #: purpose: a policy arrives from a policy administration system or a broker as
+    #: a rendered document, and `locate.py` only resolves page geometry for PDFs —
+    #: so an excerpt cited from a `.docx` could never be shown on its page.
+    max_document_bytes: int = 40 * 1024 * 1024
+    #: Documents in the library. A ceiling rather than a business rule: it exists so
+    #: a scripted bulk load cannot fill a disk before anybody notices.
+    max_documents: int = 5_000
+
+    # --- Chunking ------------------------------------------------------------
+    #: Larger than the claim-document default. A policy's meaning is carried by
+    #: whole clauses — an exclusion and the exception that gives it back are one
+    #: passage, and cutting between them produces a citation that says the opposite
+    #: of what the policy says.
+    chunk_tokens: int = 480
+    #: Proportionally larger overlap, for the same reason: a schedule row split
+    #: across a boundary has to be whole on one side of it.
+    chunk_overlap_tokens: int = 96
+    #: A policy with a 400-page schedule of values truncates with a log line.
+    max_chunks_per_document: int = 3_000
+
+    # --- Vector store --------------------------------------------------------
+    #: Its own collection, never shared with claim passages. Unset `qdrant_url`
+    #: on `docint` still means no vector store; this only names where policy
+    #: vectors go when there is one.
+    qdrant_collection: str = "policy_document_chunks"
+
+    # --- Retrieval -----------------------------------------------------------
+    retrieval_enabled: bool = True
+    #: Passages retrieved per query, across the whole library. Larger than the
+    #: claim-side top-k because these have to be *spread* over candidate policies
+    #: before anything is ranked: twelve passages that all come from one policy
+    #: answer the question "which passage" and not the question "which policy".
+    retrieval_chunk_limit: int = 48
+    #: Passages kept per policy once the hits are grouped. Four excerpts is enough
+    #: for an officer to see why a policy matched and few enough to read.
+    excerpts_per_policy: int = 4
+    #: A floor on the fused passage score, so a library that mentions none of the
+    #: notice's terms returns nothing rather than the least-bad forty-eight.
+    retrieval_min_score: float = 0.20
+    retrieval_semantic_weight: float = 0.7
+    retrieval_keyword_weight: float = 0.3
+    #: Queries run concurrently. Matching issues one query per facet of the notice
+    #: — identity, risk location, peril — because a single concatenated query
+    #: retrieves the average of three questions and the answer to none of them.
+    retrieval_concurrency: int = 4
+
+    # --- Matching ------------------------------------------------------------
+    #: Bands on the combined match score. Floors rather than the whole rule:
+    #: `app/domain/policy_matching.py` classifies on a ladder that reads *which*
+    #: corroborating signals agreed, so a high retrieval score with nothing about
+    #: the insured agreeing is demoted whatever the arithmetic says.
+    match_strong_threshold: float = 0.68
+    match_possible_threshold: float = 0.44
+    #: Below this a policy is not returned at all. This is the setting that keeps
+    #: the promise "no weak or irrelevant matches": a library of twelve policies
+    #: will always produce twelve retrieval scores, and without a floor the fourth
+    #: one is drawn on screen as though it were a candidate.
+    match_weak_threshold: float = 0.30
+    #: How close a second policy has to be before neither is recommended.
+    #: Ambiguity is an outcome to surface, not one to tie-break — the same rule
+    #: `policy_identification` holds, and for the same reason.
+    match_ambiguity_margin: float = 0.06
+    match_max_results: int = 5
+
+    # --- Orchestration -------------------------------------------------------
+    ingest_max_attempts: int = 3
+    #: A document stuck mid-ingest for longer than this lost its worker.
+    stale_ingest_minutes: int = 30
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def chunk_signature(self) -> str:
+        """The chunk parameters, hashed, for a document's ingest fingerprint.
+
+        Separate from `DocumentIntelligenceSettings.index_signature` because the
+        parameters are separate: changing the policy chunk size must re-ingest the
+        library and must not invalidate every claim attachment's passages.
+        """
+        material = "|".join(
+            str(part) for part in ("policy-v1", self.chunk_tokens, self.chunk_overlap_tokens)
+        )
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 class FNOLSettings(BaseSettings):
     """Underwriting-facing thresholds for the FNOL pipeline.
 
@@ -774,6 +895,7 @@ class Settings(BaseSettings):
     fnol: FNOLSettings = Field(default_factory=FNOLSettings)
     graph: GraphSettings = Field(default_factory=GraphSettings)
     docint: DocumentIntelligenceSettings = Field(default_factory=DocumentIntelligenceSettings)
+    policy_library: PolicyLibrarySettings = Field(default_factory=PolicyLibrarySettings)
     extraction: ExtractionSettings = Field(default_factory=ExtractionSettings)
 
     @field_validator("cors_origins", mode="before")

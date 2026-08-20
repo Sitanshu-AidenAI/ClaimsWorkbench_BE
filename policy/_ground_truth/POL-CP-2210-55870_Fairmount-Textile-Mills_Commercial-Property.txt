@@ -1,0 +1,234 @@
+
+ALLEGHENY COMMERCIAL RISK COMPANY
+Surplus Lines Insurer - Not Licensed in South Carolina. Not Protected by the South Carolina
+Insurance Guaranty Association.
+Underwriting Office: 501 Grant Street, Union Trust Building, Suite 1900, Pittsburgh, PA 15219
+NAIC No. 39152   |   Surplus Lines Broker Licence SC-SL-114882
+
+MANUFACTURING PROPERTY POLICY - DECLARATIONS
+
+POLICY NUMBER:  CP-2210-55870
+POLICY PERIOD:  From 09/01/2024 to 09/01/2025, 12:01 A.M. at the address of the Named Insured
+ISSUED:         08/19/2024
+EXPIRING POLICY: CP-2210-55869
+
+NAMED INSURED:  Fairmount Textile Mills Holdings, Inc.
+                and all subsidiary, affiliated and associated companies as now or hereafter constituted,
+                including but not limited to:
+                    Fairmount Weaving Company, LLC
+                    Piedmont Dye & Finish, LLC
+                    Fairmount Technical Fabrics, Inc.
+MAILING ADDRESS: 1180 Woodruff Industrial Road
+                 Greenville, SC 29607
+OPERATIONS:     Weaving, dyeing and finishing of technical and industrial textiles; coated fabrics
+NAICS:          313310 - Textile and Fabric Finishing Mills
+
+BROKER OF RECORD: Ridgeway Kessler Brokerage Services (Wholesale)
+                  Producer Code PA-4471-W
+                    Broker Reference: RK/MFG/2024/2210
+                  Retail Producer: Carolina Benefit & Risk Advisors, Greenville, SC
+                  Broker Contact: Priya Raghunathan-Lowe  |  (864) 555-0913  |  praghunathan@ridgewaykessler.example
+
+--------------------------------------------------------------------------------------------------
+INSURED LOCATIONS
+--------------------------------------------------------------------------------------------------
+
+LOC 1 - Woodruff Road Mill Complex (primary manufacturing)
+        1180 Woodruff Industrial Road, Greenville, SC 29607 (Greenville County)
+        Buildings:
+          1A  Weave Room                     212,000 sq ft   Masonry Non-Combustible   1962/renov. 2015
+          1B  Dye House and Finishing        104,500 sq ft   Non-Combustible           1974
+          1C  Boiler House and Utilities      11,800 sq ft   Fire Resistive            1998
+          1D  Warehouse and Shipping          88,000 sq ft   Metal Frame               2007
+          1E  Administration and Lab          22,300 sq ft   Joisted Masonry           1988
+        Full wet-pipe sprinkler protection, ESFR in 1D; Protection Class 3; on-site fire brigade
+        Diesel fire pump, 2,500 gpm, tested annually
+
+LOC 2 - Pelzer Finishing Annex
+        204 Mill Race Avenue, Pelzer, SC 29669 (Anderson County)
+        Building 2A: Coating and lamination, 46,000 sq ft, Non-Combustible, 1991
+        Wet-pipe sprinkler; Protection Class 5
+
+LOC 3 - Offsite Finished Goods Warehouse (leased space, tenant improvements only)
+        3300 Old Buncombe Road, Bay 14, Greenville, SC 29609
+        Contents only - no building coverage
+
+--------------------------------------------------------------------------------------------------
+LIMITS OF LIABILITY
+--------------------------------------------------------------------------------------------------
+
+POLICY LIMIT - PER OCCURRENCE, ALL COVERAGES, ALL LOCATIONS COMBINED:      $ 85,000,000
+
+  Real Property (Blanket, LOC 1 and LOC 2)                                 Included
+  Machinery, Equipment and Personal Property (Blanket)                     Included
+  Stock - Raw Materials, Work in Process, Finished Goods (Blanket)         Included
+  Tenant Improvements and Betterments (LOC 3)                              $   950,000
+  Business Interruption - Gross Earnings, 18 month indemnity period        $ 32,000,000
+  Extra Expense                                                            $  4,000,000
+  Contingent Business Interruption - named suppliers (see Schedule S-1)    $  6,000,000
+
+Valuation: Replacement Cost for real and personal property; Stock at Selling Price less unincurred expenses
+for finished goods, and at Replacement Cost for raw materials and work in process.
+Coinsurance: None - Agreed Value Clause applies, Statement of Values dated 07/22/2024.
+
+SUBLIMITS (per occurrence unless otherwise stated, part of and not in addition to the Policy Limit):
+
+  Flood - Zone X locations only, LOC 1 and LOC 2                           $ 10,000,000 ann. aggregate
+  Flood - Special Flood Hazard Area (Zone A/AE)                            NOT COVERED
+  Earth Movement                                                           $ 10,000,000 ann. aggregate
+  Equipment Breakdown / Machinery Accident                                 $ 25,000,000
+  Errors and Omissions (property values reporting)                         $  2,500,000
+  Ordinance or Law - Coverage A                                            Included
+  Ordinance or Law - Coverages B and C combined                            $  7,500,000
+  Debris Removal                                                           25% of loss or $ 5,000,000,
+                                                                           whichever is less
+  Expediting Expenses                                                      $  2,000,000
+  Service Interruption - Property Damage and Time Element combined         $  5,000,000 (12 hr qualifying)
+  Ingress / Egress and Civil Authority                                     $  2,500,000 / 30 consecutive days
+  Course of Construction / Alterations and Additions at insured locations  $  3,000,000
+  Property in Transit                                                      $  1,500,000
+  Unnamed Locations                                                        $  2,000,000
+  Accounts Receivable                                                      $  2,000,000
+  Valuable Papers, Records and Electronic Data                             $  1,000,000
+  Pollutant Cleanup and Removal                                            $    250,000 ann. aggregate
+  Fire Brigade and Extinguishing Expense                                   $    250,000
+  Fine Arts and Company Archives                                           $    100,000
+  Professional Fees / Claim Preparation                                    $    250,000
+  Mold, Fungus and Bacteria resulting from a covered peril                 $    100,000 ann. aggregate
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+  All Other Perils, combined Property Damage and Time Element              $ 250,000 per occurrence
+  Fire and Explosion                                                       $ 250,000 per occurrence
+  Named Windstorm                                                          2% of TIV at the affected
+                                                                           location, minimum $ 500,000
+  Flood                                                                    $ 1,000,000 per occurrence
+  Earth Movement                                                           $ 1,000,000 per occurrence
+  Equipment Breakdown - Property Damage                                    $ 250,000
+  Equipment Breakdown - Time Element                                       24 hours
+  Business Interruption / Time Element                                     48 hour qualifying period, then
+                                                                           actual loss sustained
+  Water Damage - non-weather, including sprinkler leakage                  $ 500,000 per occurrence
+  Boiler and Pressure Vessel                                               $ 250,000
+
+--------------------------------------------------------------------------------------------------
+PERILS INSURED
+--------------------------------------------------------------------------------------------------
+
+All risks of direct physical loss of or damage to insured property occurring during the policy period, except
+as excluded. Perils specifically contemplated include fire, lightning, explosion (including combustion
+explosion in the boiler house subject to the boiler deductible), windstorm, hail, tornado, riot, strike and
+civil commotion, vandalism and malicious mischief, aircraft and vehicle impact, sprinkler leakage, water
+damage from the accidental discharge of any plumbing, process, steam or fire protection system, collapse,
+smoke, theft and burglary, and machinery breakdown as endorsed.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS
+--------------------------------------------------------------------------------------------------
+
+This policy does not insure against:
+  1.  Loss arising from a defect, fault or error in design, plan, specification, materials or workmanship;
+      however, resulting physical damage from an insured peril is covered.
+  2.  Wear, tear, gradual deterioration, depletion, rust, corrosion, erosion, cavitation, embrittlement,
+      inherent vice or latent defect.
+  3.  Shrinkage, evaporation, loss of weight, change in flavour, texture, colour or finish, unless resulting
+      from an insured peril.
+  4.  Loss of or damage to property undergoing any process of heating, drying, curing, dyeing or thermal
+      treatment, if caused by that process; however, resulting fire damage to other property is covered.
+  5.  Faulty or inadequate maintenance, including failure to maintain fire protection equipment.
+  6.  Settling, cracking, shrinking, bulging or expansion of foundations, floors, walls, roofs or pavements.
+  7.  Mysterious disappearance, unexplained loss, or shortage disclosed on taking inventory.
+  8.  Dishonest or fraudulent acts of any insured, employee, or any person to whom property is entrusted.
+  9.  Loss or damage caused by or resulting from any electronic data corruption, computer virus, ransomware,
+      denial of service, or unauthorised network access (Cyber Exclusion ACR-CYB 501), except ensuing
+      physical damage from fire, explosion or sprinkler leakage.
+  10. Contamination, including but not limited to pollution, asbestos, lead, PFAS and per- and
+      polyfluoroalkyl substances (ACR-PFAS 512), and any cost of testing, monitoring or remediation.
+  11. Loss of market, loss of use, delay, or any other consequential loss except as expressly insured under
+      the Time Element sections.
+  12. Communicable disease, pandemic, epidemic or fear thereof (ACR-CD 522).
+  13. War, terrorism (unless TRIA elected), nuclear reaction, radiation or radioactive contamination.
+  14. Any loss occurring while the insured location has been unoccupied or idle for more than ninety (90)
+      consecutive days, unless declared to and accepted by the Company in writing.
+  15. Seepage or contamination that occurs over a period of more than 30 days.
+
+--------------------------------------------------------------------------------------------------
+ENDORSEMENTS AND SCHEDULES ATTACHED
+--------------------------------------------------------------------------------------------------
+
+ACR-PROP 001 (07-23)  Manufacturing All Risk Property Coverage Form
+ACR-TE 110 (07-23)    Time Element - Gross Earnings and Extra Expense
+ACR-CBI 118 (07-23)   Contingent Business Interruption - Schedule S-1 (named suppliers: Carolina Yarn
+                      Traders LLC, Aiken Polymer Additives Inc., Duke Energy Progress substation feed)
+ACR-EB 205 (07-23)    Equipment Breakdown / Machinery Accident
+ACR-FLD 320 (07-23)   Flood Coverage - Zone X only, with SFHA exclusion
+ACR-EQ 325 (07-23)    Earth Movement Coverage
+ACR-ORD 275 (07-23)   Ordinance or Law
+ACR-SVC 280 (07-23)   Service Interruption - Named Utilities
+ACR-CYB 501 (01-24)   Cyber Incident Exclusion with Physical Damage Write-Back
+ACR-PFAS 512 (01-24)  PFAS and Perfluorinated Compounds Exclusion
+ACR-CD 522 (01-24)    Communicable Disease Exclusion
+ACR-PROT 601 (07-23)  Protective Safeguards - Sprinkler, Fire Pump and Hot Work Permit Warranty
+ACR-LP 505 (07-23)    Loss Payable Provisions
+ACR-SL SC (07-24)     South Carolina Surplus Lines Notice and Amendatory
+ACR-TRIA 900 (01-21)  Terrorism Risk Insurance Act - Coverage ACCEPTED
+
+--------------------------------------------------------------------------------------------------
+PROTECTIVE SAFEGUARDS AND HOT WORK WARRANTY (ACR-PROT 601)
+--------------------------------------------------------------------------------------------------
+
+It is warranted by the Insured that:
+  (a)  All automatic sprinkler systems, the diesel fire pump and the private fire main at LOC 1 will be
+       maintained in complete working order and inspected in accordance with NFPA 25;
+  (b)  A written hot work permit system meeting NFPA 51B will be enforced at all locations, including a
+       35-foot clearance, assigned fire watch during the work and for a minimum of sixty (60) minutes after
+       the work ends, and a documented final check thirty (30) minutes thereafter;
+  (c)  Lint and fibre accumulation in the Weave Room and in all dust collection ductwork will be removed on
+       a documented schedule not less frequently than weekly;
+  (d)  Any impairment of fire protection exceeding eight (8) hours will be reported to the Company and to the
+       central station within twenty-four (24) hours.
+Failure to comply with any of the above voids coverage for loss arising from or contributed to by such
+failure.
+
+--------------------------------------------------------------------------------------------------
+LOSS PAYEES AND ADDITIONAL INTERESTS
+--------------------------------------------------------------------------------------------------
+
+Loss Payee - all locations, first position:
+    Piedmont Southern Capital Bank, as Administrative Agent
+    Credit Agreement dated 04/11/2022, 100 North Main Street, Greenville, SC 29601
+
+Loss Payee - Machinery at LOC 1 Building 1B (jet dyeing machines, 6 units):
+    Hanseatic Equipment Finance GmbH (US Branch), Lease Schedule HEF-SC-2023-0119
+
+--------------------------------------------------------------------------------------------------
+CLAIM CONDITIONS AND REPORTING REQUIREMENTS
+--------------------------------------------------------------------------------------------------
+
+1.  NOTICE. The Insured shall report to the Company, as soon as practicable and in any event within
+    forty-eight (48) hours of discovery, any loss or occurrence that may reasonably be expected to exceed
+    fifty percent (50%) of the applicable deductible. Notice shall be given to:
+        Allegheny Commercial Risk - Complex Property Claims
+        firstnotice@alleghenycommercialrisk.example   |   (888) 555-0177 (24 hour)
+        Claims Manager, Southeast Region: T. Okonkwo-Brandt
+2.  PRESERVATION OF EVIDENCE. The Insured shall preserve all damaged and undamaged property, machinery,
+    control records and electronic logs relevant to the loss, and shall not dispose of any such property
+    without the Company's written consent, until the Company or its representatives have had a reasonable
+    opportunity to inspect.
+3.  MITIGATION. The Insured shall take all reasonable and necessary steps to protect insured property from
+    further damage and to resume operations. Reasonable expenses so incurred are payable under Extra Expense.
+4.  PROOF OF LOSS. A signed and sworn statement of loss shall be filed within ninety (90) days of the date
+    of loss unless extended in writing by the Company.
+5.  PARTIAL PAYMENTS. Where liability is not in dispute, the Company will advance partial payments on account
+    within thirty (30) days of the Insured's written request supported by documentation.
+6.  SUIT LIMITATION. No suit shall be maintainable unless commenced within twenty-four (24) months of the
+    date of the physical loss or damage.
+7.  PREMIUM. Annual premium $ 1,268,400, plus South Carolina surplus lines tax 6% and stamping fee 0.1%.
+    Minimum earned premium at inception: 25%.
+
+Signed on behalf of Allegheny Commercial Risk Company:
+
+    ___________________________________         ___________________________________
+    Authorised Signatory                        Vice President, Property Underwriting

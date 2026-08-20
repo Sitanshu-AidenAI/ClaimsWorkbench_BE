@@ -28,6 +28,12 @@ from app.services.intelligence.runner import (
     run_document_index,
 )
 from app.services.mail.runner import run_mail_intake
+from app.services.policies.ingestion import TransientIngestError
+from app.services.policies.runner import (
+    release_stale_ingest,
+    run_document_ingest,
+    run_pending_ingest,
+)
 from app.workers.celery_app import celery_app
 
 logger = get_logger(__name__)
@@ -286,3 +292,75 @@ def reap_stale_indexing() -> dict[str, Any]:
     documents = run_async(release_stale_indexing())
     cases = run_async(release_stale_processing())
     return {"status": "ok", "documents_released": documents, "cases_released": cases}
+
+
+# --- Policy library -----------------------------------------------------------
+#
+# The chain behind the Policies screen. `POST /policies/documents` stores the bytes,
+# writes a row at `pending` and returns; `ingest_policy_document` reads it into
+# passages and vectorises them. `ingest_pending_policy_documents` is the backstop for
+# an upload whose enqueue never reached a worker — the broker being down must not mean
+# a policy silently never entering the library.
+
+
+@celery_app.task(
+    name="app.workers.tasks.ingest_policy_document",
+    bind=True,
+    autoretry_for=(TransientIngestError,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def ingest_policy_document(self: Any, document_id: str, force: bool = False) -> dict[str, Any]:
+    """Read one policy wording into passages, and vectorise them if configured.
+
+    Retries only `TransientIngestError` — an unreachable embedding provider or vector
+    store. A wording that is simply unreadable is a *permanent* outcome recorded on the
+    row, and retrying it three times burns quota to reach the same conclusion.
+    """
+    self.max_retries = max(0, settings.policy_library.ingest_max_attempts - 1)
+    summary = run_async(run_document_ingest(uuid.UUID(document_id), force=force))
+    return {
+        "status": "ok",
+        "document_id": document_id,
+        "ingested": summary.ingested,
+        "chunked_only": summary.chunked_only,
+        "failed": summary.failed,
+        "reused": summary.reused,
+        "chunks": summary.chunks,
+        "embedded": summary.embedded,
+        "linked": summary.linked,
+    }
+
+
+@celery_app.task(name="app.workers.tasks.ingest_pending_policy_documents")
+def ingest_pending_policy_documents(limit: int | None = None) -> dict[str, Any]:
+    """Ingest the policy documents waiting in the queue. The beat entry.
+
+    No Celery retry, deliberately. Each document is ingested in its own transaction
+    and records its own outcome, so a retry of the whole batch would redo work that is
+    already recorded as done — and the per-document attempt counter is the retry that
+    actually bounds anything.
+    """
+    if not settings.policy_library.enabled:
+        return {"status": "disabled"}
+
+    summary = run_async(run_pending_ingest(limit=limit))
+    return {
+        "status": "ok",
+        "documents": summary.documents,
+        "ingested": summary.ingested,
+        "chunked_only": summary.chunked_only,
+        "failed": summary.failed,
+        "reused": summary.reused,
+        "chunks": summary.chunks,
+        "embedded": summary.embedded,
+        "linked": summary.linked,
+    }
+
+
+@celery_app.task(name="app.workers.tasks.reap_stale_policy_ingest")
+def reap_stale_policy_ingest() -> dict[str, Any]:
+    """Requeue policy ingestion whose worker died mid-flight."""
+    released = run_async(release_stale_ingest())
+    return {"status": "ok", "documents_released": released}

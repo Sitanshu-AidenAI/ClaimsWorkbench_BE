@@ -19,6 +19,7 @@ from app.api.v1.routes import (
     mail_intake,
     meta,
     notifications,
+    policies,
 )
 
 api_router = APIRouter()
@@ -33,6 +34,9 @@ api_router.include_router(fnol.router)
 api_router.include_router(claims.router)
 api_router.include_router(mail_intake.router)
 api_router.include_router(notifications.router)
+# The policy library. Its own prefix, so nothing here can shadow `fnol`'s
+# `/{reference}` patterns the way `extraction`'s routes could.
+api_router.include_router(policies.router)
 # Registered after `fnol` deliberately: it carries routes under `/fnol/...` as
 # well as `/extraction/...`, and FastAPI matches in registration order, so its
 # static segments must not shadow `fnol`'s `/{reference}` patterns.

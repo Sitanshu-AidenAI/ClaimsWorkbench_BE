@@ -1,0 +1,11 @@
+Area,Trade,Description,Total USD
+Suite 116,Plumbing,"Re-pipe 90 ft domestic water, 2 in and 1.5 in",34000
+Suite 116,Electrical,"Re-pull 60 ft branch circuit, panel make good",18000
+Roof,Mechanical,"RTU-7 and RTU-8 line sets, whips, condensate",38000
+Suite 114,Building,"Ceiling grid, flooring, drywall, paint",96000
+Suite 112,Building,"Drywall to 4 ft, insulation, paint",31000
+Suite 110,Building,"Drywall, cabinetry, flooring",44000
+Corridor,Building,Carpet tile and base,14000
+Building 01,Fire alarm,"Panel, two devices, recommission",22000
+All,Mitigation,"Extraction, drying, containment, monitoring",55000
+Total reinstatement,,,352000

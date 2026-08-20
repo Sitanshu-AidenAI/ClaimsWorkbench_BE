@@ -1,0 +1,269 @@
+
+PIEDMONT CASUALTY & SURETY COMPANY
+Construction Casualty Division
+1900 Rexford Road, Suite 700, Charlotte, NC 28211  |  NAIC No. 30518
+
+COMMERCIAL GENERAL LIABILITY COVERAGE PART
+DECLARATIONS
+
+POLICY NUMBER:   GL-5529-41836
+POLICY PERIOD:   From 04/01/2025 to 04/01/2026 at 12:01 A.M. Standard Time at the mailing address shown
+RENEWAL OF:      GL-5529-41835
+COVERAGE FORM:   PCS-CGL 001 (12-24) Commercial General Liability Coverage Form - OCCURRENCE
+
+NAMED INSURED:   Vanterra Construction Group, LLC
+                 and the following additional named insureds:
+                    Vanterra Interiors, LLC
+                    Vanterra Site Development, LLC
+                    VCG Equipment Holdings, LLC
+MAILING ADDRESS: 8815 Nations Ford Road
+                 Charlotte, NC 28217
+FORM OF BUSINESS: Limited Liability Company
+BUSINESS DESCRIPTION: General contractor - commercial, multifamily and mixed-use construction; new
+                 construction and renovation. Self-performs concrete, carpentry and general conditions;
+                 subcontracts MEP, roofing, glazing, sitework and vertical transportation.
+LICENCES:        NC Unlimited Building Licence No. 71204; SC Group 5 Licence No. G118442;
+                 GA General Contractor Licence No. GCCO006713
+
+PRODUCER:        Ashcombe Vail Commercial Insurance Services
+                 Producer Code NC-3312
+                    Broker Reference: AV/GL/2025/5529
+                 201 South College Street, Suite 2100, Charlotte, NC 28244
+                 Producer: Gerald Nwosu-Fitzgerald  |  (704) 555-0731  |  gnwosu@ashcombevail.example
+
+--------------------------------------------------------------------------------------------------
+LIMITS OF INSURANCE
+--------------------------------------------------------------------------------------------------
+
+  General Aggregate Limit (other than Products-Completed Operations)      $  2,000,000
+  Products-Completed Operations Aggregate Limit                           $  2,000,000
+  Personal and Advertising Injury Limit (any one person or organization)  $  1,000,000
+  Each Occurrence Limit                                                   $  1,000,000
+  Damage To Premises Rented To You (any one premises)                     $    300,000
+  Medical Expense Limit (any one person)                                  $     10,000
+
+  AGGREGATE LIMITS APPLY PER PROJECT (End. PCS-AGG 220, Designated Construction Project(s) General
+  Aggregate Limit). Each designated project below carries a separate General Aggregate.
+
+  Designated Projects (End. PCS-AGG 220 Schedule):
+    P-1  Rivergate Commons Phase II, 2650 Rivergate Parkway, Charlotte, NC 28273
+    P-2  Halston Row Townhomes, 1120 Berryhill Road, Charlotte, NC 28208
+    P-3  Sable Creek Medical Office Building, 4405 Sable Creek Drive, Fort Mill, SC 29715
+    P-4  Vanterra Corporate Office Fit-Out, 8815 Nations Ford Road, Charlotte, NC 28217
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLE / SELF-INSURED RETENTION
+--------------------------------------------------------------------------------------------------
+
+  Bodily Injury and Property Damage Liability - Deductible, per CLAIM,
+  applicable to damages and to allocated loss adjustment expense (ALAE)   $     25,000
+  (End. PCS-DED 240, Deductible Liability Insurance - Claim Basis, ALAE included within the deductible.)
+
+--------------------------------------------------------------------------------------------------
+PREMIUM COMPUTATION - CLASSIFICATION SCHEDULE
+--------------------------------------------------------------------------------------------------
+
+  Class Code  Classification                                   Basis     Exposure       Rate      Premium
+  91580       Contractors - subcontracted work - in connection
+              with construction, reconstruction, repair or
+              erection of buildings                            Cost of   $ 84,600,000   0.4820   $ 407,772
+                                                               Sub work
+  91340       Carpentry - construction of residential
+              property not exceeding three stories             Payroll   $  4,180,000   3.9100   $ 163,438
+  98305       Concrete construction - foundations              Payroll   $  2,940,000   5.2600   $ 154,644
+  91585       Contractors - executive supervisors              Each      12 supervisors  1,120   $  13,440
+  61226       Buildings or premises - office - own occupancy    Area      18,400 sq ft   0.0940   $   1,730
+                                                                                        ---------------
+  Estimated Annual Advance Premium (subject to audit)                                    $ 740,024
+  Terrorism Premium (TRIA accepted)                                                      $   6,180
+  Minimum Premium                                                                        $ 592,019
+  Audit Period: Annual. Premium is subject to audit of payroll and subcontract cost records.
+
+--------------------------------------------------------------------------------------------------
+COVERAGES PROVIDED
+--------------------------------------------------------------------------------------------------
+
+COVERAGE A - BODILY INJURY AND PROPERTY DAMAGE LIABILITY
+  We will pay those sums that the insured becomes legally obligated to pay as damages because of "bodily
+  injury" or "property damage" to which this insurance applies, caused by an "occurrence" that takes place
+  in the "coverage territory" during the policy period, provided that prior to the policy period no insured
+  and no employee authorised to give or receive notice of an occurrence knew that the bodily injury or
+  property damage had occurred, in whole or in part. We have the right and duty to defend any "suit"
+  seeking such damages, and our duty to defend ends when we have used up the applicable limit in the
+  payment of judgments or settlements.
+
+COVERAGE B - PERSONAL AND ADVERTISING INJURY LIABILITY
+  We will pay those sums the insured becomes legally obligated to pay as damages because of "personal and
+  advertising injury" caused by an offense arising out of the insured's business, committed in the coverage
+  territory during the policy period.
+
+COVERAGE C - MEDICAL PAYMENTS
+  We will pay medical expenses for "bodily injury" caused by an accident on premises the insured owns or
+  rents, on ways next to those premises, or because of the insured's operations, provided the expenses are
+  incurred and reported within one year of the accident date, regardless of fault.
+
+SUPPLEMENTARY PAYMENTS - in addition to the limits: all expenses we incur; up to $ 2,500 for the cost of
+bail bonds; the cost of bonds to release attachments; reasonable expenses incurred by the insured at our
+request, including actual loss of earnings up to $ 500 a day; all court costs taxed against the insured;
+pre-judgment and post-judgment interest.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS - COVERAGE A (abridged; refer to the coverage form)
+--------------------------------------------------------------------------------------------------
+
+  a.  Expected or intended injury.
+  b.  Contractual liability, except liability assumed in an "insured contract" where the bodily injury or
+      property damage occurs subsequent to the execution of the contract.
+  c.  Liquor liability.
+  d.  Workers compensation and similar laws.
+  e.  Employer's liability - bodily injury to an "employee" arising out of and in the course of employment,
+      including consequential injury to a spouse, child, parent or sibling.
+  f.  Pollution - bodily injury or property damage arising out of the actual, alleged or threatened
+      discharge, dispersal, seepage, migration, release or escape of "pollutants" at or from any premises,
+      site or location on which any insured or any contractor or subcontractor working for any insured is
+      performing operations, including operations to test for, monitor, clean up, remove, contain, treat,
+      detoxify or neutralise pollutants. See also End. PCS-SIL 425 (Silica and Silica Dust Exclusion) and
+      End. PCS-MOLD 430 (Fungi, Mould and Microbial Matter Exclusion - Absolute).
+  g.  Aircraft, auto or watercraft owned or operated by or rented or loaned to any insured.
+  h.  Mobile equipment used in any prearranged racing, speed, demolition or stunting activity.
+  i.  War.
+  j.  Damage to property:
+        (1) owned, rented or occupied by the insured, including costs to repair, replace or restore;
+        (2) premises the insured sells, gives away or abandons, if arising out of those premises;
+        (3) property loaned to the insured;
+        (4) personal property in the care, custody or control of the insured;
+        (5) that particular part of real property on which the insured or any contractor or subcontractor
+            working directly or indirectly on the insured's behalf is performing operations, if the property
+            damage arises out of those operations; and
+        (6) that particular part of any property that must be restored, repaired or replaced because
+            "your work" was incorrectly performed on it.
+      Paragraphs (3), (4), (5) and (6) do not apply to liability assumed under a sidetrack agreement, and
+      paragraph (6) does not apply to property damage included in the "products-completed operations hazard".
+  k.  Damage to "your product" arising out of it or any part of it.
+  l.  Damage to "your work" arising out of it or any part of it and included in the "products-completed
+      operations hazard". This exclusion does not apply if the damaged work, or the work out of which the
+      damage arises, was performed on the insured's behalf by a SUBCONTRACTOR.
+  m.  Damage to impaired property or property not physically injured, arising out of a defect, deficiency,
+      inadequacy or dangerous condition in "your product" or "your work", or a delay or failure to perform a
+      contract in accordance with its terms.
+  n.  Recall of products, work or impaired property.
+  o.  Personal and advertising injury.
+  p.  Electronic data.
+  q.  Distribution of material in violation of statutes (TCPA, CAN-SPAM, FCRA and similar).
+  r.  Employment-related practices (End. PCS-EPL 415).
+  s.  Professional liability - bodily injury, property damage or personal injury arising out of the
+      rendering of or failure to render any professional or design service, including architectural,
+      engineering, surveying, inspection, means-and-methods engineering, and construction management
+      services (End. PCS-PROF 420). Coverage for "means and methods" incidental to the insured's own
+      construction operations is written back to the extent stated in that endorsement.
+  t.  Subsidence, earth movement, settling, slipping, sinking, shifting, expansion or contraction of earth,
+      soil or land, however caused, where the insured performed grading, excavation, filling, compaction,
+      shoring, underpinning or earthwork (End. PCS-SUB 435, Earth Movement and Subsidence Exclusion).
+  u.  Residential construction - bodily injury or property damage arising out of new construction of any
+      single family dwelling, townhome, condominium or attached residential structure of four (4) units or
+      fewer, other than the designated project P-2 which is specifically scheduled and covered
+      (End. PCS-RES 440, Residential Construction Exclusion with Scheduled Project Exception).
+  v.  Communicable disease (End. PCS-CD 445).
+  w.  Cyber and data breach liability (End. PCS-CYB 450).
+  x.  Exterior insulation and finish systems (EIFS) - property damage arising out of the design, application
+      or removal of EIFS, other than as an accent band of not more than 10% of the exterior wall surface
+      (End. PCS-EIFS 455).
+
+--------------------------------------------------------------------------------------------------
+ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+PCS-CGL 001 (12-24)  Commercial General Liability Coverage Form - Occurrence
+PCS-AGG 220 (12-24)  Designated Construction Project(s) General Aggregate Limit
+PCS-DED 240 (12-24)  Deductible Liability Insurance - Per Claim, ALAE Included
+PCS-AI 300 (12-24)   Additional Insured - Owners, Lessees or Contractors - Scheduled Person or Organization
+                     (ongoing operations, equivalent scope to CG 20 10)
+PCS-AI 305 (12-24)   Additional Insured - Owners, Lessees or Contractors - Completed Operations
+                     (equivalent scope to CG 20 37)
+PCS-AI 310 (12-24)   Additional Insured - Automatic Status When Required in a Written Construction
+                     Agreement Executed Prior to Loss
+PCS-PRI 315 (12-24)  Primary and Non-Contributory - Other Insurance Condition, where required by written
+                     contract executed before the loss
+PCS-WOS 320 (12-24)  Waiver of Transfer of Rights of Recovery Against Others (Blanket, where required by
+                     written contract executed before the loss)
+PCS-NOC 325 (12-24)  Notice of Cancellation to Scheduled Certificate Holders - 30 days (10 days non-payment)
+PCS-SUBW 330 (12-24) Subcontractor Insurance Requirements Condition and Warranty
+PCS-PROF 420 (12-24) Professional Services Exclusion with Means and Methods Write-Back
+PCS-SIL 425 (12-24)  Silica and Silica Dust Exclusion
+PCS-MOLD 430 (12-24) Fungi, Mould, Mildew and Microbial Matter Exclusion - Absolute
+PCS-SUB 435 (12-24)  Earth Movement and Subsidence Exclusion
+PCS-RES 440 (12-24)  Residential Construction Exclusion with Scheduled Project Exception (P-2)
+PCS-CD 445 (12-24)   Communicable Disease Exclusion
+PCS-CYB 450 (12-24)  Access or Disclosure of Confidential Information and Data-Related Liability Exclusion
+PCS-EIFS 455 (12-24) Exterior Insulation and Finish Systems Exclusion
+PCS-EPL 415 (12-24)  Employment-Related Practices Exclusion
+PCS-CRANE 460 (12-24) Crane, Hoisting and Rigging Operations Condition - Certified Operator Warranty
+PCS-NC STAT (03-25)  North Carolina Changes
+PCS-TRIA 900 (01-21) Terrorism Risk Insurance Act - Coverage ACCEPTED
+
+--------------------------------------------------------------------------------------------------
+SCHEDULED ADDITIONAL INSUREDS (End. PCS-AI 300 and PCS-AI 305)
+--------------------------------------------------------------------------------------------------
+
+  1.  Rivergate Development Partners, LLC - ongoing and completed operations, project P-1
+      (Rivergate Commons Phase II, 2650 Rivergate Parkway, Charlotte, NC 28273)
+      Primary and non-contributory; waiver of subrogation applies.
+  2.  Carolina Piedmont Construction Finance, LLC - ongoing operations only, project P-1
+  3.  Halston Row Owner, LLC - ongoing and completed operations, project P-2
+  4.  Sable Creek Medical Properties, LLC and Palmetto Health Realty Trust - ongoing and completed
+      operations, project P-3
+  5.  City of Charlotte - ongoing operations, work within the public right of way, project P-1
+  6.  Any person or organization where required by a written construction agreement executed prior to the
+      occurrence, per End. PCS-AI 310 (automatic status).
+
+--------------------------------------------------------------------------------------------------
+SUBCONTRACTOR INSURANCE WARRANTY (End. PCS-SUBW 330)
+--------------------------------------------------------------------------------------------------
+
+It is a condition of this insurance that the Named Insured shall, before permitting any subcontractor of any
+tier to commence work:
+  (a)  obtain a written subcontract agreement containing an indemnity in favour of the Named Insured and the
+       project owner, and requiring the subcontractor to name them as additional insureds on a primary and
+       non-contributory basis for both ongoing and completed operations;
+  (b)  obtain and retain a certificate of insurance evidencing commercial general liability limits of not
+       less than $ 1,000,000 each occurrence / $ 2,000,000 aggregate, automobile liability of $ 1,000,000,
+       and workers compensation with employer's liability of $ 1,000,000, from insurers rated A- VII or
+       better by AM Best;
+  (c)  obtain a waiver of subrogation in favour of the Named Insured and the owner.
+Where the Named Insured fails to comply, the per-claim deductible applicable to any claim arising out of
+that subcontractor's work is increased to $ 250,000.
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING REQUIREMENTS
+--------------------------------------------------------------------------------------------------
+
+1.  DUTIES IN THE EVENT OF OCCURRENCE, OFFENSE, CLAIM OR SUIT. The insured must see to it that we are
+    notified as soon as practicable of an "occurrence" or an offense which may result in a claim. Notice
+    should include how, when and where the occurrence took place, the names and addresses of any injured
+    persons and witnesses, and the nature and location of any injury or damage.
+        Piedmont Casualty & Surety - Construction Liability Claims
+        gl.claims@piedmontcasualty.example   |   (800) 555-0755 (24 hour)
+        Fax: (704) 555-0756  |  Portal: report.piedmontcasualty.example
+2.  If a claim or "suit" is received by any insured, the insured must immediately record the specifics and
+    the date received, notify us as soon as practicable, and forward all legal papers to us.
+3.  The insured must cooperate with us in the investigation and defense, must not voluntarily make a
+    payment, assume any obligation or incur any expense other than for first aid, and must take all
+    reasonable steps to preserve evidence, including photographs, the site condition, tools, equipment,
+    scaffolding, guardrails, fall protection and any failed component.
+4.  IMMEDIATE TELEPHONE NOTICE is required for any occurrence involving: a fatality; an amputation, spinal
+    or head injury, or hospitalisation of any person; a collapse of any structure, formwork or excavation;
+    a crane, rigging or dropped-load incident; damage to adjacent or third-party property; or the arrival of
+    OSHA or any regulatory authority at the site.
+5.  OTHER INSURANCE. This insurance is excess over any builders risk, installation floater, property or
+    inland marine coverage, and over any other primary insurance available to the insured covering the same
+    loss, except where this policy is required to be primary and non-contributory by a written contract
+    executed prior to the occurrence.
+6.  PREMIUM AUDIT. The premium is an advance premium only. We will compute the final premium by audit of the
+    insured's payroll and subcontract cost records within twelve months of the end of the policy period.
+7.  REPRESENTATIONS, SEPARATION OF INSUREDS, LEGAL ACTION AGAINST US and TRANSFER OF RIGHTS OF RECOVERY
+    apply as stated in the coverage form.
+
+Countersigned at Charlotte, North Carolina.
+
+    ___________________________________       ___________________________________
+    Authorized Representative                 Vice President, Construction Casualty

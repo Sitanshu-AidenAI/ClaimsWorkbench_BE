@@ -15,11 +15,13 @@ from __future__ import annotations
 
 from tests.fakes.ai import StubProvider
 from tests.fakes.embedding import FailingEmbeddingProvider, FakeEmbeddingProvider
+from tests.fakes.policy_vectors import FakePolicyVectorStore
 from tests.fakes.vectors import FakeVectorStore
 
 __all__ = [
     "FailingEmbeddingProvider",
     "FakeEmbeddingProvider",
+    "FakePolicyVectorStore",
     "FakeVectorStore",
     "StubProvider",
 ]

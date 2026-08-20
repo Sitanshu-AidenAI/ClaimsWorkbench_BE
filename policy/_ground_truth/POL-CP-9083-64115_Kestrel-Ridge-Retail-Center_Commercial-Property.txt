@@ -1,0 +1,213 @@
+
+NORTHSHORE SPECIALTY INSURANCE COMPANY
+900 West Main Street, Suite 1200, Boise, ID 83702  |  NAIC No. 27114
+
+COMMERCIAL PROPERTY COVERAGE PART - DECLARATIONS
+RETAIL AND MIXED-USE PROGRAM
+
+POLICY NUMBER:   CP-9083-64115
+POLICY PERIOD:   From 01/01/2025 to 01/01/2026 at 12:01 A.M. Standard Time
+POLICY TERM:     12 Months           BILLING: Agency Bill, Annual
+
+NAMED INSURED:   Kestrel Ridge Holdings, LP
+                 a Delaware limited partnership
+DBA:             Kestrel Ridge Retail Center
+MAILING ADDRESS: c/o Aspenwall Commercial Realty
+                 777 West Bannock Street, Suite 500
+                 Boise, ID 83702
+BUSINESS:        Ownership and leasing of a neighborhood retail shopping center
+NAICS:           531120 - Lessors of Nonresidential Buildings
+
+PRODUCER:        Harkness-Vaillancourt Insurance Agency
+                 Producer Code ID-2209
+                    Broker Reference: HV/RET/2025/9083
+                 1050 North Curtis Road, Suite 205, Boise, ID 83706
+                 Agent: Renata Sjoberg-Ellis  |  (208) 555-0466  |  rsjoberg@hvagency.example
+
+--------------------------------------------------------------------------------------------------
+DESCRIPTION OF PREMISES
+--------------------------------------------------------------------------------------------------
+
+Premises 001, Buildings 01 through 04
+    Kestrel Ridge Retail Center
+    4820 - 4890 North Eagle Ridge Boulevard
+    Boise, ID 83713 (Ada County)
+
+    Bldg 01  In-line retail, Suites 100-118     42,600 sq ft   Masonry Non-Combustible, 2008, sprinklered
+    Bldg 02  Anchor space, Suite 200            31,200 sq ft   Masonry Non-Combustible, 2008, sprinklered
+             (occupied by Wilder & Pine Home Goods, lease expires 2029)
+    Bldg 03  Freestanding pad - restaurant       6,400 sq ft   Joisted Masonry, 2012, sprinklered
+             (occupied by Basalt Fire Kitchen LLC, full-service restaurant with Type I hood and
+              Ansul R-102 wet chemical suppression system)
+    Bldg 04  Freestanding pad - retail/services  9,100 sq ft   Joisted Masonry, 2014, sprinklered
+             (multi-tenant: dental practice, dry cleaner drop station, nail salon, mobile phone retailer)
+
+    Site improvements: 412-stall asphalt parking lot, 22 pole-mounted LED light standards, monument
+    pylon sign at Eagle Ridge Boulevard, trash enclosures, landscaping and irrigation, EV charging
+    stations (4 dual-port units installed 2023).
+
+    Protection Class 3. Central station fire and burglar alarm on all buildings.
+    Occupancy at inception: 91.4% leased (2 vacant suites in Bldg 01: Suites 112 and 116).
+
+--------------------------------------------------------------------------------------------------
+COVERAGES, LIMITS AND FORMS
+--------------------------------------------------------------------------------------------------
+
+Coverage Form: NSS-CP 100 (11-23) Building and Personal Property Coverage Form
+Causes of Loss: NSS-CP 130 (11-23) Special Form, subject to the exclusions stated
+
+  Cov.  Description                                              Limit           Valuation  Coins.
+  A     Building - Bldg 01                                       $ 9,850,000     RC         80%
+  A     Building - Bldg 02                                       $ 6,240,000     RC         80%
+  A     Building - Bldg 03                                       $ 2,110,000     RC         80%
+  A     Building - Bldg 04                                       $ 2,480,000     RC         80%
+  A     Site Improvements, Paving, Signs and Light Standards      $ 1,320,000     RC         80%
+  B     Business Personal Property of the Insured                 $   180,000     RC         80%
+  C     Business Income and Rental Value - ALS, 12 months         $ 3,600,000     N/A        N/A
+  D     Extra Expense                                             $   400,000
+  E     Equipment Breakdown                                       $ 5,000,000 per accident
+  F     Building Ordinance or Law - Cov. A / B / C                A incl.; B & C $ 1,750,000
+  G     Glass - Plate and Storefront                              $   250,000 per occurrence
+
+  BLANKET BUILDING LIMIT (Bldgs 01-04 plus Site Improvements)     $ 22,000,000
+  (Agreed Amount applies; coinsurance suspended while the Statement of Values dated 11/07/2024 is on file)
+
+SUBLIMITS:
+  Debris Removal                                          25% of loss plus $ 100,000 additional
+  Pollutant Cleanup and Removal                           $ 100,000 annual aggregate
+  Sign - Outdoor, attached and detached                   $ 200,000 per occurrence
+  Trees, Shrubs and Landscaping                           $  50,000 ($ 1,000 any one item)
+  Fire Department Service Charge                          $  25,000
+  Water Damage from Plumbing and Fire Protection Systems  $ 2,000,000 per occurrence
+  Sewer and Drain Backup (End. NSS-SEW 122)               $ 250,000 annual aggregate
+  Theft of Building Materials, Fixtures and Copper        $ 100,000 per occurrence
+  Vandalism / Malicious Mischief to Vacant Suites         $  75,000 per occurrence
+  Tenant Move-Back and Re-Leasing Expense                 $ 150,000
+  Electronic Data and EV Charging Equipment               $ 200,000
+  Accounts Receivable                                     $ 250,000
+  Valuable Papers and Lease Records                       $ 150,000
+  Newly Acquired Property                                 $ 3,000,000 for 90 days
+  Cost of Claim Preparation                               $  50,000
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+  All Other Perils                                        $ 25,000 per occurrence
+  Wind and Hail                                           $ 50,000 per occurrence
+  Water Damage - non-weather                              $ 50,000 per occurrence
+  Theft, Vandalism and Malicious Mischief                 $ 25,000 per occurrence
+  Vehicle Impact to Storefront or Building                $ 10,000 per occurrence (End. NSS-VEH 145)
+  Equipment Breakdown                                     $ 10,000
+  Business Income / Rental Value                          48 hour waiting period
+  Earthquake (End. NSS-EQ 350)                            5% of the value of each affected building,
+                                                          minimum $ 100,000
+
+--------------------------------------------------------------------------------------------------
+COVERED CAUSES OF LOSS
+--------------------------------------------------------------------------------------------------
+
+Risks of direct physical loss to Covered Property unless the loss is excluded or limited. Perils
+contemplated include fire, lightning, windstorm, hail, explosion, smoke, aircraft or vehicle impact
+(including impact by an automobile driven into or against a storefront or building wall), riot and civil
+commotion, vandalism, malicious mischief, sprinkler leakage, accidental discharge of water from plumbing,
+heating, cooling, sprinkler or appliance systems, theft and burglary, weight of snow, ice or sleet, falling
+objects, volcanic action, and collapse to the extent provided by the Additional Coverage.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS (abridged - see coverage form for full text)
+--------------------------------------------------------------------------------------------------
+
+  1.  Flood, surface water, mudflow, and water that backs up from a sewer, drain or sump (backup partially
+      written back at the sublimit shown).
+  2.  Earth movement, including earthquake and volcanic eruption, except as provided by End. NSS-EQ 350.
+  3.  Ordinance or law, except as provided by the Ordinance or Law coverage shown.
+  4.  Wear and tear, deterioration, rust, corrosion, hidden or latent defect, settling, cracking, shrinking
+      or expansion.
+  5.  Mechanical breakdown, except as provided by the Equipment Breakdown coverage.
+  6.  Continuous or repeated seepage or leakage of water over a period of 14 days or more.
+  7.  Fungus, wet or dry rot, mold and bacteria, except limited coverage of $ 15,000 annual aggregate
+      resulting from a covered water loss (End. NSS-FUN 140).
+  8.  Faulty, inadequate or defective design, workmanship, construction, materials or maintenance; ensuing
+      loss from a Covered Cause of Loss is covered.
+  9.  Dishonest or criminal acts by the insured, its partners, employees, managers or authorised
+      representatives, or by any tenant.
+  10. Loss of or damage to property in the course of construction of a new building; alterations and
+      additions to existing insured buildings are covered to $ 500,000 of contract value.
+  11. Theft of, or damage to, tenant trade fixtures, stock or personal property; such property is the
+      responsibility of the tenant under the lease.
+  12. War, terrorism (unless elected), nuclear hazard, governmental seizure, and communicable disease.
+  13. Damage to tenant cooking equipment, grease ducts and hoods from any grease-fuelled fire originating
+      within a Type I hood system, except where the automatic wet chemical suppression system discharged as
+      designed (End. NSS-COOK 160).
+
+--------------------------------------------------------------------------------------------------
+FORMS AND ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+NSS-CP 100 (11-23)   Building and Personal Property Coverage Form
+NSS-CP 130 (11-23)   Causes of Loss - Special Form
+NSS-BI 210 (11-23)   Business Income and Rental Value - Actual Loss Sustained
+NSS-EB 230 (11-23)   Equipment Breakdown Protection
+NSS-SEW 122 (11-23)  Water Backup of Sewers, Drains and Sumps
+NSS-FUN 140 (11-23)  Limited Fungus, Wet Rot, Dry Rot and Bacteria
+NSS-VEH 145 (11-23)  Reduced Deductible - Vehicle Impact to Building or Storefront
+NSS-COOK 160 (11-23) Commercial Cooking Operations - Conditions and Limitation
+NSS-EQ 350 (11-23)   Earthquake Coverage - Idaho
+NSS-ORD 275 (11-23)  Ordinance or Law Coverage
+NSS-GLS 180 (11-23)  Glass Coverage - Plate and Storefront
+NSS-MTG 500 (03-22)  Mortgage Holders Clause
+NSS-AI 530 (03-22)   Additional Insured - Property Manager and Ground Lessor
+NSS-VAC 620 (11-23)  Vacancy Permit - Suites 112 and 116, to 07/01/2025
+NSS-ID STAT (06-24)  Idaho Amendatory Endorsement
+NSS-TRIA 900 (01-21) Terrorism Risk Insurance Act - Coverage REJECTED
+
+--------------------------------------------------------------------------------------------------
+MORTGAGEE, LOSS PAYEES AND ADDITIONAL INSUREDS
+--------------------------------------------------------------------------------------------------
+
+First Mortgagee (all buildings, Premises 001):
+    Snake River Trust & Savings Bank, ISAOA/ATIMA
+    Commercial Lending Department, 250 South Fifth Street, Boise, ID 83702
+    Loan No. CML-2022-30991
+
+Additional Insured - Property Manager (End. NSS-AI 530):
+    Aspenwall Commercial Realty, LLC, 777 West Bannock Street, Suite 500, Boise, ID 83702
+
+Additional Insured - Ground Lessor (Building 03 pad only):
+    Eagle Ridge Land Company, LLC, 1200 North Linder Road, Meridian, ID 83646
+    Ground Lease dated 03/15/2011
+
+Loss Payee - EV Charging Equipment:
+    Cascade Charge Networks, Inc., Equipment Agreement CCN-ID-2023-0087
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING REQUIREMENTS
+--------------------------------------------------------------------------------------------------
+
+1.  DUTIES IN THE EVENT OF LOSS. The insured must (a) notify the police where a law may have been broken;
+    (b) give us prompt notice of the loss, including a description of the property involved; (c) as soon as
+    possible, give a description of how, when and where the loss occurred; (d) take all reasonable steps to
+    protect the Covered Property from further damage and keep records of the expense; (e) permit us to
+    inspect and take samples of damaged and undamaged property; (f) submit to examination under oath if
+    requested; and (g) send us a signed, sworn Proof of Loss within sixty (60) days of our request.
+    First notice of loss:  claims@northshorespecialty.example  |  (866) 555-0221 (24 hour)
+    Claims mailing address: P.O. Box 8840, Boise, ID 83707
+2.  EMERGENCY MITIGATION. The insured may engage a qualified restoration contractor for emergency board-up,
+    water extraction, temporary roof cover or fencing without prior approval, provided (a) the cost does not
+    exceed $ 15,000, (b) we are notified within 24 hours, and (c) photographs of the affected areas are
+    taken before mitigation begins.
+3.  TENANT INTERESTS. This policy does not insure the personal property, stock, trade fixtures or
+    improvements installed at a tenant's expense, except where the lease makes the landlord responsible.
+4.  VACANCY PERMIT. Notwithstanding the Vacancy Condition, coverage for vandalism, sprinkler leakage, water
+    damage, theft and glass breakage is continued for Suites 112 and 116 of Building 01 to 07/01/2025, on
+    condition that the suites are secured, alarmed, heated to a minimum of 55 degrees F, and inspected not
+    less than weekly with a written log maintained.
+5.  APPRAISAL, SUBROGATION and other conditions apply as stated in the coverage form.
+6.  SUIT LIMITATION. Any legal action must be brought within two (2) years of the date of loss.
+7.  PREMIUM. Annual premium $ 168,940. Terrorism premium $ 0 (rejected).
+
+Issued at Boise, Idaho on December 12, 2024.
+
+    ___________________________________    ___________________________________
+    Authorized Representative              Underwriting Manager, Northwest Region

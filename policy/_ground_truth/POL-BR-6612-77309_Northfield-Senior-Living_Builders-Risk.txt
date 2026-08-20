@@ -1,0 +1,251 @@
+
+GREAT LAKES CONSTRUCTION UNDERWRITERS
+a division of Cascadia Mutual Property & Casualty
+330 East Kilbourn Avenue, Suite 900, Milwaukee, WI 53202  |  NAIC No. 22687
+
+BUILDERS RISK - RENOVATION AND NEW CONSTRUCTION
+DECLARATIONS
+
+POLICY NUMBER:  BR-6612-77309
+POLICY PERIOD:  From 02/01/2025 to 02/01/2027 (24 months), 12:01 A.M. Standard Time at the project site
+FORM TYPE:      Completed Value, Non-Reporting, Single Project
+ISSUED:         01/21/2025
+
+NAMED INSUREDS (as their interests may appear):
+    Sundale Property Group, LLC ......................... Project Owner / Developer
+    Northfield Senior Living Partners, LP ............... Project Owner Entity
+    Halcyon Builders, LLC ............................... General Contractor / Construction Manager
+    All subcontractors of every tier, for their interest in project property only
+
+MAILING ADDRESS (First Named Insured):
+    Sundale Property Group, LLC
+    9 East Fourth Street, Suite 1450
+    Tulsa, OK 74103
+
+GENERAL CONTRACTOR:
+    Halcyon Builders, LLC
+    2410 West Beltline Highway, Suite 300
+    Madison, WI 53713
+    Wisconsin Dwelling Contractor Cert. No. 1355109  |  Contact: Owen Kastellec-Brandt, Project Executive
+
+PRODUCER:  Kettleridge Risk Partners, LLC
+           Producer Code OK-1147
+                    Broker Reference: KRP/CAR/2025/6612
+           320 South Boston Avenue, Suite 700, Tulsa, OK 74103
+           Producer: Marcus Adeyemi-Croft  |  (918) 555-0347  |  madeyemi@kettleridgerisk.example
+
+--------------------------------------------------------------------------------------------------
+PROJECT DESCRIPTION
+--------------------------------------------------------------------------------------------------
+
+PROJECT NAME:    Northfield Senior Living
+PROJECT ADDRESS: 1725 Northfield Commons Drive
+                 Madison, WI 53704 (Dane County)
+
+SCOPE:  Construction of a new 132-unit senior living community comprising:
+        Building A - Independent living, four stories, 84 units, wood frame over Type I podium
+        Building B - Assisted living and memory care, two stories, 48 units, wood frame on slab
+        Building C - Commons building: dining, wellness centre, salon, administrative offices, 18,400 sq ft
+        Plus:   central plant with two 500 MBH condensing boilers, emergency generator, covered drop-off
+                canopy, 96 surface stalls and 22 enclosed garage stalls, walking paths, retention pond,
+                and full site utilities.
+        Includes: partial renovation and structural tie-in to an EXISTING 1968 single-story clinic building
+                  (11,200 sq ft) which will be converted to the therapy wing. Existing structure values are
+                  insured under this policy per End. GLC-EXIST 380 as scheduled below.
+
+CONSTRUCTION TYPE:  Type V-A wood frame over Type I-A podium (Bldg A); Type V-B (Bldg B);
+                    Type II-B (Bldg C). NFPA 13 sprinkler protection throughout at completion.
+                    Exterior: fibre cement panel, cultured stone base, asphalt shingle and TPO roofing.
+
+CONTRACT:  AIA A133-2019 Construction Manager at Risk with GMP, dated 12/12/2024
+GMP CONTRACT SUM:        $ 41,300,000
+OWNER-FURNISHED FF&E:    $  2,600,000
+EXISTING STRUCTURE VALUE (therapy wing, ACV):  $ 1,850,000
+SOFT COSTS DECLARED:     $  4,400,000
+NOTICE TO PROCEED:       02/10/2025
+SCHEDULED SUBSTANTIAL COMPLETION: 11/30/2026
+
+--------------------------------------------------------------------------------------------------
+LIMITS OF INSURANCE
+--------------------------------------------------------------------------------------------------
+
+  LIMIT OF INSURANCE - PER OCCURRENCE (project property, all coverages combined)   $ 43,900,000
+  Existing Structure - therapy wing (Actual Cash Value basis, End. GLC-EXIST 380)  $  1,850,000
+  Soft Costs and Delay in Completion (End. GLC-SOFT 410)                           $  4,400,000
+
+  SUBLIMITS (included within the applicable Limit unless stated otherwise):
+
+    Off-Site Storage - any one location (declared: Vanguard Logistics,
+      3900 Hanson Road, Madison, WI)                                       $ 3,000,000
+    Off-Site Storage - undeclared locations                                $   500,000
+    Property in Transit                                                    $   750,000 per conveyance
+    Temporary Structures, Scaffolding, Formwork and Site Trailers          $ 1,000,000
+    Theft of Materials, Supplies and Fixtures Awaiting Installation        $   500,000 per occurrence
+    Theft of Copper, Wire, Cable, HVAC Units and Appliances                $   200,000 per occurrence
+    Vandalism and Malicious Mischief                                       $   500,000 per occurrence
+    Water Damage - Rain, Snowmelt and Water Intrusion prior to dry-in      $ 1,500,000 per occurrence
+    Water Damage - Testing of Plumbing and Fire Protection Systems         $ 1,500,000 per occurrence
+    Freeze / Frozen Pipe Damage (subject to Freeze Warranty below)         $ 1,000,000 per occurrence
+    Debris Removal                                                         25% of loss, plus $ 250,000
+    Pollutant Cleanup and Removal                                          $   100,000 annual aggregate
+    Ordinance or Law - A, B and C combined                                 $ 1,500,000
+    Valuable Papers, Plans, Drawings and Project Records                   $   300,000
+    Landscaping, Sod, Trees and Site Plantings                             $   150,000
+    Expediting and Extra Expense                                           $   750,000
+    Mould and Fungus resulting from a reported covered water event         $   100,000 annual aggregate
+    Fire Extinguishing Expense and Fire Department Service Charge          $    75,000
+    Claim Preparation Costs                                                $   100,000
+
+  SOFT COSTS AND DELAY IN COMPLETION (End. GLC-SOFT 410):
+    Named Insureds for Soft Costs: Sundale Property Group, LLC and Northfield Senior Living Partners, LP
+    Aggregate Limit                       $ 4,400,000
+    Indemnity Period                      12 months
+    Time Deductible                       45 consecutive days
+    Covered: construction loan interest, extended general conditions, re-inspection and permit fees,
+    additional design and consulting fees, real estate taxes, insurance premiums, pre-opening marketing and
+    lease-up costs, and additional costs to re-schedule and re-mobilise the trades.
+    Excluded: liquidated damages, penalties, loss of revenue, and any cost that would have been incurred
+    absent the loss.
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+  All Other Perils                                                    $ 25,000 per occurrence
+  Water Damage - rain, snowmelt, water intrusion, testing              $ 50,000 per occurrence
+  Freeze / Frozen Pipe                                                 $ 50,000 per occurrence
+  Wind and Hail                                                        $ 50,000 per occurrence
+  Theft, Vandalism and Malicious Mischief                              $ 25,000 per occurrence
+  Loss to Existing Structure                                           $ 50,000 per occurrence
+  Collapse During Erection                                             $ 50,000 per occurrence
+  Soft Costs / Delay in Completion                                     45 day time deductible
+
+--------------------------------------------------------------------------------------------------
+COVERED CAUSES OF LOSS
+--------------------------------------------------------------------------------------------------
+
+All risks of direct physical loss of or damage to insured project property while at the project site, in
+transit, or at a declared or undeclared off-site storage location, except as excluded. Perils contemplated
+include fire, lightning, explosion, windstorm, hail, tornado, weight of snow, ice or sleet, ice damming,
+freeze and frozen pipe (subject to the Freeze Warranty), riot and civil commotion, vandalism, malicious
+mischief, theft and burglary, vehicle and aircraft impact, dropped loads and crane or rigging failure,
+collapse during erection, accidental discharge of water from temporary or permanent systems, rain and
+snowmelt intrusion into an incomplete structure, smoke, and sudden and accidental damage arising from
+testing and commissioning.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS (abridged)
+--------------------------------------------------------------------------------------------------
+
+  1.  Faulty or defective workmanship, design, plan, specification or materials - the cost of making good
+      the defective element itself. Resulting physical damage from a Covered Cause of Loss to other property
+      is insured (LEG 2/96 wording, End. GLC-DEF 305).
+  2.  Rework, correction, and the cost of remedying work that fails inspection or does not conform to the
+      contract documents.
+  3.  Delay, loss of use, loss of revenue, liquidated damages and consequential loss, except as provided by
+      the Soft Costs and Delay in Completion endorsement.
+  4.  Contractors' and subcontractors' tools, mobile equipment, cranes, hoists, lifts, vehicles and
+      equipment not destined to become a permanent part of the project.
+  5.  Property of employees, personal effects and jobsite office contents in excess of $ 25,000.
+  6.  Wear and tear, gradual deterioration, corrosion, rust, dampness of atmosphere, extremes of temperature
+      other than a covered freeze event, marring, scratching and denting.
+  7.  Mysterious disappearance, unexplained shortage and inventory shortage.
+  8.  Dishonest or criminal acts of any insured, employee, or subcontractor of any tier.
+  9.  Loss or damage to any portion of the project after it has been occupied or put to its intended use,
+      unless a Partial Occupancy Permit has been issued by us in writing.
+  10. Flood, surface water, and water that backs up from sewers or drains.
+  11. Earth movement, earthquake, subsidence, settling and soil compaction, except settling directly caused
+      by a Covered Cause of Loss.
+  12. Loss caused by or resulting from failure to comply with any warranty stated in this policy, including
+      the Freeze Warranty and the Site Security Warranty.
+  13. Mould, fungus, wet rot, dry rot and bacteria, except as sublimited.
+  14. Damage to the existing structure from any cause other than a Covered Cause of Loss, and any
+      pre-existing defect, deterioration or code deficiency in the existing structure.
+  15. Asbestos, lead paint and hazardous material abatement, testing, handling and disposal, whether or not
+      discovered as a result of a covered loss.
+  16. War, terrorism (unless elected), nuclear hazard, communicable disease and cyber incident.
+
+--------------------------------------------------------------------------------------------------
+FREEZE WARRANTY AND SITE SECURITY WARRANTY (End. GLC-WAR 615)
+--------------------------------------------------------------------------------------------------
+
+FREEZE WARRANTY. From November 1 through April 15 of each year during the policy period, the Insureds
+warrant that: (a) temporary heat will be maintained at a minimum of 45 degrees F in all enclosed areas
+containing water-filled piping, or all such piping will be drained and blown out; (b) a daily log of
+temporary heat operation and interior temperatures will be kept and made available to us; (c) a designated
+individual will inspect the site each non-working day and after any interruption of temporary heat or
+electrical power exceeding four (4) hours; and (d) any interruption of temporary heat exceeding twelve (12)
+hours will be reported to us. Coverage for freeze and frozen pipe damage is suspended during any period of
+non-compliance.
+
+SITE SECURITY WARRANTY. The site will be fully fenced with lockable gates, illuminated, and monitored by a
+recorded camera system with off-site storage of footage, or patrolled nightly with a written log, from the
+commencement of vertical construction. High-value materials (copper wire, HVAC condensing units, appliances,
+plumbing fixtures) will be stored in a locked container or a secured interior room until installation.
+
+--------------------------------------------------------------------------------------------------
+FORMS AND ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+GLC-BR 100 (07-24)    Builders Risk Coverage Form - Completed Value
+GLC-EXIST 380 (07-24) Existing Structure Coverage - Renovation, Actual Cash Value
+GLC-DEF 305 (07-24)   Defects Exclusion - LEG 2/96
+GLC-SOFT 410 (07-24)  Soft Costs and Delay in Completion
+GLC-TRAN 320 (07-24)  Transit and Off-Site Storage Extension - Declared and Undeclared
+GLC-TEST 330 (07-24)  Testing and Commissioning
+GLC-TEMP 340 (07-24)  Temporary Structures and Scaffolding
+GLC-FRZ 345 (07-24)   Freeze and Frozen Pipe Coverage
+GLC-ORD 275 (07-24)   Ordinance or Law
+GLC-OCC 360 (07-24)   Partial Occupancy Permit - Written Consent Required
+GLC-WAR 615 (07-24)   Freeze Warranty and Site Security Warranty
+GLC-ASB 520 (07-24)   Asbestos, Lead and Hazardous Materials Exclusion
+GLC-CYB 501 (01-25)   Cyber Incident Exclusion
+GLC-LP 505 (07-24)    Loss Payable and Mortgagee Provisions
+GLC-WI STAT (04-24)   Wisconsin Amendatory Endorsement
+GLC-TRIA 900 (01-21)  Terrorism Risk Insurance Act - Coverage ACCEPTED, premium $ 1,940
+
+  NOT PROVIDED: Flood, Earth Movement, Contractors Equipment.
+
+--------------------------------------------------------------------------------------------------
+LOSS PAYEES AND ADDITIONAL INTERESTS
+--------------------------------------------------------------------------------------------------
+
+Construction Lender / Mortgagee, loss payable as its interest may appear:
+    Badger State Community Development Bank
+    Construction Loan No. CD-2024-11907, dated 12/20/2024
+    1 South Pinckney Street, Suite 700, Madison, WI 53703
+
+HUD / Agency Interest:
+    Wisconsin Housing and Economic Development Authority (WHEDA), Tax Credit Allocation WI-2024-0219
+
+Additional Interest - Owner-Furnished FF&E and Kitchen Equipment:
+    Northfield Senior Living Partners, LP
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING
+--------------------------------------------------------------------------------------------------
+
+1.  NOTICE. Notice of any loss or occurrence must be given as soon as practicable and within five (5)
+    business days of discovery. Notice may be given by any Named Insured, by the General Contractor, or by
+    the producer of record, and should state the project name and address, the policy number if known, the
+    date and time of loss, and a description of the damage.
+        Great Lakes Construction Underwriters - Claims
+        buildersrisk.claims@cascadiamutual.example   |   (800) 555-0288, option 3
+2.  LAW ENFORCEMENT. Theft, vandalism and malicious mischief must be reported to the police within
+    twenty-four (24) hours of discovery; a copy of the report must be furnished to us.
+3.  MITIGATION. The Insureds must take immediate steps to prevent further damage. Emergency water
+    extraction, drying, temporary heat, shoring, tarping and board-up up to $ 25,000 may be incurred without
+    prior approval. Moisture readings must be documented daily during any drying operation.
+4.  DOCUMENTATION. On request the Insureds must provide the contract documents, the current schedule of
+    values, pay applications, the daily jobsite reports for the seven days before the loss, the temporary
+    heat log, subcontractor certificates of insurance, and all photographs and video of the loss site.
+5.  SUBROGATION AND WAIVER. This policy recognises the waiver of subrogation contained in Article 11 of the
+    AIA A133-2019 contract as between the Owner, the Construction Manager and the subcontractors, to the
+    extent of insured loss. We retain subrogation rights against manufacturers, suppliers, design
+    professionals and any party not a Named Insured.
+6.  PROOF OF LOSS within ninety (90) days of request. SUIT LIMITATION: two (2) years from date of loss.
+7.  SCHEDULE. Any extension of the construction schedule beyond 02/01/2027 must be requested at least
+    thirty (30) days in advance and is subject to additional premium.
+8.  PREMIUM. $ 178,300 for the 24 month term. Rate $ 0.406 per $ 100 of completed value.
+
+Countersigned:  ______________________________     Date: 01/21/2025

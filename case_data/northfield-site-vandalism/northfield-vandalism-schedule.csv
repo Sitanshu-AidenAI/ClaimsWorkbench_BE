@@ -1,0 +1,15 @@
+Building,Item,Quantity,Total USD
+A,"Installed drywall punched, kicked or cut through",40,22000
+A,Interior door assemblies destroyed,6,18000
+A,"Graffiti removal and refinishing, ground floor",1,34000
+A,"Elevator hoistway door frames, floors 1 and 2",2,74000
+A,Copper tube removed from the mechanical room,200,18000
+A,"Panelboards pried, bus and breakers removed",3,68000
+A,Sprinkler heads broken off,2,10000
+B,Copper wire cut from conduit at outlet boxes,300,22000
+B,HVAC condensing units removed,4,38000
+B,"HVAC condensing units, coils and line sets cut out",6,24000
+B,Exterior door assemblies damaged,2,6000
+Existing,"Entry glazing, temporary panel, copper, graffiti",1,22000
+Site,"Trailers, conex, light towers, temporary power, cameras",1,24000
+Total damage and theft,,,380000

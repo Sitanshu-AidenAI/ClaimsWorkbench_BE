@@ -575,3 +575,40 @@ behind it: **[demo-data/document-intelligence/](demo-data/document-intelligence/
 still read, chunked and indexed, but the dataset path stands aside and the
 deterministic reader — which never read a passage — cannot cite one. The demo
 reports that rather than pretending.
+
+### The policy library
+
+An administrator uploads the carrier's policy wordings as PDFs on the **Policies**
+screen. Each one is read, cut into page-aware passages, embedded and written to its
+own Qdrant collection — separate from claim material, which has a different
+retention and access story. When a notification arrives, four facet queries are
+built from it — identity, site, peril, cover — and the wordings that answer them are
+ranked and shown with the clauses that answered, on their pages.
+
+Two matchers now run against a notice and they answer different questions.
+`policy_identification` matches the **book**: structured rows, compared field by
+field, and confirming one of its candidates binds a contract. The library matches
+the **wordings**, and its answer is deliberately **advisory** — it writes nothing.
+A wording is a document somebody uploaded, and letting a retrieval score bind a
+contract would mean a badly-read declarations page could attach a claim to the
+wrong policy with no book row consulted. Where the two agree an officer has
+corroboration from two independent methods; where they disagree, that is the most
+useful thing on the screen.
+
+```bash
+# Load the twelve synthetic wordings and check they retrieve sensibly.
+curl -H "Authorization: Bearer $TOKEN" -F file=@policy/POL-CP-4471-88210_*.pdf \
+     http://localhost:8000/api/v1/policies/documents          # 202 accepted
+curl -H "Authorization: Bearer $TOKEN" \
+     http://localhost:8000/api/v1/policies/documents          # ingestion status
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"insured_name":"Harborline Cold Storage","cause_of_loss":"Ammonia release"}' \
+     http://localhost:8000/api/v1/policies/match
+```
+
+Nothing here is required. With no embedding provider the wordings are still chunked
+and searched by Postgres full text, which on a policy number and an insured name is
+a good backend rather than a degraded stub — the screen says which mode it is in
+rather than leaving it to be inferred. The engine, the signals, the confidence
+ladder and the measured accuracy against the synthetic corpus:
+**[docs/policy-library.md](docs/policy-library.md)**.

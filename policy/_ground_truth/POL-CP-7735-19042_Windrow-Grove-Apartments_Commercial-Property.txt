@@ -1,0 +1,191 @@
+
+CASCADIA MUTUAL PROPERTY & CASUALTY
+Regional Underwriting Office: 4400 South Yale Avenue, Suite 1100, Tulsa, OK 74135
+NAIC No. 22687
+
+COMMERCIAL PROPERTY - HABITATIONAL PROGRAM
+DECLARATIONS PAGE
+
+POLICY NUMBER: CP-7735-19042
+POLICY PERIOD: 06/15/2025 to 06/15/2026, 12:01 A.M. Local Standard Time
+TRANSACTION: New Business (prior carrier: Grand Prairie Indemnity, Policy GPI-8830012)
+
+NAMED INSURED:      Sundale Property Group, LLC
+ADDITIONAL NAMED INSUREDS (as their interests may appear):
+                    Windrow Grove Apartments, LP
+                    Sundale Residential Management, LLC (Managing Agent)
+MAILING ADDRESS:    9 East Fourth Street, Suite 1450
+                    Tulsa, OK 74103
+BUSINESS DESCRIPTION: Owner and operator of garden-style multifamily residential communities
+NAICS:              531110 - Lessors of Residential Buildings and Dwellings
+
+PRODUCER:           Kettleridge Risk Partners, LLC
+                    Producer Code OK-1147
+                    Broker Reference: KRP/HAB/2025/7735
+                    320 South Boston Avenue, Suite 700, Tulsa, OK 74103
+                    Producer: Marcus Adeyemi-Croft  |  (918) 555-0347  |  madeyemi@kettleridgerisk.example
+
+--------------------------------------------------------------------------------------------------
+SCHEDULE OF INSURED LOCATIONS - "WINDROW GROVE APARTMENTS"
+--------------------------------------------------------------------------------------------------
+
+Location 001: Windrow Grove Apartments
+              6120 East 91st Street, Tulsa, OK 74137 (Tulsa County)
+              288 units across 12 residential buildings plus clubhouse and maintenance building
+              Year built 2004; Frame construction with brick veneer; 3-story walk-up
+              Roof: architectural composition shingle, replaced 2019
+              Protection Class 2; hydrant within 300 ft; each unit smoke-alarmed; buildings NOT sprinklered
+              except clubhouse (wet system) and trash enclosures
+
+Building Schedule (Location 001):
+  Bldg  Description                       Units   Sq Ft     Building Limit
+  01    Residential - Buildings A/B        24      27,400    $  3,150,000
+  02    Residential - Buildings C/D        24      27,400    $  3,150,000
+  03    Residential - Buildings E/F        24      27,400    $  3,150,000
+  04    Residential - Buildings G/H        24      27,400    $  3,150,000
+  05    Residential - Building J           24      27,400    $  3,150,000
+  06    Residential - Building K           24      27,400    $  3,150,000
+  07    Residential - Building L           24      27,400    $  3,150,000
+  08    Residential - Building M           24      27,400    $  3,150,000
+  09    Residential - Building N           24      27,400    $  3,150,000
+  10    Residential - Building P           24      27,400    $  3,150,000
+  11    Residential - Building Q           24      27,400    $  3,150,000
+  12    Residential - Building R           24      27,400    $  3,150,000
+  13    Clubhouse / Leasing Office          -       6,800    $  1,450,000
+  14    Maintenance Shop and Garages        -       4,200    $    620,000
+  15    Detached Carports (36 bays)         -           -    $    340,000
+                                                            --------------
+        TOTAL BUILDING VALUES                                $ 40,210,000
+
+Location 002: Windrow Grove II (Phase 2 land parcel, unimproved, held for development)
+              6200 East 91st Street, Tulsa, OK 74137
+              Vacant land - no building coverage. Fencing, signage and site lighting only.
+
+--------------------------------------------------------------------------------------------------
+COVERAGES AND LIMITS OF INSURANCE
+--------------------------------------------------------------------------------------------------
+
+Coverage Form: CASCADIA HAB-200 (09-24) Commercial Property Coverage Form - Habitational
+Perils Insured: Special Form (open perils) excluding those causes shown under EXCLUSIONS
+
+  Coverage A  - Buildings (blanket, Location 001)                     $ 40,210,000  RC / 90% coinsurance
+  Coverage B  - Business Personal Property of Insured                 $  1,250,000  RC
+  Coverage C  - Business Income and Rental Value (ALS, 12 months)     $  4,900,000
+  Coverage D  - Extra Expense                                         $    600,000
+  Coverage E  - Equipment Breakdown                                   $ 10,000,000 per accident
+  Coverage F  - Outdoor Property, Fences, Signs, Site Lighting        $    450,000
+  Coverage G  - Ordinance or Law A / B / C                            A: Included; B & C: $ 2,500,000
+  Coverage H  - Debris Removal                                        25% of loss, plus $ 250,000
+  Coverage J  - Tenant Relocation Expense (End. HAB-REL 118)          $    250,000 / $ 7,500 per unit
+
+Sublimits:
+  Water Damage from Plumbing, HVAC, Appliance or Fire Protection      $ 5,000,000 per occurrence
+  Backup of Sewers and Drains (End. HAB-SEW 122)                      $   500,000 annual aggregate
+  Fungus, Wet Rot, Dry Rot and Bacteria (End. HAB-FUN 140)            $    50,000 annual aggregate
+  Theft of Building Materials and Appliances                          $   150,000 per occurrence
+  Vandalism to Vacant / Unoccupied Units                              $   100,000 per occurrence
+  Pollutant Cleanup and Removal                                       $   100,000 annual aggregate
+  Trees, Shrubs, Plants and Lawns                                     $    75,000 ($ 1,500 any one item)
+  Valuable Papers, Records and Tenant Files                           $   150,000
+  Accounts Receivable                                                 $   250,000
+  Newly Acquired Property                                             $ 5,000,000 for 120 days
+  Fire Department Service Charge                                      $    50,000
+  Arson Reward                                                        $    25,000
+  Lock and Key Replacement following covered theft                    $    25,000
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+  Wind and Hail                            2% of the insured value of each affected building,
+                                           subject to a $ 100,000 minimum and a $ 1,000,000 maximum
+                                           per occurrence (End. HAB-WH 310)
+  All Other Perils                         $ 25,000 per occurrence
+  Water Damage (non-weather)               $ 50,000 per occurrence
+  Equipment Breakdown                      $ 25,000
+  Business Income / Rental Value           72 hour waiting period
+  Earthquake (Oklahoma - see End. HAB-EQ 350)   5% of TIV per unit of insurance, minimum $ 250,000
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS (abridged)
+--------------------------------------------------------------------------------------------------
+
+We will not pay for loss or damage caused directly or indirectly by:
+  1.  Flood, surface water, waves, storm surge, or water that backs up from a sewer or drain (backup written
+      back at the sublimit shown), or water under the ground surface pressing on foundations or floors.
+  2.  Earth movement, other than as provided by the Earthquake endorsement, which insures shock and ensuing
+      fire only and excludes damage to swimming pools, retaining walls, fences and paved surfaces.
+  3.  Wear and tear, gradual deterioration, settling, cracking, shrinking, bulging or expansion of pavements,
+      foundations, walls, floors, roofs or ceilings.
+  4.  Marring, scratching, and cosmetic damage to roof surfacing that does not compromise the water-shedding
+      function of the roof (End. HAB-COS 315, Cosmetic Damage Exclusion - Roof Surfacing).
+  5.  Faulty, inadequate or defective design, workmanship, repair, construction, materials or maintenance;
+      however, ensuing loss from a Covered Cause of Loss is insured.
+  6.  Continuous or repeated seepage or leakage of water, or presence of humidity or condensation, occurring
+      over a period of 14 days or more, whether or not the insured was aware of it.
+  7.  Fungus, wet rot, dry rot, bacteria, mold or mildew, except to the limited extent provided by
+      Endorsement HAB-FUN 140.
+  8.  Theft or dishonest acts by any insured, any tenant, or any person to whom the property is entrusted.
+  9.  Damage caused by animals, birds, vermin, rodents, insects or domestic pets.
+  10. Loss to property while in the course of construction of a new building or structure. Renovation of an
+      existing insured building is covered up to $ 500,000 of contract value; larger projects require a
+      separate builder's risk policy.
+  11. War, terrorism (unless TRIA coverage is accepted), nuclear hazard and governmental action.
+  12. Communicable disease, virus and bacteria - loss of use, contamination, decontamination and business
+      interruption arising therefrom (End. HAB-CD 410).
+
+--------------------------------------------------------------------------------------------------
+SCHEDULE OF ENDORSEMENTS
+--------------------------------------------------------------------------------------------------
+
+HAB-200 (09-24)   Commercial Property Coverage Form - Habitational
+HAB-BI 210 (09-24) Business Income and Rental Value - Actual Loss Sustained
+HAB-EB 230 (09-24) Equipment Breakdown Protection
+HAB-REL 118 (03-25) Tenant Relocation and Additional Living Expense
+HAB-SEW 122 (09-24) Water Backup of Sewers, Drains and Sumps
+HAB-FUN 140 (09-24) Limited Fungus, Wet Rot, Dry Rot and Bacteria Coverage
+HAB-WH 310 (09-24) Windstorm and Hail Percentage Deductible - Per Building
+HAB-COS 315 (09-24) Cosmetic Damage Exclusion - Roof Surfacing
+HAB-EQ 350 (09-24) Earthquake Coverage - Oklahoma
+HAB-ORD 275 (09-24) Ordinance or Law Coverage
+HAB-CD 410 (09-24) Communicable Disease Exclusion
+HAB-MTG 500 (01-23) Mortgage Holders Clause
+HAB-AI 520 (01-23) Additional Insured - Managing Agent
+HAB-OK STAT (05-25) Oklahoma Amendatory Endorsement
+HAB-TRIA 900 (01-21) Terrorism Risk Insurance Act - Coverage ACCEPTED, premium $ 4,120
+
+--------------------------------------------------------------------------------------------------
+MORTGAGE HOLDERS AND ADDITIONAL INTERESTS
+--------------------------------------------------------------------------------------------------
+
+First Mortgagee (Location 001, all buildings):
+    Prairie States Agency Lending, LLC, ISAOA/ATIMA
+    Master Servicing, 1801 California Street, Suite 3000, Denver, CO 80202
+    Loan No. FN-2021-778104 (Fannie Mae credit facility, pool ID PSL-4402)
+
+Additional Insured - Managing Agent (per End. HAB-AI 520):
+    Sundale Residential Management, LLC, 9 East Fourth Street, Suite 1450, Tulsa, OK 74103
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING
+--------------------------------------------------------------------------------------------------
+
+1.  NOTICE OF LOSS. The insured must give us prompt written notice of any loss or damage, describing the
+    property involved and the time, place and circumstances. Written notice is required within twenty (20)
+    days for wind and hail losses and within thirty (30) days for all other perils. Loss notices are to be
+    sent to:
+        Cascadia Mutual Claims Intake
+        Email: newloss@cascadiamutual.example     Phone: (800) 555-0288 (24 hour)
+        Portal: claims.cascadiamutual.example
+2.  PROTECTION OF PROPERTY. The insured must take all reasonable steps to protect the property from further
+    damage. Emergency mitigation up to $ 25,000 may be incurred without our prior approval; work exceeding
+    that amount requires our written authorization or use of a vendor from our managed repair network.
+3.  PROOF OF LOSS. A signed and sworn Proof of Loss must be furnished within sixty (60) days of our request.
+4.  DOCUMENTATION. The insured must maintain and produce on request: rent rolls for the twelve months prior
+    to loss, unit-level make-ready records, roof inspection and maintenance records, and vendor invoices.
+5.  APPRAISAL, SUBROGATION, ABANDONMENT and CONCEALMENT/FRAUD provisions apply as stated in the coverage form.
+6.  SUIT LIMITATION. Any action must be commenced within two (2) years after the date of loss.
+7.  PREMIUM. Annual premium $ 412,880 including terrorism. Rate per $100 of TIV: 0.9770. Inspection credit
+    applied for 2019 roof replacement (-6%).
+
+Authorized Representative: ___________________________   Date of Issue: 06/02/2025

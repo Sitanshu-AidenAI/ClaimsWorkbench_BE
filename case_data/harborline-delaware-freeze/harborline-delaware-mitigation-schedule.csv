@@ -1,0 +1,14 @@
+Head,Description,Quantity,Total USD
+Response,"Emergency mobilisation, three crews, after hours",1,18400
+Extraction,"Truck mount, 118,000 gallons",118000,41250
+Extraction,"Ice removal, dock face and doors 14 to 22",1,9600
+Drying,"Air movers, 84 units over 8 days",672,26880
+Drying,"LGR dehumidifiers, 22 units over 8 days",176,31680
+Drying,"Desiccant units, 4 over 8 days",32,38400
+Labour,"Technicians, blended rate",1184,94720
+Building,Containment and insulation removal,340,38900
+Contents,"Pallet handling, relocation and staging",640,38400
+Contents,Third-party storage transport,92,14700
+MEP,Electrical drying and dock leveller pits,1,28750
+Other,"Antimicrobial, documentation and disposal",1,25450
+Total mitigation to date,,,407130

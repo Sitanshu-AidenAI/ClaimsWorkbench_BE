@@ -1,0 +1,256 @@
+
+DESERT BASIN SPECIALTY INSURANCE COMPANY
+Construction & Energy Practice
+2600 North Central Avenue, Suite 1700, Phoenix, AZ 85004  |  NAIC No. 45880
+Arizona Surplus Lines Broker Licence AZ-SL-99341
+
+BUILDERS RISK / INSTALLATION POLICY
+DECLARATIONS AND SCHEDULE
+
+POLICY NUMBER:  BR-1147-30926
+POLICY PERIOD:  From 07/01/2025 to 01/01/2027 (18 months) at 12:01 A.M. local time at the project site
+FORM:           Completed Value - Single Project - Mission Critical Facility
+BINDER REF:     DBS-CE-2025-0417
+
+NAMED INSUREDS:
+    Meridian Grid Holdings, LLC ......................... Project Owner
+    Ironbark Constructors, Inc. ......................... General Contractor
+    Ironbark Industrial Services, LLC ................... Affiliate of General Contractor
+    All subcontractors of every tier, as their interests may appear, for project property only
+
+FIRST NAMED INSURED MAILING ADDRESS:
+    Meridian Grid Holdings, LLC
+    4400 East Broadway Boulevard, Suite 800
+    Tucson, AZ 85711
+
+GENERAL CONTRACTOR:
+    Ironbark Constructors, Inc.
+    7720 West Buckeye Road
+    Phoenix, AZ 85043
+    Arizona ROC Licence No. B-01 318774  |  Risk Manager: Alina Petrosyan-Ward, (602) 555-0844
+
+PRODUCER:  Sonoran Ridge Risk Advisors, LLC
+           Producer Code AZ-8815
+                    Broker Reference: SRR/BR/2025/1147
+           1 East Washington Street, Suite 1400, Phoenix, AZ 85004
+           Producer: Desmond Achterberg  |  (602) 555-0510  |  dachterberg@sonoranridgerisk.example
+
+--------------------------------------------------------------------------------------------------
+PROJECT SCHEDULE
+--------------------------------------------------------------------------------------------------
+
+PROJECT NAME:     Cypress Landing Data Hall B
+PROJECT ADDRESS:  14900 South Cypress Landing Way
+                  Mesa, AZ 85212 (Maricopa County)
+                  Campus Building 2 of 4; adjacent to the operating Data Hall A, which is NOT insured
+                  under this policy.
+
+SCOPE OF WORK:    Design-build construction of a 96,000 sq ft single-story mission critical data hall
+                  and its supporting electrical and mechanical infrastructure, comprising:
+                    - Structural steel frame on spread footings, insulated metal panel envelope, TPO roof
+                    - Four (4) 2.5 MW medium-voltage switchgear line-ups and associated transformers
+                    - Eight (8) 2,000 kW standby diesel generators with 48-hour belly fuel tanks
+                    - Twelve (12) 500 kVA UPS modules with lithium-ion battery cabinets
+                    - Chilled water plant: three (3) 800-ton air-cooled chillers, pumps and piping
+                    - 34.5 kV utility interconnection, on-site substation pad and duct bank
+                    - Raised floor, containment, busway and structured cabling
+                  Owner-supplied long-lead equipment: switchgear, generators, UPS modules and chillers,
+                  purchased directly by Meridian Grid Holdings and consigned to the site.
+
+CONTRACT:         Design-Build Agreement (ConsensusDocs 410) dated 05/09/2025
+CONTRACT SUM:     $ 118,500,000 (including owner-supplied equipment of $ 34,200,000)
+NOTICE TO PROCEED: 07/07/2025
+SCHEDULED MECHANICAL COMPLETION: 09/30/2026
+SCHEDULED COMMISSIONING (IST Level 5): 10/01/2026 - 11/15/2026
+
+--------------------------------------------------------------------------------------------------
+LIMITS OF INSURANCE
+--------------------------------------------------------------------------------------------------
+
+  LIMIT OF INSURANCE - PER OCCURRENCE, ALL COVERAGES COMBINED                $ 118,500,000
+
+  SUBLIMITS (part of, and not in addition to, the Limit of Insurance):
+
+    Owner-Supplied Electrical Equipment at the Project Site                  $ 34,200,000
+    Property at the Manufacturer's or Fabricator's Premises (declared)       $ 12,000,000
+       Declared fabricators: Sierra Vista Switchgear Corp. (Nogales, AZ);
+       Cordilleran Generator Systems (Reno, NV); Tempe Modular Chiller Works
+    Property in Transit - any one conveyance                                 $  6,000,000
+    Property in Transit - oversize / superload with escort                   $ 12,000,000
+    Off-Site Storage - any one declared location                             $  8,000,000
+       Declared: Sunbelt Contract Storage, 2201 South Signal Butte Road, Mesa, AZ
+    Off-Site Storage - undeclared                                            $    500,000
+    Temporary Structures, Scaffolding, Formwork and Site Facilities          $  2,000,000
+    Theft of Materials, Supplies and Equipment Awaiting Installation         $  1,500,000 per occurrence
+    Theft of Copper, Wire, Cable, Busway and Metal Products                  $    500,000 per occurrence
+    Debris Removal                                                           25% of loss, plus $ 1,000,000
+    Ordinance or Law - A, B and C combined                                   $  5,000,000
+    Expediting Expenses (including air freight and premium time)             $  5,000,000
+    Extra Expense                                                            $  2,500,000
+    Water Damage from Testing of Piping and Fire Protection Systems          $  5,000,000
+    Testing, Commissioning and Integrated Systems Testing (IST)              $ 10,000,000
+    Damage arising from Energisation and First Load Bank Testing             $ 10,000,000
+    Valuable Papers, Design Documents, BIM and Commissioning Scripts         $  1,000,000
+    Pollutant Cleanup and Removal (incl. diesel and dielectric fluid)        $    500,000 annual aggregate
+    Landscaping and Site Restoration                                         $    250,000
+    Claim Preparation and Forensic Accounting Fees                           $    500,000
+    Mould and Fungus following a reported water event                        $    100,000 annual aggregate
+
+  DELAY IN START-UP / SOFT COSTS: NOT PURCHASED. No coverage is provided under this policy for delay,
+  soft costs, loss of revenue, liquidated damages or any consequential loss.
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+  All Other Perils                                                      $ 100,000 per occurrence
+  Windstorm, Hail and Haboob / Dust Storm Wind Event                    $ 250,000 per occurrence
+  Water Damage - rain, monsoon water intrusion, testing                 $ 250,000 per occurrence
+  Theft, Vandalism and Malicious Mischief                               $  50,000 per occurrence
+  Electrical Equipment - damage during testing, energisation
+    or commissioning (including LEG-type electrical breakdown)           $ 500,000 per occurrence
+  Collapse During Erection / Rigging and Lifting                        $ 250,000 per occurrence
+  Property in Transit                                                   $  50,000 per occurrence
+  Flood (NOT COVERED - shown for reference only)                        N/A
+  Earth Movement (NOT COVERED)                                          N/A
+
+--------------------------------------------------------------------------------------------------
+COVERED CAUSES OF LOSS
+--------------------------------------------------------------------------------------------------
+
+All risks of direct physical loss of or damage to insured project property, except as excluded. Perils
+specifically contemplated for this project include: fire, lightning and lightning-induced surge; explosion
+and arc flash; windstorm, hail, microburst, haboob and blowing dust and sand; monsoon rain and water
+intrusion into an incomplete envelope; theft and burglary; vandalism and malicious mischief; vehicle and
+aircraft impact; dropped loads, crane failure, rigging failure and damage during setting of heavy
+equipment; collapse during erection; accidental discharge of water from temporary or permanent piping;
+smoke; sudden and accidental physical damage occurring during testing, energisation, load bank testing and
+integrated systems testing, as endorsed.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS
+--------------------------------------------------------------------------------------------------
+
+  1.  The cost of making good faulty or defective design, plan, specification, materials or workmanship.
+      Resulting damage from a Covered Cause of Loss to other insured property is covered. (LEG 2/96,
+      End. DBS-DEF 305.)
+  2.  Loss to any equipment, component or system caused by its own electrical or mechanical breakdown,
+      derangement, or failure to function, except where such breakdown results in fire, explosion or other
+      physical damage to separate property, and except to the extent provided by the Testing, Commissioning
+      and Energisation endorsement, subject to the $ 500,000 deductible.
+  3.  Damage arising from operation of the completed facility, or from any part of the facility placed into
+      commercial service or beneficial use, without our prior written Partial Occupancy / Beneficial Use
+      endorsement.
+  4.  Delay in completion, loss of use, loss of revenue, business interruption, liquidated damages,
+      penalties, and all consequential loss. (Delay in Start-Up coverage NOT purchased.)
+  5.  Contractors' and subcontractors' tools, cranes, lifts, mobile and rolling equipment, vehicles and
+      trailers not destined to become a permanent part of the project.
+  6.  Flood, surface water, mudflow, wash, arroyo overflow and water that backs up from a sewer or drain.
+  7.  Earth movement, earthquake, subsidence, expansive soils, collapsible soils, settlement and fissuring,
+      including damage arising from the well-documented earth fissure hazard in the region.
+  8.  Wear and tear, deterioration, corrosion, oxidation, rust, insulation degradation, cavitation, and
+      damage from dust or sand ingress that occurs gradually rather than from a discrete storm event.
+  9.  Mysterious disappearance, unexplained shortage and inventory shortage.
+  10. Dishonest, fraudulent or criminal acts by any insured, employee, or subcontractor of any tier.
+  11. Loss of or damage to Data Hall A, the campus substation feeder beyond the point of interconnection,
+      and all other existing structures, equipment and improvements on the campus.
+  12. Loss caused by or resulting from the failure to protect exposed openings, materials or equipment prior
+      to a forecast monsoon, haboob or high-wind event, or failure to comply with the Site Protection
+      Warranty.
+  13. Loss to lithium-ion battery cells, modules or cabinets caused by internal thermal runaway,
+      overcharging or manufacturing defect; ensuing fire damage to other insured property is covered
+      (End. DBS-LI 530, Lithium-Ion Energy Storage Limitation).
+  14. Cyber incident, malicious code, unauthorised access to control or building management systems, and
+      loss of or corruption to electronic data (End. DBS-CYB 501); ensuing fire and explosion are written
+      back.
+  15. War, terrorism (unless TRIA elected), nuclear reaction and radioactive contamination.
+  16. Any loss occurring after final acceptance, after issuance of the certificate of occupancy for the
+      insured building, or after policy expiry, whichever occurs first.
+
+--------------------------------------------------------------------------------------------------
+FORMS AND ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+DBS-BR 100 (06-25)   Builders Risk / Installation Coverage Form - Completed Value
+DBS-DEF 305 (06-25)  Defects Exclusion - LEG 2/96 Consequences
+DBS-OSE 315 (06-25)  Owner-Supplied Equipment and Consigned Property Extension
+DBS-FAB 318 (06-25)  Property at Declared Fabricator and Manufacturer Premises
+DBS-TRAN 320 (06-25) Transit Extension including Oversize / Superload Movements
+DBS-STOR 325 (06-25) Off-Site Storage - Declared and Undeclared
+DBS-TEST 335 (06-25) Testing, Commissioning, Energisation and Integrated Systems Testing
+DBS-TEMP 340 (06-25) Temporary Structures and Site Facilities
+DBS-ORD 275 (06-25)  Ordinance or Law
+DBS-LI 530 (03-25)   Lithium-Ion Energy Storage Limitation
+DBS-CYB 501 (01-25)  Cyber Incident Exclusion with Fire and Explosion Write-Back
+DBS-EQ/FL 545 (06-25) Earth Movement and Flood Exclusion - Absolute
+DBS-PROT 610 (06-25) Site Protection and Monsoon Preparedness Warranty
+DBS-LP 505 (06-25)   Loss Payable Provisions
+DBS-SL AZ (05-25)    Arizona Surplus Lines Notice
+DBS-TRIA 900 (01-21) Terrorism Risk Insurance Act - Coverage ACCEPTED, premium $ 8,400
+
+  NOT PROVIDED: Flood, Earth Movement, Delay in Start-Up / Soft Costs, Contractors Equipment,
+                Existing Structures (including Data Hall A).
+
+--------------------------------------------------------------------------------------------------
+SITE PROTECTION AND MONSOON PREPAREDNESS WARRANTY (DBS-PROT 610)
+--------------------------------------------------------------------------------------------------
+
+The Insureds warrant that, as a condition precedent to coverage:
+  (a)  The site is enclosed by a minimum eight-foot fence with anti-climb fabric and controlled access
+       gates, monitored by a recorded camera system with 24/7 off-site monitoring, and patrolled by a
+       licensed guard between 18:00 and 06:00 daily;
+  (b)  All electrical equipment delivered to site is stored energised with strip heaters, or in a
+       conditioned enclosure, or with desiccant and humidity indicators inspected weekly and logged;
+  (c)  Switchgear, transformers, UPS modules and generator sets are not left in open storage; equipment
+       awaiting installation is placed on the pad, sealed and space-heated within seven (7) days of
+       delivery, or stored at the declared off-site facility;
+  (d)  A written Monsoon Preparedness Plan is maintained from June 15 to September 30 requiring, upon a
+       National Weather Service severe thunderstorm, dust storm or flash flood watch: securing of loose
+       materials and debris, closing and sealing of building openings, covering of equipment, removal of
+       crane loads, and lowering of boom and mast equipment;
+  (d)  A hot work permit programme meeting NFPA 51B and jobsite fire prevention per NFPA 241 are enforced.
+
+--------------------------------------------------------------------------------------------------
+LOSS PAYEES AND ADDITIONAL INTERESTS
+--------------------------------------------------------------------------------------------------
+
+Loss Payee, first position:
+    Cactus Wren Infrastructure Credit Fund II, LP, as Collateral Agent
+    Credit Agreement dated 06/12/2025, 3200 East Camelback Road, Suite 500, Phoenix, AZ 85018
+
+Additional Interest - Owner-Supplied Equipment:
+    Meridian Grid Holdings, LLC
+
+Additional Interest - Utility Interconnection Assets:
+    Salt Valley Electric Cooperative (34.5 kV feeder and metering, to the point of interconnection only)
+
+--------------------------------------------------------------------------------------------------
+CLAIM CONDITIONS AND REPORTING REQUIREMENTS
+--------------------------------------------------------------------------------------------------
+
+1.  IMMEDIATE NOTICE. Any occurrence likely to give rise to a claim must be reported within twenty-four
+    (24) hours of discovery, and in any event before any damaged equipment is moved, dismantled, cleaned or
+    repaired. Notification to:
+        Desert Basin Specialty - Construction Claims
+        report@desertbasinspecialty.example   |   (844) 555-0902 (24 hour)
+        Complex Loss Manager: R. Villanueva-Osei
+2.  EQUIPMENT PRESERVATION. Following any electrical event, the Insureds must preserve relay targets, event
+    recorder data, protective device settings, oil and gas samples, thermographic records and all
+    commissioning scripts and test records, and must not energise or re-energise affected equipment without
+    our consent, except where necessary for life safety.
+3.  LAW ENFORCEMENT. Theft and vandalism must be reported to the Mesa Police Department within twenty-four
+    (24) hours; the incident number must be provided.
+4.  MITIGATION. Reasonable emergency mitigation up to $ 100,000 may be incurred without prior approval,
+    including temporary weather protection, dehumidification of electrical rooms and equipment,
+    de-energisation, and security augmentation.
+5.  PROOF OF LOSS within ninety (90) days of our written request. Partial payments will be advanced on
+    account where liability is not in dispute.
+6.  SUIT LIMITATION. Two (2) years from the date of loss.
+7.  SCHEDULE EXTENSION. Requests must be submitted at least forty-five (45) days before the expiry date.
+8.  PREMIUM. $ 662,000 for the 18 month term, plus Arizona surplus lines tax and stamping fee.
+    Minimum earned premium: 35%.
+
+Signed at Phoenix, Arizona, June 24, 2025.
+
+    _________________________________     _________________________________
+    Authorised Signatory                  Construction & Energy Practice Leader

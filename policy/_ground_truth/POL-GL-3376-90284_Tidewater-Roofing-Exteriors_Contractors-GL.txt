@@ -1,0 +1,194 @@
+
+TIDEWATER UNDERWRITERS EXCHANGE
+a reciprocal insurer  |  600 Lynnhaven Parkway, Suite 400, Virginia Beach, VA 23452  |  NAIC No. 19725
+
+COMMERCIAL GENERAL LIABILITY COVERAGE PART - ROOFING AND EXTERIOR TRADES PROGRAM
+DECLARATIONS
+
+POLICY NUMBER:  GL-3376-90284
+POLICY PERIOD:  From 11/01/2024 to 11/01/2025 at 12:01 A.M. Standard Time
+COVERAGE FORM:  TUE-CGL 200 (05-24) Commercial General Liability - Occurrence
+RENEWAL OF:     GL-3376-90283
+
+NAMED INSURED:  Tidewater Roofing & Exteriors, LLC
+                DBA Tidewater Roofing
+ADDITIONAL NAMED INSURED:
+                Tidewater Sheet Metal & Gutter, LLC
+MAILING ADDRESS: 3115 Godwin Boulevard
+                 Suffolk, VA 23434
+YARD / SHOP:     3115 Godwin Boulevard, Suffolk, VA 23434 (owned, 2.4 acre yard with 9,600 sq ft shop)
+FORM OF BUSINESS: Limited Liability Company (Virginia)
+OPERATIONS:     Commercial and institutional roofing - TPO, EPDM and modified bitumen low-slope systems;
+                standing seam and architectural metal; slate and tile restoration; sheet metal, gutters,
+                copings and flashings; roof repair and maintenance; limited exterior wall panel and
+                waterproofing work. NO residential re-roofing of single family dwellings.
+LICENCE:        Virginia Class A Contractor Licence No. 2705-118442, Specialty ROC/CIC
+NAICS:          238160 - Roofing Contractors
+
+PRODUCER:       Coastline Brantley Insurance Advisors
+                Producer Code VA-2288
+                    Broker Reference: CB/ROOF/2024/3376
+                150 West Main Street, Suite 1600, Norfolk, VA 23510
+                Producer: Sylvia Okonjo-Pratt  |  (757) 555-0271  |  sokonjo@coastlinebrantley.example
+
+--------------------------------------------------------------------------------------------------
+LIMITS OF INSURANCE
+--------------------------------------------------------------------------------------------------
+
+  General Aggregate Limit (other than Products-Completed Operations)     $ 2,000,000
+  Products-Completed Operations Aggregate Limit                          $ 1,000,000
+  Personal and Advertising Injury Limit                                  $ 1,000,000
+  Each Occurrence Limit                                                  $ 1,000,000
+  Damage To Premises Rented To You                                       $   100,000
+  Medical Expense Limit (any one person)                                 $     5,000
+
+  Aggregate applies POLICY-WIDE (no per-project aggregate is provided under this policy).
+
+  DEDUCTIBLE: $ 10,000 per occurrence, property damage only, ALAE outside the deductible
+              (End. TUE-DED 235). Bodily injury claims carry no deductible.
+
+  WATER DAMAGE FROM OPEN ROOF SUBLIMIT (End. TUE-OPEN 445):
+              $ 500,000 per occurrence / $ 1,000,000 aggregate for property damage caused by rain, wind-
+              driven rain or water entering a building through an opening created by, or a roof left
+              incomplete, uncovered or inadequately protected by, the insured.
+
+--------------------------------------------------------------------------------------------------
+CLASSIFICATION AND PREMIUM BASIS
+--------------------------------------------------------------------------------------------------
+
+  Class Code  Classification                                    Basis     Exposure       Premium
+  91746       Roofing - commercial, all kinds, over two stories  Payroll  $ 2,880,000    $ 262,080
+  91560       Sheet metal erection, gutters and downspouts       Payroll  $   740,000    $  41,440
+  91585       Contractors - executive supervisors                Each     5              $   6,200
+  10073       Yard and shop - own occupancy                      Area     9,600 sq ft    $   1,150
+                                                                                          ----------
+  Estimated Annual Advance Premium (subject to audit)                                     $ 310,870
+  Minimum Earned Premium at inception (25%)                                               $  77,718
+
+--------------------------------------------------------------------------------------------------
+COVERAGES
+--------------------------------------------------------------------------------------------------
+
+Coverage A (Bodily Injury and Property Damage Liability), Coverage B (Personal and Advertising Injury) and
+Coverage C (Medical Payments) are provided on an occurrence basis as set out in the coverage form, with the
+right and duty to defend suits seeking damages payable under this insurance. Supplementary Payments are in
+addition to the limits.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS, WARRANTIES AND CONDITIONS SPECIFIC TO ROOFING OPERATIONS
+--------------------------------------------------------------------------------------------------
+
+In addition to the standard Coverage A exclusions, the following apply:
+
+  1.  HOT WORK, TORCH AND KETTLE WARRANTY (End. TUE-HOT 430). It is warranted that the insured will not
+      perform any torch-applied, open flame, kettle, hot air welding above 900 degrees F, or heat-gun
+      operation on any roof unless:
+        (a)  a written hot work permit is issued for each work area each day;
+        (b)  a dedicated fire watch, separate from the operator, is posted during the work and for a
+             minimum of two (2) hours after the work stops, with a documented final check thirty (30)
+             minutes later;
+        (c)  a minimum of two 20-lb ABC extinguishers and a charged water source are within 25 feet;
+        (d)  combustible materials are removed or covered with listed fire-resistant blankets within 35
+             feet; and
+        (e)  the daily permit and fire watch log are retained for three (3) years.
+      Failure to comply excludes any loss caused by or resulting from that operation.
+
+  2.  OPEN ROOF AND WEATHER PROTECTION CONDITION (End. TUE-OPEN 445). It is a condition of coverage for
+      water damage that the insured, at the end of each work period and before any forecast precipitation:
+        (a)  installs a temporary watertight covering over all open or removed areas, mechanically fastened
+             and lapped, and seals all penetrations and terminations;
+        (b)  does not remove more roof surface in any one day than can be dried in before the end of that
+             work period;
+        (c)  monitors the National Weather Service forecast for the work location each morning and does not
+             open a roof where the probability of precipitation exceeds 40% within the work period; and
+        (d)  documents daily tear-off and dry-in photographs.
+      Water damage arising from a failure to comply is excluded. Where the condition is met, water damage
+      is covered subject to the sublimit stated above.
+
+  3.  PROFESSIONAL SERVICES EXCLUSION (TUE-PROF 415), including roof design, load calculations, moisture
+      surveys, infrared scans and consulting reports issued for a fee.
+  4.  ABSOLUTE MOULD, FUNGI AND MICROBIAL MATTER EXCLUSION (TUE-MOLD 420).
+  5.  RESIDENTIAL RE-ROOFING EXCLUSION (TUE-RES 425) - no coverage for work on single family dwellings,
+      duplexes, townhomes or condominium units of three stories or fewer.
+  6.  SUBCONTRACTED WORK EXCLUSION (TUE-SUBK 435) - no coverage for bodily injury or property damage arising
+      out of work performed by any subcontractor of the insured unless (a) a written subcontract was in
+      place, (b) a certificate evidencing CGL limits of at least $ 1,000,000 each occurrence naming the
+      insured as an additional insured for ongoing and completed operations was obtained before the work
+      began, and (c) the subcontractor's policy contains no roofing exclusion.
+  7.  ASBESTOS, SILICA AND LEAD EXCLUSION (TUE-SIL 440), including exposure arising from tear-off of
+      existing built-up roofing containing asbestos.
+  8.  HEIGHT LIMITATION (TUE-HGT 450) - no coverage for operations on any structure exceeding six (6)
+      stories or seventy-five (75) feet in height without prior written approval endorsed to this policy.
+  9.  EARTH MOVEMENT, COMMUNICABLE DISEASE, CYBER, EMPLOYMENT PRACTICES, and PUNITIVE DAMAGES where
+      insurance is prohibited by law.
+  10. DAMAGE TO YOUR WORK - the roof system installed by the insured, subject to the standard subcontractor
+      exception within the products-completed operations hazard.
+
+--------------------------------------------------------------------------------------------------
+ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+TUE-CGL 200 (05-24)  CGL Coverage Form - Occurrence
+TUE-DED 235 (05-24)  Property Damage Deductible - Per Occurrence
+TUE-AI 300 (05-24)   Additional Insured - Owners, Lessees or Contractors - Ongoing Operations, Blanket
+TUE-AI 305 (05-24)   Additional Insured - Completed Operations, Blanket Where Required by Written Contract
+TUE-AI 314 (05-24)   Additional Insured - Building Owner, Manager and Lessor for Roofing Operations
+TUE-PRI 315 (05-24)  Primary and Non-Contributory Where Required by Written Contract
+TUE-WOS 320 (05-24)  Blanket Waiver of Subrogation
+TUE-NOC 325 (05-24)  Notice of Cancellation to Certificate Holders - 30 Days
+TUE-HOT 430 (05-24)  Hot Work, Torch and Kettle Warranty
+TUE-OPEN 445 (05-24) Open Roof and Weather Protection Condition with Water Damage Sublimit
+TUE-PROF 415 (05-24) Professional Services Exclusion
+TUE-MOLD 420 (05-24) Absolute Mould, Fungi and Microbial Matter Exclusion
+TUE-RES 425 (05-24)  Residential Re-Roofing Exclusion
+TUE-SUBK 435 (05-24) Subcontracted Work Exclusion with Certificate Condition
+TUE-SIL 440 (05-24)  Asbestos, Silica and Lead Exclusion
+TUE-HGT 450 (05-24)  Height Limitation - Six Stories / Seventy-Five Feet
+TUE-VA STAT (07-24)  Virginia Amendatory Endorsement
+TUE-TRIA 900 (01-21) Terrorism Risk Insurance Act - Coverage REJECTED
+
+--------------------------------------------------------------------------------------------------
+CERTIFICATE HOLDERS AND ADDITIONAL INSUREDS OF RECORD
+--------------------------------------------------------------------------------------------------
+
+  -  Suffolk City Public Schools - roof replacement, Nansemond Ridge Elementary and Driver Middle School
+  -  Hampton Roads Logistics Center Owner, LLC - 640,000 sq ft TPO re-roof, Chesapeake, VA
+  -  Vanterra Construction Group, LLC - ongoing and completed operations, roofing subcontract scope
+     (out-of-state projects performed as a subcontractor)
+  -  Elizabeth River Medical Properties, LP - roof repair and maintenance agreement
+  -  Blanket additional insured status where required by a written contract executed prior to loss
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING REQUIREMENTS
+--------------------------------------------------------------------------------------------------
+
+1.  NOTICE OF OCCURRENCE. The insured must notify us as soon as practicable, and in any event within
+    forty-eight (48) hours, of: any fire occurring at or within 24 hours after any hot work operation; any
+    water intrusion into a building on which the insured has performed or is performing work; any fall from
+    height, dropped object or injury to a person who is not an employee; and any damage to rooftop
+    equipment, solar arrays or third-party property.
+        Tidewater Underwriters Exchange - Claims Department
+        claims@tidewaterexchange.example   |   (888) 555-0611 (24 hour)
+        After-hours emergency mitigation referral: (888) 555-0612
+2.  MITIGATION AND MANAGED REPAIR. Upon a water intrusion event the insured must arrange immediate
+    temporary dry-in and must notify the building owner. Emergency mitigation up to $ 10,000 may be
+    incurred without our prior approval; larger scopes require our authorisation or use of a vendor from our
+    approved network.
+3.  RECORDS TO BE PRODUCED. On our request the insured must produce: the daily hot work permit and fire
+    watch log; the daily tear-off and dry-in photographs; the crew sign-in sheets; the weather forecast
+    record for the work location; the subcontract and certificate of insurance for any subcontractor
+    involved; and the signed work order or contract with the building owner.
+4.  COOPERATION AND VOLUNTARY PAYMENTS. The insured must cooperate in the defense and must not make any
+    payment, admit liability or assume any obligation without our consent, except for first aid.
+5.  OTHER INSURANCE. This insurance is excess over any builders risk, installation floater or property
+    insurance covering the work, and over any coverage available to the insured as an additional insured,
+    except where a written contract executed prior to loss requires this policy to respond on a primary and
+    non-contributory basis.
+6.  PREMIUM AUDIT. Annual, based on payroll. Certified payroll records must be retained for three years.
+7.  LEGAL ACTION. No action may be brought against us until there has been full compliance with all terms,
+    and not until the obligation of the insured has been determined by judgment or by written agreement.
+
+Countersigned at Virginia Beach, Virginia, October 14, 2024.
+
+    ___________________________________     ___________________________________
+    Authorized Representative               Underwriting Manager, Exterior Trades

@@ -15,7 +15,12 @@ from dataclasses import dataclass, field
 from app.core.logging import get_logger
 from app.domain.enums import DocumentExtractionStatus
 from app.services.documents.extracted import ExtractedDocumentText, ExtractedPage
-from app.services.documents.store import DocumentStore, get_document_store, storage_key
+from app.services.documents.store import (
+    DEFAULT_NAMESPACE,
+    DocumentStore,
+    get_document_store,
+    storage_key,
+)
 from app.services.documents.text import extract_text
 from app.services.documents.validation import document_kind, validate_upload
 
@@ -66,6 +71,7 @@ class DocumentProcessingService:
         content: bytes,
         max_bytes: int,
         declared_content_type: str | None = None,
+        namespace: str = DEFAULT_NAMESPACE,
     ) -> StoredDocument:
         """Validate, store and read one attachment.
 
@@ -78,7 +84,7 @@ class DocumentProcessingService:
             filename, content, max_bytes=max_bytes, declared_content_type=declared_content_type
         )
         checksum = hashlib.sha256(content).hexdigest()
-        key = storage_key(owner_reference, checksum, safe_name)
+        key = storage_key(owner_reference, checksum, safe_name, namespace=namespace)
 
         await self._store.put(key, content, content_type=content_type)
 

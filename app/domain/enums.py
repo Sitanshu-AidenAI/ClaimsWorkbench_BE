@@ -365,6 +365,51 @@ class DocumentIndexStatus(StrEnum):
 SETTLED_INDEX_STATUSES = frozenset({DocumentIndexStatus.INDEXED, DocumentIndexStatus.SKIPPED})
 
 
+class PolicyIngestStatus(StrEnum):
+    """Where one uploaded policy document is in the read → chunk → embed sequence.
+
+    A separate enum from `DocumentIndexStatus`, which describes the same sequence
+    over a *claim* attachment, and the reason is that these two have different
+    terminal states and different consumers. A claim attachment that could not be
+    embedded is still useful — the passages are keyword-searchable and the
+    extraction reads the whole corpus when it has to. A policy document that never
+    reached the vector index is a policy the matcher cannot find at all, so
+    `EMBEDDED` and `CHUNKED` are held apart rather than collapsed into one
+    "indexed": the second is a library entry that will not be matched on until an
+    embedding provider exists, and an administrator has to be able to see that.
+
+    `QUEUED` exists because ingestion is asynchronous. The upload request returns
+    as soon as the bytes are stored and the row is written, so there is a real
+    state between "accepted" and "a worker has it" that the Policies screen shows
+    rather than guessing at.
+    """
+
+    PENDING = "pending"
+    QUEUED = "queued"
+    EXTRACTING = "extracting"
+    CHUNKED = "chunked"
+    EMBEDDED = "embedded"
+    FAILED = "failed"
+
+
+#: Statuses that mean the document needs no further ingestion work. `CHUNKED` is
+#: in here on purpose: with no embedding provider configured it is the *finished*
+#: state, and re-queueing it on every sweep would be an infinite loop against a
+#: deployment that is working exactly as configured.
+SETTLED_POLICY_INGEST_STATUSES = frozenset(
+    {PolicyIngestStatus.CHUNKED, PolicyIngestStatus.EMBEDDED}
+)
+
+#: The states an administrator is waiting on. What the Policies screen polls for.
+PENDING_POLICY_INGEST_STATUSES = frozenset(
+    {
+        PolicyIngestStatus.PENDING,
+        PolicyIngestStatus.QUEUED,
+        PolicyIngestStatus.EXTRACTING,
+    }
+)
+
+
 class ExtractionSchemaStatus(StrEnum):
     """Whether a configurable dataset is in use.
 
@@ -585,4 +630,23 @@ EXTRACTION_ADMIN_ROLES: tuple[str, ...] = (Role.CLAIMS_ADMIN, Role.BUSINESS_ADMI
 #: about to change.
 EXTRACTION_READ_ROLES: tuple[str, ...] = tuple(
     dict.fromkeys((*FNOL_READ_ROLES, *EXTRACTION_ADMIN_ROLES))
+)
+
+
+#: Who may add to or remove from the policy library. Narrower than
+#: `FNOL_WRITE_ROLES`: uploading a policy document changes what *every* future
+#: notice is matched against, which is a configuration act rather than a
+#: case-work one — the same line `EXTRACTION_ADMIN_ROLES` draws, plus the
+#: managers who own the book on a commercial desk.
+POLICY_LIBRARY_WRITE_ROLES: tuple[str, ...] = (
+    Role.CLAIMS_MANAGER,
+    Role.CLAIMS_ADMIN,
+    Role.BUSINESS_ADMIN,
+)
+
+#: Who may read the library and the matches drawn from it. Everyone who reads
+#: intake, because the review screen shows an officer which policy wordings a
+#: notice retrieved — plus the administrators who maintain it.
+POLICY_LIBRARY_READ_ROLES: tuple[str, ...] = tuple(
+    dict.fromkeys((*FNOL_READ_ROLES, *POLICY_LIBRARY_WRITE_ROLES))
 )

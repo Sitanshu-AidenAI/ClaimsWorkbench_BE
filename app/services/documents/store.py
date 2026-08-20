@@ -112,12 +112,25 @@ def set_document_store(store: DocumentStore | None) -> None:
     _store = store
 
 
-def storage_key(case_reference: str, checksum: str, filename: str) -> str:
+#: The default top-level namespace. Claim attachments, which is what this module was
+#: written for and still the overwhelming majority of what it stores.
+DEFAULT_NAMESPACE = "fnol"
+
+
+def storage_key(
+    case_reference: str, checksum: str, filename: str, *, namespace: str = DEFAULT_NAMESPACE
+) -> str:
     """A stable, collision-free key that leaks nothing.
 
-    The case reference makes the bucket browsable during an incident; the checksum
+    The owner reference makes the bucket browsable during an incident; the checksum
     makes re-uploading the same file idempotent; the hashed filename keeps the
     original name — which is user input — out of the key entirely.
+
+    `namespace` is the top-level prefix, and it is a parameter rather than a constant
+    because not everything this service stores is claim material. A carrier's policy
+    wordings under `fnol/` would say those documents belong to a notice — which is the
+    opposite of true, and they have a different retention and access story to match.
+    Defaulted, so every existing caller keeps the key it already writes.
     """
     suffix = hashlib.sha256(filename.encode("utf-8")).hexdigest()[:8]
-    return f"fnol/{case_reference}/{checksum[:16]}-{suffix}"
+    return f"{namespace}/{case_reference}/{checksum[:16]}-{suffix}"

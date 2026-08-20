@@ -30,6 +30,7 @@ from app.integrations.graph.client import close_mail_client
 from app.services.cache import close_redis, init_redis
 from app.services.intelligence.embedding import close_embedding_provider
 from app.services.intelligence.vectors import close_vector_store
+from app.services.policies.vectors import close_policy_vector_store
 
 logger = get_logger(__name__)
 
@@ -114,6 +115,7 @@ def create_app(
             await close_oidc_client()
             await close_embedding_provider()
             await close_vector_store()
+            await close_policy_vector_store()
             await dispose_engine()
             logger.info("application_stopped")
 

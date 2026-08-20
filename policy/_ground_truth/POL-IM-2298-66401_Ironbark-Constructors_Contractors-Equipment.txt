@@ -1,0 +1,279 @@
+
+DESERT BASIN SPECIALTY INSURANCE COMPANY
+Inland Marine Division
+2600 North Central Avenue, Suite 1700, Phoenix, AZ 85004  |  NAIC No. 45880
+
+CONTRACTORS EQUIPMENT FLOATER - INLAND MARINE COVERAGE PART
+DECLARATIONS AND SCHEDULE OF EQUIPMENT
+
+POLICY NUMBER:  IM-2298-66401
+POLICY PERIOD:  From 05/01/2025 to 05/01/2026 at 12:01 A.M. Standard Time
+COVERAGE FORM:  DBS-IM 400 (02-25) Contractors Equipment Floater - Scheduled and Unscheduled
+RENEWAL OF:     IM-2298-66400
+
+NAMED INSURED:  Ironbark Constructors, Inc.
+ADDITIONAL NAMED INSUREDS:
+                Ironbark Industrial Services, LLC
+                Ironbark Equipment Leasing, LLC
+MAILING ADDRESS: 7720 West Buckeye Road
+                 Phoenix, AZ 85043
+YARD LOCATIONS: (1) 7720 West Buckeye Road, Phoenix, AZ 85043 - main yard and maintenance shop, fenced,
+                    lighted, camera monitored, 6.8 acres
+                (2) 3401 East Elliot Road, Mesa, AZ 85212 - satellite yard, fenced and gated, 2.1 acres
+OPERATIONS:     Heavy civil and industrial general contractor - data centre, substation, water/wastewater
+                and industrial process construction
+LICENCE:        Arizona ROC Licence No. B-01 318774
+RISK MANAGER:   Alina Petrosyan-Ward  |  (602) 555-0844  |  apetrosyan@ironbarkconstructors.example
+
+PRODUCER:       Sonoran Ridge Risk Advisors, LLC
+                Producer Code AZ-8815
+                    Broker Reference: SRR/IM/2025/2298
+                1 East Washington Street, Suite 1400, Phoenix, AZ 85004
+                Producer: Desmond Achterberg  |  (602) 555-0510  |  dachterberg@sonoranridgerisk.example
+
+--------------------------------------------------------------------------------------------------
+COVERAGE, LIMITS AND TERRITORY
+--------------------------------------------------------------------------------------------------
+
+  Coverage Territory: The United States of America, its territories and possessions, Canada and Mexico,
+  while the covered property is at a jobsite, at a yard or storage location, in transit, or temporarily
+  elsewhere within the territory.
+
+  A.  Scheduled Contractors Equipment (see Schedule below)            $  8,462,000 total
+      Maximum limit any one item                                       As scheduled
+      Maximum limit any one occurrence, all scheduled items            $  6,000,000
+  B.  Unscheduled Equipment - items with a replacement cost of
+      $ 10,000 or less each, not individually scheduled                $  1,000,000 per occurrence
+      Maximum limit any one unscheduled item                           $     10,000
+  C.  Small Tools and Hand Tools (blanket)                             $    250,000 per occurrence
+      Maximum limit any one tool                                       $      5,000
+  D.  Employee Tools (tools of employees used in the insured's
+      business, owned by the employee)                                 $     50,000 per occurrence
+      Maximum any one employee                                         $      5,000
+  E.  Rented, Leased or Borrowed Equipment from Others                 $  2,500,000 per occurrence
+      (Includes contractual liability for the rental agreement,
+       including loss of use / rental reimbursement to the owner)
+      Loss of Use / Continuing Rental Charges                          $     10,000 per day,
+                                                                       $ 250,000 any one occurrence
+  F.  Newly Acquired Equipment (automatic, 60 days to report)          $  2,000,000 per item
+  G.  Equipment in Transit (owned or non-owned conveyance)             $  1,500,000 any one conveyance
+  H.  Property of Others in the Insured's Care, Custody or Control     $    500,000
+  I.  Waterborne Transit (barge or ferry, inland waters only)          $    250,000
+  J.  Debris Removal / Wreck Removal and Recovery Expense              $    500,000 per occurrence
+  K.  Pollutant Cleanup from Fuel, Oil or Hydraulic Fluid Release
+      Caused by a Covered Peril                                        $    250,000 annual aggregate
+  L.  Expediting Expense (air freight and overtime to expedite repair) $    250,000
+  M.  Rental Reimbursement Following a Covered Loss to Owned Equipment $  5,000 per day / $ 150,000
+                                                                       any one occurrence, 30 day
+                                                                       waiting period does not apply;
+                                                                       coverage begins 72 hours after loss
+  N.  Employee Dishonesty / Theft by Employees                         $    100,000 annual aggregate
+  O.  Recharge of Fire Extinguishing Equipment and Fire Dept. Charge   $     25,000
+
+  MAXIMUM LIMIT ANY ONE OCCURRENCE, ALL COVERAGES COMBINED             $ 10,000,000
+
+--------------------------------------------------------------------------------------------------
+SCHEDULE OF EQUIPMENT (COVERAGE A) - Effective 05/01/2025
+--------------------------------------------------------------------------------------------------
+
+ Item  Year  Make / Model                        Description                Serial / VIN       Limit
+ ----  ----  ----------------------------------  -------------------------  ---------------  ----------
+ 001   2023  Caterpillar 349 (hydraulic)         Excavator, 49 t, long      CAT0349FKMBX2117 $  685,000
+                                                 reach boom
+ 002   2022  Caterpillar 336 GC                  Excavator, 36 t            CAT0336GCLBB9042 $  392,000
+ 003   2021  Komatsu PC290LC-11                  Excavator, 29 t            KMTPC188K02F7731 $  318,000
+ 004   2024  John Deere 850L                     Crawler dozer              1T0850LXAPF399514 $ 512,000
+ 005   2023  John Deere 772GP                    Motor grader               1DW772GPCPF701288 $ 468,000
+ 006   2022  Caterpillar 966M                    Wheel loader               CAT0966MEA8K01993 $ 415,000
+ 007   2020  Volvo A40G                          Articulated haul truck     VCEA40GJC0311047  $ 522,000
+ 008   2020  Volvo A40G                          Articulated haul truck     VCEA40GJC0311052  $ 522,000
+ 009   2023  Grove RT9130E-2                     Rough terrain crane,       GRV9130E23110884  $ 1,180,000
+                                                 130 t capacity
+ 010   2019  Manitowoc 999                       Crawler crane, 250 t,      MAN999190211447   $ 1,760,000
+                                                 with 180 ft boom and
+                                                 counterweight package
+ 011   2022  Genie SX-180                        Telescopic boom lift,      GEN180SX22004411  $  312,000
+                                                 180 ft
+ 012   2021  Genie S-85 XC                       Telescopic boom lift       GENS85XC21008827  $   96,000
+ 013   2023  JLG 1075                            Telehandler, 10,000 lb     JLG1075B23117702  $  228,000
+ 014   2022  Wacker Neuson RTLx-SC3              Trench roller (x3 units)   Multiple          $   84,000
+ 015   2024  Atlas Copco XAS 1800                Portable air compressor    ACXAS1800240771   $   72,000
+ 016   2023  Multiquip DCA400SSVU                Portable generator, 400kW  MQDCA400230419    $  138,000
+ 017   2023  Multiquip DCA400SSVU                Portable generator, 400kW  MQDCA400230422    $  138,000
+ 018   2022  Vermeer D40x55 S3                   HDD directional drill      1VRZ400VXN1001188 $  386,000
+ 019   2021  Ditch Witch FX65                    Hydro excavation vacuum    CMWFX65TKN0001094 $  184,000
+ 020   2024  Trimble / Topcon                    GNSS machine control and   Multiple units    $   96,000
+                                                 survey grade equipment
+                                                 (12 rovers, 6 base units)
+ 021   2023  Lincoln Electric / Miller           Welding machines and       Multiple          $   64,000
+                                                 engine drives (18 units)
+ 022   2022  Custom fabrication                  Job trailers, tool cribs   Multiple          $  110,000
+                                                 and conex containers (14)
+                                                                                             -----------
+                                                 TOTAL SCHEDULED VALUE                        $ 8,462,000
+
+  Valuation of Scheduled Equipment: REPLACEMENT COST for items less than five (5) years old at the date of
+  loss; ACTUAL CASH VALUE for items five (5) years or older. Item 010 (Manitowoc 999) is written on an
+  AGREED VALUE basis per End. DBS-AV 415 and the appraisal dated 03/12/2025.
+
+--------------------------------------------------------------------------------------------------
+DEDUCTIBLES
+--------------------------------------------------------------------------------------------------
+
+  Scheduled equipment with a limit of $ 250,000 or more                   $ 25,000 per occurrence
+  Scheduled equipment with a limit under $ 250,000                        $ 10,000 per occurrence
+  Cranes and Lifting Equipment (Items 009, 010, 011)                      $ 50,000 per occurrence
+  Unscheduled Equipment, Small Tools and Employee Tools                   $  5,000 per occurrence
+  Theft (all coverages)                                                   $ 25,000 per occurrence
+  Theft from an unattended, unfenced or unsecured jobsite                 $ 50,000 per occurrence
+  Rented, Leased or Borrowed Equipment                                    $ 10,000 per occurrence
+  Equipment in Transit                                                    $ 10,000 per occurrence
+  Overturn, Upset and Rollover of Cranes and Lifting Equipment            $100,000 per occurrence
+  Flood and Earth Movement (where equipment is not in a Special Flood
+    Hazard Area at the time of loss)                                      $ 50,000 per occurrence
+  Windstorm, Haboob and Dust Storm                                        $ 25,000 per occurrence
+
+--------------------------------------------------------------------------------------------------
+COVERED CAUSES OF LOSS
+--------------------------------------------------------------------------------------------------
+
+Risks of direct physical loss of or damage to covered property, except as excluded. Perils insured include:
+fire, lightning, explosion and smoke; windstorm, hail, haboob, blowing sand and dust; theft, burglary,
+robbery and attempted theft; vandalism and malicious mischief; collision, overturn, upset, derailment and
+collapse of a bridge or culvert while the equipment is being transported; collision of the equipment itself
+while being operated or moved under its own power at a jobsite; falling objects; collapse of a structure,
+trench, embankment or excavation in which the equipment is located; landslide and mudslide; flood, rising
+water and flash flood while the equipment is outside a Special Flood Hazard Area; earthquake; freezing;
+riot and civil commotion; sinking, submersion and washout; damage arising from the failure of rigging or
+lifting gear; and the collapse or overturn of a crane, boom lift or telehandler.
+
+--------------------------------------------------------------------------------------------------
+EXCLUSIONS
+--------------------------------------------------------------------------------------------------
+
+This policy does not cover:
+  1.  Wear and tear, gradual deterioration, rust, corrosion, oxidation, cavitation, erosion, dry rot,
+      inherent vice, latent defect, or the gradual ingress of dust, sand or moisture.
+  2.  Mechanical, electrical, electronic or hydraulic breakdown, failure or derangement, including engine,
+      transmission, final drive, pump, motor, controller and computer failure. However, resulting damage
+      from an ensuing fire, explosion or collision IS covered.
+  3.  Damage to tyres, tracks, undercarriage, cutting edges, ground engaging tools, teeth, augers, drill
+      bits, hoses, belts and other consumable or wear items, unless damaged in the same occurrence as other
+      insured damage to the item, or unless the loss is caused by fire, theft, vandalism or collision.
+  4.  Loss caused by or resulting from overload, overstress, exceeding the manufacturer's rated capacity,
+      or use of the equipment beyond its designed purpose or load chart.
+  5.  Loss caused by improper rigging, lifting or securement, unless a certified rigger or a qualified
+      person as defined by OSHA 1926 Subpart CC directed the lift and a written lift plan was prepared for
+      any lift exceeding 75% of the rated capacity, or any multi-crane, blind or critical lift.
+  6.  Loss to any crane, boom lift or aerial device operated by a person not holding a current NCCCO or
+      equivalent certification for that equipment class.
+  7.  Mysterious disappearance, unexplained loss, or shortage disclosed by taking inventory.
+  8.  Theft from an unlocked and unattended vehicle, trailer or container, or from an open jobsite where the
+      equipment was not immobilised, secured or fenced, unless there are visible marks of forced entry.
+  9.  Loss caused by any dishonest or criminal act of the insured, any partner, officer or director, other
+      than employee theft covered under Coverage N.
+  10. Voluntary parting with property induced by a fraudulent scheme, trick, false pretense or false
+      documentation, including fraudulent rental, hire or sale.
+  11. Loss to property while waterborne except as provided under Coverage I.
+  12. Loss to property leased or rented to others by the insured, unless the insured retains operational
+      control and the property remains at a site under the insured's supervision.
+  13. Any loss of use, loss of contract, delay, liquidated damages, loss of market or consequential loss,
+      except as provided under Coverages E and M.
+  14. Loss caused by unlicensed, unauthorised or untrained operation of the equipment.
+  15. Property while being used in any underground mining operation, tunnelling below 50 feet, marine
+      salvage, or on any body of water other than as provided under Coverage I.
+  16. Property in a Special Flood Hazard Area (FEMA Zone A, AE, AO, AH, V or VE) at the time of a flood
+      loss, and any loss caused by flood where the equipment was left in a wash, arroyo, drainage channel
+      or below the ordinary high water mark.
+  17. Automobiles, trucks, tractors, trailers, licensed motor vehicles and any equipment subject to motor
+      vehicle registration and designed principally for highway use. (Insure under a commercial auto
+      policy.)
+  18. Watercraft, aircraft, unmanned aerial vehicles and drones.
+  19. Loss to property that is a permanent part of a building or structure, or that is intended to become a
+      permanent part of the insured's construction project. (Insure under a builders risk or installation
+      floater.)
+  20. War, terrorism (unless elected), nuclear hazard, governmental seizure, confiscation and repossession.
+  21. Cyber incident, malicious code and loss of electronic data, including telematics and machine control
+      data (End. DBS-CYB 501).
+
+--------------------------------------------------------------------------------------------------
+ENDORSEMENTS ATTACHED
+--------------------------------------------------------------------------------------------------
+
+DBS-IM 400 (02-25)  Contractors Equipment Floater - Scheduled and Unscheduled
+DBS-AV 415 (02-25)  Agreed Value - Item 010, Manitowoc 999 Crawler Crane
+DBS-RENT 420 (02-25) Rented, Leased and Borrowed Equipment including Loss of Use
+DBS-RR 425 (02-25)  Rental Reimbursement Following Covered Loss to Owned Equipment
+DBS-TRAN 430 (02-25) Equipment in Transit and Waterborne Extension
+DBS-EMP 435 (02-25) Employee Tools and Employee Dishonesty
+DBS-RIG 440 (02-25) Rigging, Lifting and Certified Operator Condition
+DBS-SEC 610 (02-25) Jobsite and Yard Security Warranty
+DBS-TELE 445 (02-25) Telematics and GPS Tracking Credit Condition
+DBS-CYB 501 (01-25) Cyber Incident and Electronic Data Exclusion
+DBS-LP 505 (02-25)  Loss Payable Provisions
+DBS-SL AZ (05-25)   Arizona Surplus Lines Notice
+DBS-TRIA 900 (01-21) TRIA - Coverage REJECTED
+
+--------------------------------------------------------------------------------------------------
+JOBSITE AND YARD SECURITY WARRANTY (DBS-SEC 610) AND TELEMATICS CONDITION (DBS-TELE 445)
+--------------------------------------------------------------------------------------------------
+
+SECURITY WARRANTY. The Insured warrants that: (a) all yard locations are fenced to a minimum of six feet,
+gated and locked outside working hours, illuminated, and monitored by a recorded camera system; (b) at
+jobsites, all equipment with a scheduled value of $ 100,000 or more is immobilised outside working hours by
+removal of the ignition key and engagement of a hydraulic lock-out, wheel lock, or by parking within a
+secured compound; (c) keys are not left in or on any machine; (d) buckets and attachments are lowered to
+the ground and boom equipment is retracted and stowed at the end of each shift; and (e) fuel and tool
+trailers and conex containers are padlocked with a shrouded or hidden-shackle lock.
+
+TELEMATICS CONDITION. A 12.5% premium credit has been applied on the condition that active GPS/telematics
+tracking is installed, powered and monitored on every scheduled item with a limit of $ 100,000 or more.
+The Insured must supply the tracking unit identifier for each such item and must report any tracking unit
+failure exceeding fourteen (14) days. Where a theft loss occurs on an item whose tracker was disabled,
+removed or non-functional for more than fourteen (14) days before the loss, the applicable deductible is
+doubled.
+
+--------------------------------------------------------------------------------------------------
+LOSS PAYEES
+--------------------------------------------------------------------------------------------------
+
+  Item 009 (Grove RT9130E-2) and Item 010 (Manitowoc 999):
+      Cordillera Equipment Finance Corporation, 1 Meadowlands Plaza, Suite 1200, East Rutherford, NJ 07073
+      Equipment Loan Schedules CEF-2023-0771 and CEF-2019-0442
+  Items 007 and 008 (Volvo A40G haul trucks):
+      Southwest Machinery Credit, LLC, Lease Schedule SMC-AZ-2020-0338
+  Item 018 (Vermeer D40x55):
+      Vermeer Financial Services, Contract VFS-2022-118094
+
+--------------------------------------------------------------------------------------------------
+CONDITIONS AND CLAIM REPORTING REQUIREMENTS
+--------------------------------------------------------------------------------------------------
+
+1.  NOTICE OF LOSS. The Insured must report any loss as soon as practicable and within seventy-two (72)
+    hours of discovery, and must not repair, move, dismantle or dispose of damaged equipment before we or
+    our representative have had a reasonable opportunity to inspect, except as necessary for safety or to
+    prevent further damage.
+        Desert Basin Specialty - Inland Marine Claims
+        equipmentclaims@desertbasinspecialty.example   |   (844) 555-0902, option 2
+2.  THEFT LOSSES. Theft, burglary and vandalism must be reported to the police within twenty-four (24)
+    hours of discovery and the incident number provided. The Insured must also (a) supply the last known
+    telematics/GPS position and the tracking history for the 30 days before the loss; (b) supply the
+    equipment purchase invoice or lease agreement, the serial number and photographs; (c) file a report with
+    the National Equipment Register (NER) or equivalent database; and (d) cooperate in any recovery effort.
+3.  PROOF OF LOSS within sixty (60) days of our request, supported by repair estimates from at least two
+    qualified dealers or the manufacturer's authorised service centre for items over $ 100,000.
+4.  RECORDS. The Insured must maintain a current equipment schedule, purchase and maintenance records,
+    daily equipment inspection logs, operator certifications, and lift plans, and produce them on request.
+5.  PROTECTION OF PROPERTY. The Insured must take all reasonable steps to protect covered property from
+    further loss. Reasonable expenses of recovery, salvage and protection are payable in addition to the
+    applicable limit up to $ 100,000.
+6.  OTHER INSURANCE. This policy is excess over any builders risk, installation floater, property policy, or
+    coverage provided by an equipment rental agreement or by the equipment owner.
+7.  SUIT LIMITATION. Two (2) years from the date of loss.
+8.  PREMIUM. Annual premium $ 148,200 after telematics credit, plus Arizona surplus lines tax and stamping
+    fee. Rate: $ 1.752 per $ 100 of scheduled value.
+
+Countersigned at Phoenix, Arizona, April 18, 2025.
+
+    _________________________________     _________________________________
+    Authorised Signatory                  Inland Marine Underwriting Manager

@@ -218,7 +218,17 @@ def _split_group(
         # Overlap by moving the next passage's start backwards, snapped to a
         # boundary. Concatenating the previous tail instead would break the
         # content-equals-slice invariant this module exists to hold.
-        cursor = _overlap_start(boundaries, stop=stop, floor=start, overlap_chars=overlap_chars)
+        #
+        # The floor is the *current* cursor rather than the region's start, and that is
+        # what guarantees the loop terminates. Backing up by `overlap_chars` from `stop`
+        # can land on a boundary at or before where this passage began — which happens
+        # whenever the overlap is wide relative to the spacing between boundaries — and
+        # the next iteration then recomputes the same `stop` from an earlier cursor and
+        # the two positions oscillate forever. Floored here, every passage starts
+        # strictly after the last one, so the cut always advances.
+        cursor = _overlap_start(
+            boundaries, stop=stop, floor=cursor + 1, overlap_chars=overlap_chars
+        )
 
     return chunks
 
@@ -270,7 +280,13 @@ def _next_stop(boundaries: list[int], *, cursor: int, limit: int, target_chars: 
 
 
 def _overlap_start(boundaries: list[int], *, stop: int, floor: int, overlap_chars: int) -> int:
-    """Where the next passage begins, backed up by roughly `overlap_chars`."""
+    """Where the next passage begins, backed up by roughly `overlap_chars`.
+
+    `floor` is a hard lower bound on the answer, and the caller passes the current
+    cursor plus one so that the result is always forward of where the last passage
+    began. Without that the returned position can precede the current cursor and the
+    cut stops making progress — see the comment at the call site.
+    """
     if overlap_chars <= 0:
         return stop
     target = max(floor, stop - overlap_chars)

@@ -29,6 +29,7 @@ from app.repositories.handler import HandlerRepository
 from app.repositories.mail_intake import MailIntakeRepository
 from app.repositories.notification import NotificationRepository
 from app.repositories.policy import PolicyRepository
+from app.repositories.policy_document import PolicyDocumentRepository
 from app.repositories.reference import ReferenceRepository
 from app.services.ai.base import AIProvider
 from app.services.ai.factory import get_ai_provider
@@ -62,6 +63,11 @@ from app.services.intelligence.vectors import VectorStore, get_vector_store
 from app.services.mail.intake import MailIntakeService
 from app.services.mail.runner import build_mail_intake_service
 from app.services.notifications.service import NotificationService
+from app.services.policies.ingestion import PolicyIngestionService
+from app.services.policies.library import PolicyLibraryService
+from app.services.policies.matching import PolicyMatchingService
+from app.services.policies.retrieval import PolicyRetrievalService
+from app.services.policies.vectors import PolicyVectorStore, get_policy_vector_store
 
 
 def get_ai_provider_dependency() -> AIProvider | None:
@@ -88,6 +94,21 @@ def get_vector_store_dependency() -> VectorStore | None:
 
 
 VectorStoreDep = Annotated[VectorStore | None, Depends(get_vector_store_dependency)]
+
+
+def get_policy_vector_store_dependency() -> PolicyVectorStore | None:
+    """Overridable in tests. `None` means policy matching runs on Postgres full text.
+
+    A separate dependency from `get_vector_store_dependency` because it is a
+    separate collection with a separate Protocol — see
+    `app/services/policies/vectors.py` for why the two are not one store.
+    """
+    return get_policy_vector_store()
+
+
+PolicyVectorStoreDep = Annotated[
+    PolicyVectorStore | None, Depends(get_policy_vector_store_dependency)
+]
 
 
 def get_mail_client_dependency() -> GraphMailClient:
@@ -312,6 +333,103 @@ def build_context(
 
 
 FNOLContextDep = Annotated[FNOLContext, Depends(build_context)]
+
+
+@dataclass(slots=True)
+class PolicyLibraryContext:
+    """What the policy library routes need.
+
+    Separate from `FNOLContext` for the reason `MailIntakeContext` is separate, and
+    more sharply: this is a settings screen and a matching endpoint. It needs the
+    library, the policy book and one embedding provider, and it needs none of the
+    eleven FNOL collaborators — so listing the library does not assemble the intake
+    pipeline to read a table.
+
+    `cases` is here because matching takes an FNOL reference. Only the repository,
+    never the pipeline: matching a notice against the library reads the notice and
+    changes nothing about it.
+    """
+
+    session: SessionDep
+    documents: PolicyDocumentRepository
+    policies: PolicyRepository
+    cases: FNOLRepository
+    library: PolicyLibraryService
+    ingestion: PolicyIngestionService
+    retrieval: PolicyRetrievalService
+    matching: PolicyMatchingService
+    #: Whether a vector store is configured, so the list endpoint can say whether the
+    #: library is semantically searchable or keyword-only. A capability, not a health
+    #: check: this is configuration, never a connectivity probe.
+    semantic_enabled: bool
+
+    async def commit(self) -> None:
+        await self.session.commit()
+
+
+def build_policy_library(
+    session: AsyncSession,
+    *,
+    embeddings: EmbeddingProvider | None = None,
+    vectors: PolicyVectorStore | None = None,
+) -> tuple[
+    PolicyDocumentRepository,
+    PolicyLibraryService,
+    PolicyIngestionService,
+    PolicyRetrievalService,
+    PolicyMatchingService,
+]:
+    """Assemble the library over one session.
+
+    Separated from `build_policy_context` so the worker can build the same ingestion
+    service the route builds — the argument `build_pipeline` makes one module over, and
+    for the same reason: a scheduled ingestion and an administrator pressing
+    "re-ingest" must not be able to diverge.
+
+    Both collaborators are `None`-able and both degrade rather than fail: no embedding
+    provider means wordings are chunked and keyword-searchable but not vectorised, and
+    no vector store means matching runs on Postgres full text alone.
+    """
+    documents = PolicyDocumentRepository(session)
+    policies = PolicyRepository(session)
+    retrieval = PolicyRetrievalService(documents, embeddings=embeddings, vectors=vectors)
+    return (
+        documents,
+        PolicyLibraryService(documents, DocumentProcessingService(), vectors=vectors),
+        PolicyIngestionService(
+            documents, policies=policies, embeddings=embeddings, vectors=vectors
+        ),
+        retrieval,
+        PolicyMatchingService(documents, retrieval),
+    )
+
+
+def build_policy_context(
+    session: SessionDep,
+    # Defaulted for the same reason `build_context`'s equivalents are: this function
+    # is only ever used as `Depends(...)`, and FastAPI resolves every annotated
+    # parameter regardless of its default, so the default can only take effect for a
+    # direct caller — which is a test, and `None` is the right answer for one.
+    embeddings: EmbeddingProviderDep = None,
+    vectors: PolicyVectorStoreDep = None,
+) -> PolicyLibraryContext:
+    documents, library, ingestion, retrieval, matching = build_policy_library(
+        session, embeddings=embeddings, vectors=vectors
+    )
+    return PolicyLibraryContext(
+        session=session,
+        documents=documents,
+        policies=PolicyRepository(session),
+        cases=FNOLRepository(session),
+        library=library,
+        ingestion=ingestion,
+        retrieval=retrieval,
+        matching=matching,
+        semantic_enabled=embeddings is not None and vectors is not None,
+    )
+
+
+PolicyLibraryContextDep = Annotated[PolicyLibraryContext, Depends(build_policy_context)]
 
 
 @dataclass(slots=True)
