@@ -47,7 +47,7 @@ from app.models.extraction import (
 )
 from app.models.fnol import FNOLCase, FNOLDocument, FNOLDocumentChunk
 from app.repositories.extraction import REUSABLE_RUN_STATUSES, ExtractionRunRepository
-from app.services.ai.base import AIProvider, AIProviderError
+from app.services.ai.base import AIProvider
 from app.services.extraction.prompts import (
     SYSTEM_PROMPT,
     FieldAnswer,
@@ -59,6 +59,15 @@ from app.services.extraction.schema import DatasetSchema, FieldSpec, stores_type
 from app.services.intelligence.retrieval import RetrievalResult, RetrievalService, RetrievedChunk
 
 logger = get_logger(__name__)
+
+#: Bumped whenever *how* a notice is read changes rather than *what* is asked of
+#: it. It is folded into the run fingerprint, so a semantic change to the reader
+#: re-reads open notices instead of leaving them showing answers produced by a
+#: version of the engine that no longer exists.
+#:
+#: 2 — the temporal types are resolved against the notice's own arrival date, so a
+#:     date of loss stated as "overnight on Friday" lands on the claim record.
+ENGINE_REVISION = "2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,9 +252,13 @@ class SchemaExtractionEngine:
         The dataset's *questions* are in here, not just its version number: an
         administrator who rewrites a field's description has changed what the
         model is asked, and a run that kept its old answer would be showing a
-        value extracted against a question nobody asks any more.
+        value extracted against a question nobody asks any more. `ENGINE_REVISION`
+        is in here for the same reason, one level down: it changes when the way an
+        answer is *read* changes, which invalidates old answers just as surely.
         """
         digest = hashlib.sha256()
+        digest.update(ENGINE_REVISION.encode())
+        digest.update(b"\x00")
         digest.update((case.source_body or "").encode("utf-8", errors="ignore"))
         digest.update(b"\x00")
         digest.update(f"{dataset.key}:{dataset.version}".encode())
@@ -295,7 +308,9 @@ class SchemaExtractionEngine:
         body = await self._body_passages(body_document_ids)
         batches = self._batch(dataset, retrieved, body, filenames)
 
-        answers, calls, failures, latency, model = await self._ask(batches, channel=case.channel)
+        answers, calls, failures, latency, model = await self._ask(
+            batches, channel=case.channel, received=case.received_at
+        )
 
         run.llm_calls = calls
         run.latency_ms = latency
@@ -310,12 +325,28 @@ class SchemaExtractionEngine:
         run.fields_extracted = sum(1 for value in values if value.value_text is not None)
         run.fields_needing_review = sum(1 for value in values if value.needs_review)
         run.fields_failed = failures
-        run.status = ExtractionRunStatus.PARTIAL if failures else ExtractionRunStatus.COMPLETED
-        if failures:
+        if failures and calls == 0:
+            # Nothing answered. `partial` would be the wrong word and, more to the
+            # point, the wrong *status*: `succeeded` counts it, so the pipeline
+            # would not set `extraction_failed`, no `ai_processing_failed`
+            # exception would be raised, and the notice would land as `incomplete`
+            # — indistinguishable from one a broker filled in badly. The remedies
+            # are opposite. One is "chase the broker", the other is "the reader was
+            # down, read it again", and during a provider outage the whole queue
+            # takes the first.
+            run.status = ExtractionRunStatus.FAILED
+            run.error = (
+                f"None of the {len(batches)} model calls answered; the notification "
+                "was not read. Re-run once the provider is reachable."
+            )
+        elif failures:
+            run.status = ExtractionRunStatus.PARTIAL
             run.error = (
                 f"{failures} of {len(batches)} model calls did not answer; "
                 "the fields they covered were not read."
             )
+        else:
+            run.status = ExtractionRunStatus.COMPLETED
         run.completed_at = datetime.now(UTC)
 
         logger.info(
@@ -447,7 +478,7 @@ class SchemaExtractionEngine:
         return batches
 
     async def _ask(
-        self, batches: list[_Batch], *, channel: str
+        self, batches: list[_Batch], *, channel: str, received: datetime
     ) -> tuple[dict[str, FieldAnswer], int, int, int, str | None]:
         """One model call per batch, bounded. `(answers, calls, failures, ms, model)`.
 
@@ -467,26 +498,43 @@ class SchemaExtractionEngine:
                 # Nothing was retrieved for any field in this batch. Asking a
                 # model to extract from an empty prompt returns invention.
                 return [], 0, None
+
+            prompt = render_user_prompt(
+                channel=channel,
+                received=f"{received:%A %d %B %Y %H:%M} UTC",
+                fields=render_fields(batch.specs),
+                passages=_render_passages(batch.passages),
+            )
+            attempts = max(1, 1 + self._config.batch_retries)
+
             async with gate:
-                try:
-                    response = await provider.structured(
-                        schema=FieldAnswerSet,
-                        system_prompt=SYSTEM_PROMPT,
-                        user_prompt=render_user_prompt(
-                            channel=channel,
-                            fields=render_fields(batch.specs),
-                            passages=_render_passages(batch.passages),
-                        ),
-                        schema_name="dataset_extraction",
-                    )
-                except AIProviderError as exc:
-                    logger.warning(
-                        "extraction_batch_failed",
-                        fields=[spec.key for spec in batch.specs],
-                        error=str(exc),
-                    )
-                    return None
-            return response.data.answers, response.latency_ms, response.model
+                for attempt in range(1, attempts + 1):
+                    try:
+                        response = await provider.structured(
+                            schema=FieldAnswerSet,
+                            system_prompt=SYSTEM_PROMPT,
+                            user_prompt=prompt,
+                            schema_name="dataset_extraction",
+                        )
+                    except Exception as exc:
+                        # Every exception, not only `AIProviderError`. A batch is
+                        # the unit of loss here: whatever went wrong, it must cost
+                        # this batch's fields and not the other three batches'
+                        # work, which is what an exception escaping into the
+                        # surrounding `gather` would do.
+                        logger.warning(
+                            "extraction_batch_failed",
+                            fields=[spec.key for spec in batch.specs],
+                            attempt=attempt,
+                            of=attempts,
+                            retryable=getattr(exc, "retryable", None),
+                            error=str(exc),
+                        )
+                        if attempt == attempts:
+                            return None
+                        continue
+                    return response.data.answers, response.latency_ms, response.model
+            return None
 
         results = await asyncio.gather(*(one(batch) for batch in batches))
 
@@ -562,6 +610,7 @@ class SchemaExtractionEngine:
                 passages=labels.get(spec.key, {}),
                 run_id=run.id,
                 threshold=threshold,
+                reference=case.received_at,
             )
             values.append(row)
 
@@ -580,8 +629,15 @@ class SchemaExtractionEngine:
         passages: dict[str, Passage],
         run_id: uuid.UUID,
         threshold: float,
+        reference: datetime | None = None,
     ) -> None:
-        """Write one answer onto its row, or clear the row when there was none."""
+        """Write one answer onto its row, or clear the row when there was none.
+
+        `reference` is when the notification arrived, and it is what the temporal
+        types are read against — a notice saying "overnight on Friday" states its
+        date of loss exactly as precisely as one printing 1 May 2026, and only one
+        of the two can be read without knowing when the notice was sent.
+        """
         row.run_id = run_id
         row.source = FieldSource.AI
         # Rectangles are resolved from the quote against the document's geometry,
@@ -596,6 +652,7 @@ class SchemaExtractionEngine:
             row.confidence = None
             row.needs_review = spec.required
             row.validation_error = None
+            row.inference_note = None
             row.quote = None
             row.source_document_id = None
             row.source_chunk_id = None
@@ -605,18 +662,25 @@ class SchemaExtractionEngine:
             row.char_end = None
             return
 
-        coerced, error = spec.coerce(answer.value)
+        coerced = spec.coerce(answer.value, reference=reference, hint=answer.normalised)
         passage = passages.get(answer.passage or "")
 
         row.value_text = answer.value
-        row.value_json = coerced if stores_typed_value(spec.data_type) else None
-        row.validation_error = error
+        row.value_json = coerced.value if stores_typed_value(spec.data_type) else None
+        row.validation_error = coerced.error
+        # What was inferred to get from the document's words to the typed value.
+        # Stored beside the value rather than derived on read, so it still explains
+        # the value it was written with after the notice or the reader has moved on.
+        row.inference_note = coerced.note
         row.quote = answer.quote
         row.confidence = self._confidence(answer.confidence, passage)
         # A value that would not coerce is shown, and flagged. It is real text a
         # document really states, and hiding it because our parser disagreed with
-        # its date format helps nobody.
-        row.needs_review = bool(error) or (row.confidence or 0.0) < threshold
+        # its date format helps nobody. A value two readings disagree about is
+        # flagged for the same reason: both are defensible, so a person decides.
+        row.needs_review = (
+            bool(coerced.error) or bool(coerced.conflict) or (row.confidence or 0.0) < threshold
+        )
 
         if passage is None:
             # The model cited a label it was not shown, or cited nothing. The
@@ -705,4 +769,10 @@ def _dominant_strategy(results: Any) -> str:
     return next(iter(strategies), "none")
 
 
-__all__ = ["FieldVectorCache", "Passage", "RunOutcome", "SchemaExtractionEngine"]
+__all__ = [
+    "ENGINE_REVISION",
+    "FieldVectorCache",
+    "Passage",
+    "RunOutcome",
+    "SchemaExtractionEngine",
+]

@@ -7,11 +7,14 @@ and 429/5xx responses.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
 from tenacity import (
     AsyncRetrying,
+    RetryCallState,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential_jitter,
@@ -24,6 +27,17 @@ logger = get_logger(__name__)
 
 RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
+#: The longest a `Retry-After` this code will honour by waiting.
+#:
+#: A rate limiter that says "come back in sixty seconds" is telling the truth, and
+#: retrying at 0.4s is guaranteed to fail — on most providers it also counts
+#: against the very budget being waited for. But an inbound request cannot be held
+#: for a minute either, so past this point the honest move is to stop rather than
+#: to sleep and then fail anyway: the caller gets its error now, and the pipeline
+#: stage records a provider that was unavailable, which is a state it already
+#: handles.
+MAX_RETRY_AFTER_SECONDS = 10.0
+
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 
@@ -34,6 +48,48 @@ class RetryableStatusError(Exception):
     def __init__(self, response: httpx.Response) -> None:
         self.response = response
         super().__init__(f"Retryable status {response.status_code} from {response.request.url}")
+
+
+def retry_after_seconds(response: httpx.Response) -> float | None:
+    """What the server asked us to wait, in seconds. `None` when it did not ask.
+
+    Both forms RFC 9110 allows: a delta in seconds, and an HTTP date. The date
+    form is compared against *our* clock, which is the only one available — a
+    skewed clock makes the wait wrong, and a negative result means the moment has
+    already passed, which is the same as no delay.
+    """
+    raw = (response.headers.get("retry-after") or "").strip()
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
+def _wait(state: RetryCallState) -> float:
+    """Back off exponentially, unless the server named a delay of its own.
+
+    A rate limiter knows when its window resets and this code does not, so its
+    number wins over the jitter — never downwards, though: a `Retry-After: 0` on
+    an overloaded upstream should not turn a backoff into a hot loop.
+    """
+    base = wait_exponential_jitter(initial=0.2, max=5.0)(state)
+    outcome = state.outcome
+    if outcome is None or not outcome.failed:
+        return base
+    failure = outcome.exception()
+    if not isinstance(failure, RetryableStatusError):
+        return base
+    asked = retry_after_seconds(failure.response)
+    return base if asked is None else max(base, asked)
 
 
 class HttpClient:
@@ -73,7 +129,7 @@ class HttpClient:
         """Issue a request, retrying transport errors and retryable statuses."""
         retrying = AsyncRetrying(
             stop=stop_after_attempt(self._max_attempts),
-            wait=wait_exponential_jitter(initial=0.2, max=5.0),
+            wait=_wait,
             retry=retry_if_exception_type((httpx.TransportError, RetryableStatusError)),
             reraise=True,
         )
@@ -83,6 +139,19 @@ class HttpClient:
                 with attempt:
                     response = await self._client.request(method, url, **kwargs)
                     if response.status_code in RETRYABLE_STATUS:
+                        asked = retry_after_seconds(response)
+                        if asked is not None and asked > MAX_RETRY_AFTER_SECONDS:
+                            logger.error(
+                                "http_retry_after_too_long",
+                                method=method,
+                                url=url,
+                                status_code=response.status_code,
+                                retry_after_seconds=asked,
+                            )
+                            raise ExternalServiceError(
+                                f"Upstream returned {response.status_code} and asked for "
+                                f"{asked:.0f}s before a retry."
+                            )
                         raise RetryableStatusError(response)
                     return response
         except RetryableStatusError as exc:

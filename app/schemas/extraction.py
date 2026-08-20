@@ -212,6 +212,12 @@ class ExtractedValueOut(SchemaBase):
     #: The value is still shown: real text a document really states is worth more
     #: than a null that is technically well-typed.
     validation_error: str | None
+    #: How `typed_value` was arrived at, when it was inferred rather than copied —
+    #: "“overnight on Friday” is read as 1 May 2026 22:00, relative to the
+    #: notification of 5 May 2026". Shown beside the value so an officer sees the
+    #: broker's words and this service's reading of them at the same time, and can
+    #: correct the one if they disagree with the other.
+    inference_note: str | None = None
     required: bool
     source: str
 
@@ -415,6 +421,7 @@ def to_value(row: Any, *, filename: str | None = None, required: bool = False) -
         confidence=float(row.confidence) if row.confidence is not None else None,
         needs_review=row.needs_review,
         validation_error=row.validation_error,
+        inference_note=row.inference_note,
         required=required,
         source=row.source,
         human_modified=row.human_modified,

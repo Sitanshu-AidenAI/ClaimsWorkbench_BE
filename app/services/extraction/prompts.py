@@ -63,7 +63,15 @@ SYSTEM_PROMPT = (
     "unambiguously; 0.5 to 0.8 when you inferred it from context. Do not return a "
     "field you are guessing at.\n"
     "7. Where two passages disagree, prefer the one from a formal document over the "
-    "one from an email body, and say so is uncertain by lowering your confidence."
+    "one from an email body, and say so is uncertain by lowering your confidence.\n"
+    "8. A date or datetime field takes two answers, not one. `value` stays the "
+    "wording as the source writes it; `normalised` is that same wording as an "
+    "ISO-8601 date or timestamp, resolved against the notification date given "
+    "below. On a notification received Tuesday 5 May 2026, the phrase 'overnight "
+    "on Friday' is a `value` of 'overnight on Friday' and a `normalised` of "
+    "'2026-05-01T22:00'. Give the moment the loss happened, never the moment it "
+    "was discovered, reported or notified, even where the source states only the "
+    "latter. Omit `normalised` on every other kind of field."
 )
 
 
@@ -80,6 +88,13 @@ class FieldAnswer(AIModel):
     )
     passage: str | None = Field(
         description="The label of the passage the value was read from, e.g. 'C3'."
+    )
+    normalised: str | None = Field(
+        default=None,
+        description=(
+            "Date and datetime fields only: the value as an ISO-8601 date or timestamp, "
+            "resolved against the notification date. Omit for any other field."
+        ),
     )
 
     @field_validator("value")
@@ -99,6 +114,22 @@ class FieldAnswer(AIModel):
             return None
         trimmed = value.strip()
         return trimmed[:MAX_QUOTE_LENGTH] if trimmed else None
+
+    @field_validator("normalised")
+    @classmethod
+    def _bound_normalised(cls, value: str | None) -> str | None:
+        """Kept short and stripped; whether it is a date at all is checked later.
+
+        `app.domain.temporal` validates it against the notice's own date and the
+        plausibility window before believing a word of it, so this validator's only
+        job is to stop a model writing an essay into the field.
+        """
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed or trimmed.lower() in _ABSENT:
+            return None
+        return trimmed[:64]
 
     @field_validator("passage")
     @classmethod
@@ -145,9 +176,17 @@ def render_fields(specs: list[FieldSpec]) -> str:
     return "\n".join(lines)
 
 
-def render_user_prompt(*, channel: str, fields: str, passages: str) -> str:
+def render_user_prompt(*, channel: str, received: str, fields: str, passages: str) -> str:
+    """The one user message: where the notice came from, when, what to find, and what it says.
+
+    The arrival date is in the prompt because half the temporal phrasing a broker
+    uses is meaningless without it — "overnight on Friday", "yesterday
+    afternoon", a day and month with no year. It costs a line and it is the only
+    thing that makes those readable.
+    """
     return (
-        f"Notification channel: {channel}.\n\n"
+        f"Notification channel: {channel}.\n"
+        f"Notification received: {received}.\n\n"
         "=== FIELDS TO FIND ===\n"
         f"{fields}\n\n"
         "=== PASSAGES ===\n"

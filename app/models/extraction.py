@@ -285,6 +285,13 @@ class ExtractedValue(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     #: Set when the value could not be coerced to its declared type, or a
     #: validation rule rejected it. The value is still stored.
     validation_error: Mapped[str | None] = mapped_column(Text)
+    #: How the typed value was arrived at, when it was not simply copied — "read
+    #: “overnight on Friday” as 1 May 2026 22:00, relative to the notification of
+    #: 5 May 2026". A date of loss is the field this exists for: it has to become a
+    #: timestamp before a claim can be created, and the officer reviewing the
+    #: notice is entitled to see both the broker's words and what they were taken
+    #: to mean. Null for a value that needs no explanation, which is most of them.
+    inference_note: Mapped[str | None] = mapped_column(Text)
 
     source: Mapped[str] = mapped_column(String(16), default=FieldSource.AI)
 

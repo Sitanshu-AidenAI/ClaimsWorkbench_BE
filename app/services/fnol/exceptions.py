@@ -193,8 +193,16 @@ class ExceptionService:
                 )
 
         # --- Dates ----------------------------------------------------------
-        if is_future_date(raw_loss_date) or (
-            case.date_of_loss and case.received_at and case.date_of_loss > case.received_at
+        # Compared by *day*, and the wording matters: a loss is dated by the
+        # calendar day it happened on, and the clock time a document states is the
+        # local time at the loss while `received_at` is a true UTC instant.
+        # Comparing the two as instants raises this exception on any evening loss
+        # notified from a timezone west of ours, which is a false alarm on a
+        # critical-severity flag.
+        if is_future_date(raw_loss_date, reference=case.received_at) or (
+            case.date_of_loss
+            and case.received_at
+            and case.date_of_loss.date() > case.received_at.date()
         ):
             raised.append(
                 RaisedException(

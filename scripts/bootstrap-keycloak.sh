@@ -49,11 +49,24 @@ ROLES=(
 # fixture principal used to assert, so it lands on every screen.
 declare -A USERS=(
     [demo]="fnol-officer,claims-handler,claims-manager,business-admin"
+    # A real person rather than a role fixture, and every role at once: this is the
+    # account the product is driven from during development, so a screen it cannot
+    # reach is a screen nobody looks at. The role gates stay observable through the
+    # single-role users below.
+    [sitanshu]="fnol-officer,claims-handler,loss-adjuster,claims-manager,claims-admin,business-admin"
     [officer]="fnol-officer"
     [handler]="claims-handler"
     [adjuster]="loss-adjuster"
     [manager]="claims-manager"
     [admin]="claims-admin,business-admin"
+)
+
+# Addresses that are not `<username>@carrier.example`. The fixture users keep the
+# example domain — nothing should ever mail them — but a real account needs the
+# address its owner actually signs in with, and `/auth/login` looks the person up
+# by email. Anyone absent here falls back to the derived address.
+declare -A EMAILS=(
+    [sitanshu]="sitanshu.boyini@aidenai.com"
 )
 
 log() { printf '  %s\n' "$*"; }
@@ -240,7 +253,7 @@ for username in "${!USERS[@]}"; do
   "username": "${username}",
   "enabled": true,
   "emailVerified": true,
-  "email": "${username}@carrier.example",
+  "email": "${EMAILS[$username]:-${username}@carrier.example}",
   "firstName": "${username}",
   "lastName": "Demo",
   "credentials": [
@@ -306,7 +319,7 @@ Keycloak is ready.
   Callback    ${API_ORIGIN}/api/v1/auth/callback
 
   Users       (password: ${DEMO_PASSWORD})
-$(for u in "${!USERS[@]}"; do printf '    %-10s %s\n' "${u}" "${USERS[$u]}"; done)
+$(for u in "${!USERS[@]}"; do printf '    %-28s %s\n' "${EMAILS[$u]:-${u}@carrier.example}" "${USERS[$u]}"; done)
 
 Put these in ClaimsWorkbench_BE/.env — sign-in cannot work without the secret:
 

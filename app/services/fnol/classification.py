@@ -21,7 +21,7 @@ from app.domain.enums import LineOfBusiness
 from app.domain.extraction import ClassificationResult
 from app.domain.heuristics import classify_from_text
 from app.domain.normalisation import parse_line_of_business
-from app.domain.rules import valid_loss_type
+from app.domain.rules import LOSS_TYPES, valid_loss_type
 from app.services.ai.base import AIProvider, AIProviderError
 
 logger = get_logger(__name__)
@@ -165,6 +165,7 @@ class ClassificationService:
         return (
             f"Lines of business: {lines}, unknown.\n"
             "Complexity must be one of: simple, standard, complex.\n"
+            f"{_loss_type_vocabulary()}"
             + (
                 f"The matched policy is written on the {policy_line.value} line.\n"
                 if policy_line
@@ -173,3 +174,29 @@ class ClassificationService:
             + "\nClassify this notification:\n\n"
             + text[:12_000]
         )
+
+
+def _loss_type_vocabulary() -> str:
+    """The permitted loss types, per line, as the prompt states them.
+
+    Rendered from `LOSS_TYPES` rather than written out, because the validator
+    rejects anything outside that table: a hand-maintained copy here would drift
+    and the drift would be silent — the model would answer with a value this
+    prompt offered and `valid_loss_type` would drop it, which is the failure this
+    function exists to end.
+
+    "or `other`" is stated explicitly. Without it a model asked for a value from a
+    closed list and holding a loss that fits none of them either invents one, which
+    is dropped, or leaves the field empty — and `other` is a truer answer than
+    both.
+    """
+    lines = [
+        f"  {line.value}: {', '.join(types)}"
+        for line, types in LOSS_TYPES.items()
+        if types and line is not LineOfBusiness.UNKNOWN
+    ]
+    return (
+        "Loss types, by line of business. Answer with one from the line you choose, "
+        "and with `other` when the loss fits none of them — never with a value that "
+        "is not listed:\n" + "\n".join(lines) + "\n"
+    )

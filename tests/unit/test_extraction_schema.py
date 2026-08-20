@@ -23,6 +23,7 @@ from app.services.extraction.registry import (
     to_dataset,
 )
 from app.services.extraction.schema import (
+    Coercion,
     DatasetSchema,
     FieldSpec,
     coerce_value,
@@ -53,9 +54,9 @@ class TestCoercion:
     def test_a_stated_value_becomes_its_declared_type(
         self, text: str, data_type: str, expected: object
     ) -> None:
-        coerced, error = coerce_value(text, data_type)
-        assert error is None
-        assert coerced == expected
+        coerced = coerce_value(text, data_type)
+        assert coerced.error is None
+        assert coerced.value == expected
 
     def test_a_value_that_will_not_coerce_reports_why_rather_than_vanishing(self) -> None:
         """The most important property in the module.
@@ -65,24 +66,24 @@ class TestCoercion:
         value *and* its citation. A reviewer who can see "the thirteenth month"
         can correct it; a reviewer shown an empty box cannot.
         """
-        coerced, error = coerce_value("sometime in the spring", "date")
-        assert coerced is None
-        assert error is not None
-        assert "does not read as a date" in error
+        coerced = coerce_value("sometime in the spring", "date")
+        assert coerced.value is None
+        assert coerced.error is not None
+        assert "does not state a date" in coerced.error
 
     def test_a_fenced_json_answer_is_still_json(self) -> None:
-        coerced, error = coerce_value('```json\n{"role": "witness"}\n```', "json")
-        assert error is None
-        assert coerced == {"role": "witness"}
+        coerced = coerce_value('```json\n{"role": "witness"}\n```', "json")
+        assert coerced.error is None
+        assert coerced.value == {"role": "witness"}
 
     def test_malformed_json_is_reported_not_raised(self) -> None:
-        coerced, error = coerce_value("{not json", "json")
-        assert coerced is None
-        assert error == "The value is not valid JSON."
+        coerced = coerce_value("{not json", "json")
+        assert coerced.value is None
+        assert coerced.error == "The value is not valid JSON."
 
     def test_an_empty_value_is_absent_rather_than_invalid(self) -> None:
-        assert coerce_value("   ", "integer") == (None, None)
-        assert coerce_value(None, "money") == (None, None)
+        assert coerce_value("   ", "integer") == Coercion()
+        assert coerce_value(None, "money") == Coercion()
 
     @pytest.mark.parametrize(
         ("declared", "expected"),
@@ -130,7 +131,7 @@ class TestFieldSpec:
         spec = FieldSpec(
             key="loss.injuries", label="Injuries", description="…", data_type="integer"
         )
-        assert spec.coerce("3 people") == (3, None)
+        assert spec.coerce("3 people") == Coercion(3)
 
     def test_no_injuries_is_zero_rather_than_missing(self) -> None:
         """ "None reported" is a fact somebody established, not an unanswered question.
@@ -141,8 +142,8 @@ class TestFieldSpec:
         spec = FieldSpec(
             key="loss.injuries", label="Injuries", description="…", data_type="integer"
         )
-        assert spec.coerce("None reported.") == (0, None)
-        assert spec.coerce("nil") == (0, None)
+        assert spec.coerce("None reported.") == Coercion(0)
+        assert spec.coerce("nil") == Coercion(0)
 
 
 class TestDatasetSchema:

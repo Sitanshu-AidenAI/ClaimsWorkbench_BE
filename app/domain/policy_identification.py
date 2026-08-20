@@ -307,7 +307,23 @@ _CONFUSABLES: dict[str, str] = {
 #: A UK postcode, the highest-value token in a British address. Captured in two
 #: halves because the outward code alone ("LS11") already narrows a book to a
 #: handful of locations, and an outward-only agreement is worth saying out loud.
-_POSTCODE_RE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b", re.IGNORECASE)
+#:
+#: The space between the halves is required, not optional — the same guard
+#: `app.domain.policy_extraction` carries and for the same reason. This pattern is
+#: searched over free text, and without the space `PC290LC`, a plant serial on a
+#: construction notice's equipment list, reads as a valid postcode and becomes a
+#: location token that some later notice collides with. A postcode a *person* typed
+#: without the space is a different question, answered by
+#: `app.domain.normalisation.parse_postcode`, where the field itself is the context.
+_POSTCODE_RE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?)\s(\d[A-Z]{2})\b", re.IGNORECASE)
+
+#: The same token in a US address. Guarded by the two-letter state code that
+#: precedes it, for the reason `app.domain.policy_extraction` documents: a bare
+#: five-digit run in an address block is as often a producer code or half a policy
+#: number as it is a ZIP, and a wrong location token is worse than no location
+#: token. The +4 add-on is captured so it can be discarded — it segments a
+#: delivery route inside one ZIP, not a different place.
+_ZIP_RE = re.compile(r"\b[A-Z]{2}\s+(\d{5})(?:-\d{4})?\b")
 
 
 # ---------------------------------------------------------------------------
@@ -2151,16 +2167,34 @@ def _edit_distance(left: str, right: str, *, ceiling: int) -> int:
 
 
 def _postcode_of(value: str | None) -> str | None:
+    """The postcode inside an address, on either book. `None` when there is none."""
     if not value:
         return None
     found = _POSTCODE_RE.search(value)
-    if not found:
-        return None
-    return f"{found.group(1).upper()} {found.group(2).upper()}"
+    if found:
+        return f"{found.group(1).upper()} {found.group(2).upper()}"
+    zipped = _ZIP_RE.search(value.upper())
+    if zipped:
+        return zipped.group(1)
+    return None
 
 
 def _normalise_postcode(value: str) -> str:
+    """One comparable form, whichever country the address is in.
+
+    A UK postcode splits into its outward and inward halves so that the district
+    comparison below has something to compare. A US ZIP does not split: it is five
+    digits, and cutting three off the end would leave `21` as the "district" —
+    which is most of Maryland, Delaware and Pennsylvania, and would score a
+    0.85 location match between two policies four hours' drive apart. The +4
+    add-on is dropped for the same reason it is dropped on the way in.
+    """
     compact = re.sub(r"[^A-Z0-9]", "", value.upper())
+    if compact.isdigit():
+        # A US ZIP, or a ZIP+4 that reduces to one. Anything else numeric is not a
+        # postcode this function was given, and returning it unchanged keeps it
+        # comparable with itself and equal to nothing else.
+        return compact[:5] if len(compact) in (5, 9) else compact
     if len(compact) < 5:
         return compact
     return f"{compact[:-3]} {compact[-3:]}"

@@ -6,9 +6,13 @@ match a policy before you have read the notice. Written as one readable sequence
 rather than buried in a controller, so the order is reviewable by someone who
 knows claims and not Python.
 
-    index documents → extract → classify → identify the policy → check completeness
-    → detect duplicates → assess severity, fraud and coverage → match catastrophe
-    → summarise → raise exceptions → set status
+    index documents → extract → classify → identify the policy and check it is not
+    a repeat → match catastrophe → assess completeness, severity, fraud and
+    coverage → summarise → raise exceptions → set status
+
+Identification and the duplicate scan are one stage rather than two, because they
+are one question asked twice about the same notice — which contract is this, and
+have we already got it — and the second only has an answer once the first does.
 
 Indexing is stage zero and is what makes the rest citable: it cuts each document's
 text into passages carrying the page they came from, so a field extracted afterwards
@@ -64,10 +68,7 @@ from app.services.fnol.classification import ClassificationService
 from app.services.fnol.exceptions import ExceptionService
 from app.services.fnol.extraction import FNOLExtractionService
 from app.services.fnol.identification import PolicyIdentificationService
-from app.services.fnol.matching import (
-    CatastropheMatchingService,
-    DuplicateDetectionService,
-)
+from app.services.fnol.matching import CatastropheMatchingService
 from app.services.fnol.summary import FNOLSummaryService
 from app.services.intelligence.indexing import CaseIndexOutcome, DocumentIndexService
 from app.services.notifications.service import NotificationService
@@ -117,7 +118,6 @@ class FNOLPipeline:
         extraction: FNOLExtractionService,
         classification: ClassificationService,
         identification: PolicyIdentificationService,
-        duplicates: DuplicateDetectionService,
         catastrophe: CatastropheMatchingService,
         assessments: AssessmentServices,
         summary: FNOLSummaryService,
@@ -162,7 +162,6 @@ class FNOLPipeline:
         self._extraction = extraction
         self._classification = classification
         self._identification = identification
-        self._duplicates = duplicates
         self._catastrophe = catastrophe
         self._assessments = assessments
         self._summary = summary
@@ -455,14 +454,21 @@ class FNOLPipeline:
                 confidence=classification.confidence,
             )
 
-        # --- 3. Policy identification ---------------------------------------
+        # --- 3. Policy identification and duplicates -------------------------
         # The first decision on the notice, and the one the rest of the pipeline
         # depends on: coverage, the limit check and the claim all reason against a
         # policy. The whole answer is stored — the signals read off the notice, the
         # ranked candidates and the near misses below the line — because "why is my
         # policy not in the list" has to be answerable, and only the candidates an
         # officer can *act* on become rows.
-        identification = await self._identification.identify(case)
+        #
+        # The repeat check is part of this stage and not a stage of its own: it is
+        # scored against the policy identification has just settled on, and running
+        # it anywhere else would mean either scoring it against nothing or scoring
+        # it twice. Nothing below re-runs it — they read `stage.duplicates`.
+        stage = await self._identification.identify(case)
+        identification = stage.result
+        duplicates = stage.duplicates
         await self._repository.record_analysis(
             case.id,
             kind=AnalysisKind.POLICY_IDENTIFICATION,
@@ -472,6 +478,15 @@ class FNOLPipeline:
             result=identification.as_dict(),
             confidence=identification.best.score if identification.best else None,
         )
+        await self._repository.record_analysis(
+            case.id,
+            kind=AnalysisKind.DUPLICATES,
+            provider="deterministic",
+            model=None,
+            input_fingerprint=fingerprint,
+            result=duplicates.as_dict(),
+            confidence=duplicates.strongest.score if duplicates.strongest else None,
+        )
         # The best candidate stands in for the bound policy while the match is
         # unconfirmed, so coverage can say "review required" rather than "no
         # policy located" about a notice that plainly has one. Nothing treats it
@@ -479,19 +494,7 @@ class FNOLPipeline:
         # the exception engine read.
         policy = await self._resolve_policy(case, identification)
 
-        # --- 4. Duplicates ---------------------------------------------------
-        duplicate_outcome = await self._duplicates.detect(case)
-        await self._repository.record_analysis(
-            case.id,
-            kind=AnalysisKind.DUPLICATES,
-            provider="deterministic",
-            model=None,
-            input_fingerprint=fingerprint,
-            result=duplicate_outcome.as_dict(),
-            confidence=duplicate_outcome.strongest.score if duplicate_outcome.strongest else None,
-        )
-
-        # --- 5. Catastrophe --------------------------------------------------
+        # --- 4. Catastrophe --------------------------------------------------
         cat_outcome = await self._catastrophe.match(case)
         await self._repository.record_analysis(
             case.id,
@@ -503,19 +506,16 @@ class FNOLPipeline:
             confidence=cat_outcome.best.confidence if cat_outcome.best else None,
         )
 
-        # --- 6. Assessments ---------------------------------------------------
-        # Flushed before reading back: the session runs with autoflush off, so
-        # rows the matching stages have only added would be invisible to the
-        # queries below — and the case would be assessed against an empty
-        # duplicate list it had just populated.
+        # --- 5. Assessments ---------------------------------------------------
+        # Flushed first: the session runs with autoflush off, so the fields, parties
+        # and candidate rows the stages above have only added would be invisible to
+        # the queries `run` makes for them.
         await self._repository.flush()
-        duplicate_rows = list(await self._repository.list_duplicates(case.id))
-        unresolved_duplicates = [row for row in duplicate_rows if row.resolution == "unresolved"]
         assessment = await self._assessments.run(
             case,
             policy=policy,
             field_confidences=field_confidences or None,
-            duplicate_count=len(unresolved_duplicates),
+            duplicate_count=len(duplicates.unresolved),
             cat_matched=case.cat_event_id is not None,
         )
         for kind, payload, confidence in (
@@ -538,17 +538,17 @@ class FNOLPipeline:
                 confidence=confidence,
             )
 
-        # --- 7. Summary -------------------------------------------------------
+        # --- 6. Summary -------------------------------------------------------
         await self._summarise(case, policy=policy, assessment=assessment, cat=cat_outcome.best)
 
-        # --- 8. Exceptions ----------------------------------------------------
+        # --- 7. Exceptions ----------------------------------------------------
         raised = await self._exceptions.evaluate(
             case,
             policy_strength=identification.strength,
             policy_candidates=len(identification.candidates),
             identity_conflict=_identity_conflict(identification),
             policy=policy,
-            duplicates=duplicate_rows,
+            duplicates=duplicates.records,
             completeness=assessment.completeness,
             severity=assessment.severity,
             fraud=assessment.fraud,
@@ -560,7 +560,7 @@ class FNOLPipeline:
             raw_loss_date=raw_loss_date,
         )
 
-        # --- 9. Status --------------------------------------------------------
+        # --- 8. Status --------------------------------------------------------
         await self._repository.flush()
         open_codes = [
             exception.code

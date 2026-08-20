@@ -113,17 +113,27 @@ async def load(*, reset: bool = False) -> int:
     return inserted
 
 
+async def _run(*, reset: bool) -> int:
+    """Engine setup, load and teardown inside one loop.
+
+    `init_engine` is a coroutine, so it has to be awaited on the same loop the
+    session then runs on — calling it from sync code discards it silently and
+    `load` fails on a factory that was never built.
+    """
+    await init_engine()
+    try:
+        return await load(reset=reset)
+    finally:
+        await dispose_engine()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reset", action="store_true",
                         help="delete the synthetic policies before loading")
     args = parser.parse_args()
 
-    init_engine()
-    try:
-        inserted = asyncio.run(load(reset=args.reset))
-    finally:
-        asyncio.run(dispose_engine())
+    inserted = asyncio.run(_run(reset=args.reset))
     print(f"\n{inserted} policy/policies inserted into the book.")
 
 

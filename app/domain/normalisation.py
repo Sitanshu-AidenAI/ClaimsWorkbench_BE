@@ -14,17 +14,17 @@ not an exception.
 from __future__ import annotations
 
 import re
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
+from app.domain import temporal
 from app.domain.enums import LineOfBusiness
 
-#: Nobody notifies a loss more than a working day into the future; a later date is
-#: a typo or a misread year, and either way it is not a date of loss.
-FUTURE_TOLERANCE = timedelta(days=1)
-
-#: A claim older than this is not being notified for the first time.
-MAX_BACKDATE = timedelta(days=365 * 10)
+#: The plausibility window a date of loss has to fall inside. Defined in
+#: `app.domain.temporal`, which is where dates are read, and re-exported here
+#: because this is the module the rest of the codebase asks about normalisation.
+FUTURE_TOLERANCE = temporal.FUTURE_TOLERANCE
+MAX_BACKDATE = temporal.MAX_BACKDATE
 
 #: The largest single loss this schema will accept, in minor units. Above it, the
 #: value is far more likely to be a misplaced decimal than a real exposure, and a
@@ -44,19 +44,6 @@ _CURRENCY_SYMBOLS = {
 
 SUPPORTED_CURRENCIES = frozenset({"GBP", "USD", "EUR", "SGD"})
 
-_DATE_FORMATS = (
-    "%Y-%m-%d",
-    "%d/%m/%Y",
-    "%d-%m-%Y",
-    "%d.%m.%Y",
-    "%d %B %Y",
-    "%d %b %Y",
-    "%B %d %Y",
-    "%b %d %Y",
-    "%Y/%m/%d",
-)
-
-_TIME_RE = re.compile(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b")
 _AMOUNT_RE = re.compile(r"(-?[\d][\d,\s]*(?:\.\d{1,2})?)")
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 _PHONE_RE = re.compile(r"[+()\d][\d\s()+.-]{6,}\d")
@@ -65,57 +52,47 @@ _TRUE_WORDS = frozenset({"yes", "true", "y", "confirmed", "present", "1"})
 _FALSE_WORDS = frozenset({"no", "false", "n", "none", "absent", "0", "nil"})
 
 
-def parse_date(value: str | None) -> date | None:
-    """A calendar date from whatever a human or a model wrote."""
-    if not value:
-        return None
-    text = value.strip().replace(",", " ")
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", text, flags=re.IGNORECASE)
+def parse_date(value: str | None, *, reference: datetime | None = None) -> date | None:
+    """The calendar date a phrase states, whether or not it is a plausible one.
 
-    for fmt in _DATE_FORMATS:
-        try:
-            return datetime.strptime(text, fmt).date()
-        except ValueError:
-            continue
-
-    # An ISO timestamp with a time part, which is what an API channel supplies.
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
-    except ValueError:
-        return None
+    Reading is `app.domain.temporal`'s job — it knows about discovery clauses,
+    day-and-month with no year, and "overnight on Friday", none of which a format
+    list can express. `reference` is the notice's own date, which is what anything
+    relative is resolved against.
+    """
+    return temporal.stated_date(value, reference=reference)
 
 
-def parse_datetime(date_value: str | None, time_value: str | None = None) -> datetime | None:
+def parse_datetime(
+    date_value: str | None,
+    time_value: str | None = None,
+    *,
+    reference: datetime | None = None,
+) -> datetime | None:
     """A loss date, and its time when one was stated.
 
     Returns `None` for a date outside the plausible window rather than storing it
     — the future-loss-date exception is raised from the *unparsed* string by the
-    exception engine, so refusing here does not hide the problem.
+    exception engine, so refusing here does not hide the problem. Callers that
+    want to know *why*, or to show the officer what was inferred, should ask
+    `app.domain.temporal.resolve` for the whole reading instead of just its value.
     """
-    parsed = parse_date(date_value)
-    if parsed is None:
-        return None
-
-    hour, minute = 0, 0
-    if time_value:
-        match = _TIME_RE.search(time_value)
-        if match:
-            hour, minute = int(match.group(1)), int(match.group(2))
-
-    stamp = datetime(parsed.year, parsed.month, parsed.day, hour, minute, tzinfo=UTC)
-    now = datetime.now(UTC)
-    if stamp > now + FUTURE_TOLERANCE or stamp < now - MAX_BACKDATE:
-        return None
-    return stamp
+    return temporal.resolve(date_value, time_text=time_value, reference=reference).value
 
 
-def is_future_date(value: str | None) -> bool:
-    """True when a parseable date lies beyond the tolerance. Drives the exception."""
-    parsed = parse_date(value)
+def is_future_date(value: str | None, *, reference: datetime | None = None) -> bool:
+    """True when a stated date lies beyond the tolerance. Drives the exception.
+
+    `reference` is the notice's arrival, so "in the future" means later than the
+    notification that reports it rather than later than today — which is the
+    question actually being asked, and the only one that still means anything on a
+    notice loaded from an archive.
+    """
+    parsed = temporal.stated_date(value, reference=reference)
     if parsed is None:
         return False
-    return parsed > (datetime.now(UTC) + FUTURE_TOLERANCE).date()
+    anchor = reference or datetime.now(UTC)
+    return parsed > (anchor + FUTURE_TOLERANCE).date()
 
 
 def parse_currency(value: str | None, *, fallback: str = "GBP") -> str:
@@ -200,28 +177,59 @@ def parse_phone(value: str | None) -> str | None:
     return cleaned if 7 <= len(cleaned.lstrip("+")) <= 15 else None
 
 
-#: A UK postcode, and only a UK postcode. Written strictly because the value of
-#: this field is that it is *exact*: a partial match on a loose pattern would put
-#: two unrelated businesses in the same candidate list and cost the signal its
-#: whole discriminating power.
+#: A UK postcode. Written strictly because the value of this field is that it is
+#: *exact*: a partial match on a loose pattern would put two unrelated businesses
+#: in the same candidate list and cost the signal its whole discriminating power.
 _POSTCODE_RE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b", re.IGNORECASE)
+
+#: A US ZIP, with the optional +4 add-on. Anchored to the whole value rather than
+#: searched for, because a bare five-digit number is only a postcode when the
+#: field it arrived in says so — which is the case here and nowhere else. Reading
+#: a ZIP out of free text needs the state-code guard in
+#: `app.domain.policy_extraction`; this function is answering for a value a model
+#: was asked to supply *as* a postcode.
+_ZIP_RE = re.compile(r"^(\d{5})(?:-(\d{4}))?$")
+
+#: The `MD 21226` tail of a written US address, which is what a model returns when
+#: it copies the postcode line rather than the postcode.
+_STATE_ZIP_RE = re.compile(r"\b[A-Z]{2}\s+(\d{5})(?:-\d{4})?\b")
 
 
 def parse_postcode(value: str | None) -> str | None:
     """A postcode in its canonical printed form, or `None`.
 
-    Normalised to `LS11 8AX` — outward and inward halves, one space, uppercase —
-    so that a postcode read from a claim form and one read from an email compare
-    equal. Anything the pattern does not recognise reads as missing rather than
-    being stored as a guess: this field exists to be compared exactly, and an
-    approximate postcode is worse than none.
+    Handles both books this carrier writes on. A UK postcode normalises to
+    `LS11 8AX` — outward and inward halves, one space, uppercase. A US ZIP
+    normalises to its five digits, discarding the +4: the add-on identifies a
+    delivery segment within one postcode area rather than a different place, so
+    keeping it would make `21226-1234` and `21226` compare unequal for two
+    addresses across the street from each other.
+
+    Anything neither pattern recognises reads as missing rather than being stored
+    as a guess: this field exists to be compared exactly, and an approximate
+    postcode is worse than none.
     """
     if not value:
         return None
-    found = _POSTCODE_RE.search(value)
-    if not found:
-        return None
-    return f"{found.group(1).upper()} {found.group(2).upper()}"
+    text = value.strip()
+
+    found = _POSTCODE_RE.search(text)
+    if found:
+        return f"{found.group(1).upper()} {found.group(2).upper()}"
+
+    zip_only = _ZIP_RE.match(re.sub(r"\s+", "", text))
+    if zip_only:
+        return zip_only.group(1)
+
+    # A whole address line, or the `Baltimore, MD 21226` tail of one. Guarded by
+    # the state code for the reason `policy_extraction` documents at length: a
+    # bare five-digit run in free text is far more often a producer code or half a
+    # policy number than a postcode.
+    in_address = _STATE_ZIP_RE.search(text.upper())
+    if in_address:
+        return in_address.group(1)
+
+    return None
 
 
 def parse_line_of_business(value: str | None) -> LineOfBusiness | None:

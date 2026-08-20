@@ -188,7 +188,7 @@ class FNOLService:
                 )
 
             attribute, kind = _EDITABLE[path]
-            parsed, display = _coerce(kind, raw, attribute)
+            parsed, display = _coerce(kind, raw, attribute, reference=case.received_at)
             previous = getattr(case, attribute, None)
 
             if parsed == previous:
@@ -606,12 +606,16 @@ class FNOLService:
         case.processing_error = None
 
 
-def _coerce(kind: str, raw: Any, attribute: str) -> tuple[Any, str | None]:
+def _coerce(
+    kind: str, raw: Any, attribute: str, *, reference: datetime | None = None
+) -> tuple[Any, str | None]:
     """Parse an officer's input, refusing what the machine would refuse.
 
     The same normalisation the extraction path uses, deliberately: a date an
     officer types badly must fail the same way a date a model reads badly does,
-    or the two paths disagree about what is on the case.
+    or the two paths disagree about what is on the case. `reference` is the
+    notice's arrival for the same reason — an officer who types "Friday" means the
+    Friday before the notification, not the Friday before today.
     """
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return None, None
@@ -619,7 +623,7 @@ def _coerce(kind: str, raw: Any, attribute: str) -> tuple[Any, str | None]:
     text = str(raw).strip()
 
     if kind == "datetime":
-        parsed = normalisation.parse_datetime(text)
+        parsed = normalisation.parse_datetime(text, reference=reference)
         if parsed is None:
             raise ValidationError(
                 "That is not a date this system will accept — it must be a real date, "

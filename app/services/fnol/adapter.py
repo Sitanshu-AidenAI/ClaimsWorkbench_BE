@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.logging import get_logger
@@ -54,6 +55,13 @@ class WriteBack:
     #: Text from the document to the column's type. Returns `None` for a value the
     #: column cannot hold, which leaves the column untouched.
     parse: Callable[[str | None], Any] = lambda value: value
+    #: True for a column holding an instant. Two things follow. The coerced form
+    #: the extraction already worked out is preferred over re-reading the text, so
+    #: the column and the review screen cannot disagree about what the date is; and
+    #: where there is no coerced form to prefer, the text is re-read against the
+    #: notice's own arrival date, because "overnight on Friday" cannot be read
+    #: without it.
+    temporal: bool = False
 
 
 def _text(limit: int) -> Callable[[str | None], Any]:
@@ -86,7 +94,9 @@ FNOL_WRITEBACK: dict[str, WriteBack] = {
     "policy.broker_name": WriteBack("broker_name", "policy", _text(255)),
     "policy.policy_type": WriteBack("policy_type", "policy", _text(64)),
     "policy.policy_period_stated": WriteBack("policy_period_stated", "policy", _text(128)),
-    "loss.date_of_loss": WriteBack("date_of_loss", "loss", normalisation.parse_datetime),
+    "loss.date_of_loss": WriteBack(
+        "date_of_loss", "loss", normalisation.parse_datetime, temporal=True
+    ),
     "loss.loss_location": WriteBack("loss_location", "loss", _text(2000)),
     "loss.loss_postcode": WriteBack("loss_postcode", "loss", normalisation.parse_postcode),
     "loss.risk_location": WriteBack("risk_location", "loss", _text(2000)),
@@ -195,7 +205,7 @@ class FNOLWriteBackAdapter:
                 # answer arriving after a correction: recorded, not applied.
                 continue
 
-            parsed = mapping.parse(value.value_text)
+            parsed = _parsed(mapping, value, case)
             if parsed is not None:
                 setattr(case, mapping.attribute, parsed)
 
@@ -251,6 +261,41 @@ class FNOLWriteBackAdapter:
             )
             written += 1
         return written
+
+
+def _parsed(mapping: WriteBack, value: ExtractedValue, case: FNOLCase) -> Any:
+    """The value in the shape its column holds.
+
+    For everything except an instant this is the mapping's own parser over the
+    text the document states. For an instant the coerced form comes first: the
+    extraction resolved "13 September 2025, overnight" against the notice's date
+    once, stored the result and told the officer how it got there, and re-reading
+    the words here would be a second opinion nobody asked for and nobody sees. The
+    text is only re-read when there is no coerced form to take — a value written
+    by an older run, or by a path that does not coerce — and then it is read
+    against the same notice date, so the answer is the same one.
+    """
+    if not mapping.temporal:
+        return mapping.parse(value.value_text)
+    stored = _instant(value.value_json)
+    if stored is not None:
+        return stored
+    return normalisation.parse_datetime(value.value_text, reference=case.received_at)
+
+
+def _instant(coerced: Any) -> datetime | None:
+    """An ISO string from `value_json` as an aware datetime, or `None`.
+
+    `value_json` is a JSON column, so a coerced timestamp comes back as text. A
+    date with no time comes back as a date, which the column holds at midnight.
+    """
+    if not isinstance(coerced, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(coerced)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _string(value: Any) -> str | None:

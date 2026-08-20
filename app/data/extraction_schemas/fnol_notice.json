@@ -208,7 +208,7 @@
         "loss date",
         "incident date"
       ],
-      "extraction_hint": "Copy the date exactly as written, including the time if one is stated. Do not reformat it and do not infer it from the date of the email.",
+      "extraction_hint": "Copy the wording exactly as the source writes it, including the time if one is stated, and give the instant it resolves to in `normalised`. Where a notice states both when the loss happened and when it was found — 'overnight, discovered 14 September 06:20' — the date of loss is the first of the two. A loss spanning a night is dated from the day it began.",
       "required": true,
       "position": 12
     },

@@ -336,6 +336,27 @@ class DuplicateCandidateOut(SchemaBase):
     resolution_note: str | None
 
 
+class DuplicateScanOut(SchemaBase):
+    """What the repeat check did, as distinct from what it found.
+
+    On the identification payload because the scan runs inside that stage and is
+    scored on the policy it settles. Reported as counts rather than only as a list
+    so the stage can state the check ran even when it found nothing: an empty
+    candidate list and a scan that never happened look identical otherwise, and
+    "clear" is the answer an officer most needs to be able to trust.
+    """
+
+    ran_at: datetime | None
+    #: Recent notices and claims scored. Zero means nothing was comparable, not
+    #: that the notice is clean. `None` for a case last scanned before the count
+    #: was recorded — unknown, which is not the same as none, and is drawn as such.
+    compared: int | None
+    #: Scored at or above the candidate threshold.
+    found: int
+    #: Of those, the ones still holding the case. Blocking claim creation.
+    unresolved: int
+
+
 class ExceptionOut(SchemaBase):
     id: uuid.UUID
     code: str
@@ -860,6 +881,12 @@ class PolicyIdentificationOut(SchemaBase):
     #: the arithmetic does. Never ranked with the others; confirming one goes through
     #: the same path as confirming a searched policy.
     near_misses: list[PolicyCandidateOut]
+
+    #: The repeat check that ran alongside the ranking above. The candidates
+    #: themselves come back on the case payload, which is what carries an
+    #: officer's resolution; this is the scan's own account of itself.
+    duplicate_scan: DuplicateScanOut
+
     recommended_policy_id: uuid.UUID | None
     selected_policy_id: uuid.UUID | None
     policy_confirmed: bool

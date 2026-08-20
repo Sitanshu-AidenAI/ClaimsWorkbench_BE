@@ -41,3 +41,10 @@ celerybeat.pid
 /demo-data/
 var/
 HANDOFF.md
+
+# Source documents — client-supplied requirements material, not application code.
+# The assessment derived from them is committed in docs/rfp-alignment/; these are not.
+/Claims_RP_RFP_Scope_Description_Final.docx
+/01042025_Claim Segmentations_LTP.pdf
+/Claims Workbench_BRD.docx
+/fnol-packs-by-group.pdf

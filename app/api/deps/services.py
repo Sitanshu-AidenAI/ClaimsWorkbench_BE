@@ -241,8 +241,9 @@ def build_pipeline(
             cases, provider=provider, evidence=FNOLEvidenceService(retrieval)
         ),
         classification=ClassificationService(provider=provider),
-        identification=PolicyIdentificationService(policies, cases),
-        duplicates=DuplicateDetectionService(cases, claims),
+        identification=PolicyIdentificationService(
+            policies, cases, DuplicateDetectionService(cases, claims)
+        ),
         catastrophe=CatastropheMatchingService(cat_events),
         assessments=AssessmentServices(cases),
         summary=FNOLSummaryService(provider=provider),
@@ -279,7 +280,9 @@ def build_context(
 
     triage = TriageService(claims)
     assignment = AssignmentService(handlers, claims)
-    identification = PolicyIdentificationService(policies, cases)
+    identification = PolicyIdentificationService(
+        policies, cases, DuplicateDetectionService(cases, claims)
+    )
 
     chunks, retrieval, index = build_intelligence(session, embeddings=embeddings, vectors=vectors)
     pipeline = build_pipeline(session, provider=provider, embeddings=embeddings, vectors=vectors)

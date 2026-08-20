@@ -23,7 +23,13 @@ from sqlalchemy import delete, select
 from app.api.deps.services import build_context
 from app.core.config import settings
 from app.db.session import dispose_engine, get_session_factory, init_engine
-from app.domain.enums import ClaimStatus, DuplicateResolution, ExceptionCode, FNOLStatus
+from app.domain.enums import (
+    AnalysisKind,
+    ClaimStatus,
+    DuplicateResolution,
+    ExceptionCode,
+    FNOLStatus,
+)
 from app.models.audit import AuditEvent
 from app.models.claim import Claim, ClaimAssignment, ClaimTriage
 from app.models.fnol import (
@@ -38,9 +44,11 @@ from app.models.fnol import (
     FNOLPolicyMatch,
 )
 from app.models.reference_data import CatEvent, Handler, Policy
+from app.services.ai.base import AIProviderError
 from app.services.documents.store import FilesystemDocumentStore, set_document_store
 from app.services.fnol.claims import ClaimCreationBlocked
 from app.services.fnol.ingestion import IncomingAttachment, IncomingEmail
+from app.services.fnol.matching import DuplicateDetectionService
 
 pytestmark = pytest.mark.integration
 
@@ -439,6 +447,105 @@ class TestIntakeToClaim:
 
         assert await context.creation.blockers(repeat) == []
 
+    async def test_the_duplicate_scan_runs_once_and_travels_with_identification(
+        self, session: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One scan per run, made by the stage that settles the policy.
+
+        Both halves matter and they are the same guarantee. A repeat is scored on
+        the policy above every other signal, so a scan made by a later stage would
+        be reading a match nobody had re-checked; and a second scan would be the
+        same few hundred comparisons, and the same writes, paid for twice.
+        """
+        scanned: list[str] = []
+        detect = DuplicateDetectionService.detect
+
+        async def counting(self: DuplicateDetectionService, case: object) -> object:
+            scanned.append(case.reference)
+            return await detect(self, case)
+
+        monkeypatch.setattr(DuplicateDetectionService, "detect", counting)
+
+        context = build_context(session, None)
+        case = await ingest_and_process(context, message_id=f"<int-{uuid.uuid4()}@test>")
+        await session.commit()
+
+        assert scanned == [case.reference]
+
+        # And it is identification carrying it, not the pipeline: re-identifying
+        # alone scans again, which is the whole point of moving it.
+        await context.identification.identify(case)
+        await session.commit()
+
+        assert scanned == [case.reference, case.reference]
+
+    async def test_re_identifying_a_notice_rescans_it_for_repeats(self, session: object) -> None:
+        """The candidate list is refreshed by identification, not only by a full run.
+
+        The first notice in was nobody's repeat when it was processed. Once the
+        second arrives, re-identifying the first — one query and a few hundred
+        comparisons, no model call — has to notice that, because an officer looking
+        at a stale empty list has no way to tell it apart from a real answer.
+        """
+        context = build_context(session, None)
+
+        first = await ingest_and_process(context, message_id=f"<int-{uuid.uuid4()}@test>")
+        await session.commit()
+        assert await context.cases.list_duplicates(first.id) == []
+
+        second = await ingest_and_process(context, message_id=f"<int-{uuid.uuid4()}@test>")
+        await session.commit()
+
+        outcome = await context.identification.identify(first)
+        await session.commit()
+
+        assert [candidate.reference for candidate in outcome.duplicates.candidates] == [
+            second.reference
+        ]
+        assert [record.candidate_reference for record in outcome.duplicates.records] == [
+            second.reference
+        ]
+        # The rows the officer's screen reads agree with what the stage returned,
+        # so nothing downstream has to go and ask again.
+        persisted = await context.cases.list_duplicates(first.id)
+        assert [row.candidate_reference for row in persisted] == [second.reference]
+        assert outcome.duplicates.unresolved == list(persisted)
+
+    async def test_a_clean_scan_reports_what_it_compared_not_just_an_empty_list(
+        self, session: object
+    ) -> None:
+        """A clear result has to be distinguishable from a check that never ran.
+
+        The first notice in is nobody's repeat, so the candidate list is empty —
+        and an empty list is exactly what a stage that skipped the scan would also
+        show. The count of what was compared is the difference, which is why it
+        leaves the scan on the outcome and is written into the stored analysis
+        rather than only into the log line.
+        """
+        context = build_context(session, None)
+
+        first = await ingest_and_process(context, message_id=f"<int-{uuid.uuid4()}@test>")
+        await session.commit()
+
+        outcome = await context.identification.identify(first)
+        assert outcome.duplicates.candidates == []
+        assert outcome.duplicates.as_dict()["compared"] == outcome.duplicates.compared
+
+        # A second notice of the same loss gives the scan something to compare
+        # against, so the count moves off zero while the notice stays flagged.
+        second = await ingest_and_process(context, message_id=f"<int-{uuid.uuid4()}@test>")
+        await session.commit()
+
+        repeat = await context.identification.identify(second)
+        await session.commit()
+
+        assert repeat.duplicates.compared >= 1
+        assert len(repeat.duplicates.candidates) == 1
+
+        stored = await context.cases.get_analysis(second.id, AnalysisKind.DUPLICATES)
+        assert stored is not None
+        assert stored.result["compared"] == repeat.duplicates.compared
+
     async def test_an_incomplete_notice_is_refused_with_a_checklist(self, session: object) -> None:
         context = build_context(session, None)
 
@@ -495,3 +602,104 @@ class TestCatalogues:
         events = await context.cat_events.list_all()
         assert isinstance(list(events), list)
         assert all(isinstance(event, CatEvent) for event in events)
+
+
+class DeadProvider:
+    """A provider that is configured, reachable in principle, and answering nothing.
+
+    Distinct from passing `None`, which is the rest of this file's case and takes a
+    different path entirely: with no provider the deterministic reader answers and
+    the dataset path never starts. This is the production failure — an API key is
+    set, the desk is running on model extraction, and the upstream is down. Every
+    stage that calls a model has to degrade on its own, because the pipeline's
+    promise is that a stage failure becomes an exception on the notice rather than
+    a 500 on the request.
+    """
+
+    name = "dead"
+    model = "dead-model"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def structured(self, **kwargs: object) -> object:
+        self.calls += 1
+        raise AIProviderError("Upstream is unreachable.", retryable=True)
+
+    async def aclose(self) -> None:
+        return None
+
+
+class TestTheProviderIsDown:
+    async def test_a_notice_still_lands_on_the_desk(self, session: object) -> None:
+        """The whole point of the design, asserted once end to end.
+
+        An unreachable model provider is a normal state of a claims desk — a
+        rate limit, an expired key, an outage — and it must cost the notice its
+        *values*, not its place in the queue. A notice that 500s is a notice
+        nobody knows arrived.
+        """
+        provider = DeadProvider()
+        context = build_context(session, provider)  # type: ignore[arg-type]
+
+        case = await ingest_and_process(context, message_id=f"<dead-{uuid.uuid4()}@test>")
+        await session.commit()
+
+        # It was tried, and it was tried more than once — extraction, classification
+        # and the summary each reach for a model.
+        assert provider.calls > 0
+
+        # The run finished. This is the assertion that matters: `failed` here would
+        # mean an exception escaped a stage and the notice needs an operator.
+        assert case.processing_state == "completed"
+        assert case.processing_error is None
+
+        # And it is on the desk, in a state that says what happened.
+        assert case.status == FNOLStatus.AI_PROCESSING_FAILED.value
+        codes = {
+            exception.code
+            for exception in await context.cases.list_exceptions(case.id, only_open=True)
+        }
+        assert ExceptionCode.AI_PROCESSING_FAILED.value in codes
+
+        # The deterministic stages are untouched by the outage: they read the
+        # notice's own columns and never call anything.
+        identification = await context.cases.get_analysis(
+            case.id, AnalysisKind.POLICY_IDENTIFICATION
+        )
+        assert identification is not None
+        assert identification.status == "completed"
+        completeness = await context.cases.get_analysis(case.id, AnalysisKind.COMPLETENESS)
+        assert completeness is not None
+
+        # The failure is recorded against the notice rather than only in a log, so
+        # "why is this form empty" is answerable from the case.
+        extraction = await context.cases.get_analysis(case.id, AnalysisKind.EXTRACTION)
+        assert extraction is not None
+        assert extraction.status == "failed"
+        assert extraction.error
+
+    async def test_the_notice_recovers_on_a_re_run_once_the_provider_returns(
+        self, session: object
+    ) -> None:
+        """A failed read must not be cached as the answer.
+
+        The run fingerprint is what stops a notice being re-read for nothing, and a
+        failed run carrying one would make the outage permanent for every notice
+        that arrived during it.
+        """
+        context = build_context(session, DeadProvider())  # type: ignore[arg-type]
+        message_id = f"<recover-{uuid.uuid4()}@test>"
+        case = await ingest_and_process(context, message_id=message_id)
+        await session.commit()
+        assert case.status == FNOLStatus.AI_PROCESSING_FAILED.value
+
+        # The provider comes back. Nothing else about the notice has changed, so a
+        # reused extraction here would leave it failed for ever.
+        recovered = build_context(session, None)
+        result = await recovered.pipeline.run(case)
+        await session.commit()
+
+        assert result.extraction_reused is False
+        assert case.processing_state == "completed"
+        assert case.status != FNOLStatus.AI_PROCESSING_FAILED.value

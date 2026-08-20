@@ -351,6 +351,65 @@ class TestRiskLocation:
         assert outcome(match, "risk_location") is SignalOutcome.MATCH
         assert "district" in explanation(match, "risk_location")
 
+    def test_a_us_zip_matches_the_scheduled_location_exactly(self) -> None:
+        """The same signal on the American half of the book.
+
+        The policy schedule has held US ZIPs all along; only the notice side could
+        not read one, so this comparison never happened and the strongest location
+        signal scored nothing on every US notice.
+        """
+        match = engine.compare(
+            notice(
+                loss_location="2870 Patapsco Industrial Parkway, Baltimore, MD 21226",
+                loss_postcode="21226",
+                insured_name="Harborline Cold Storage & Logistics, LLC",
+            ),
+            policy(
+                locations=(
+                    location("1200 W Overland Rd, Meridian, ID 83713", "83713", "Location 001"),
+                    location(
+                        "2870 Patapsco Industrial Parkway, Baltimore, MD 21226",
+                        "21226",
+                        "Location 004",
+                    ),
+                )
+            ),
+            config=CONFIG,
+        )
+        assert outcome(match, "risk_location") is SignalOutcome.MATCH
+        assert "Location 004" in explanation(match, "risk_location")
+
+    def test_two_zips_sharing_a_leading_digit_are_not_a_district(self) -> None:
+        """A ZIP has no outward code, and pretending it has one invents a match.
+
+        Cutting three digits off `21226` the way a UK postcode splits would leave
+        `21` — most of Maryland, Delaware and Pennsylvania — and score a 0.85
+        location agreement between two risks four hours apart.
+        """
+        match = engine.compare(
+            notice(loss_postcode="21403", insured_name="Harborline Cold Storage & Logistics, LLC"),
+            policy(
+                locations=(
+                    location(
+                        "2870 Patapsco Industrial Parkway, Baltimore, MD 21226",
+                        "21226",
+                        "Location 004",
+                    ),
+                )
+            ),
+            config=CONFIG,
+        )
+        assert outcome(match, "risk_location") is SignalOutcome.MISMATCH
+
+    def test_a_plant_serial_is_not_read_as_a_postcode(self) -> None:
+        """`PC290LC` is an excavator, and a construction notice is full of them.
+
+        Read as a postcode it becomes a location token that some later notice
+        collides with — the trap `app.domain.policy_extraction` already documents.
+        """
+        assert engine._postcode_of("Serial PC290LC-11 excavator") is None
+        assert engine._postcode_of("Unit 7, Wakefield Road, Leeds LS9 8AA") == "LS9 8AA"
+
 
 class TestPolicyPeriod:
     def test_in_force(self) -> None:

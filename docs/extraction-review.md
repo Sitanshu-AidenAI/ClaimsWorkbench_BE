@@ -107,6 +107,50 @@ would point at the sentence the officer disagreed with. The correction is writte
 back onto `fnol_cases` in the same transaction, so the header, the blockers and
 stage two follow immediately.
 
+### A date of loss is two things at once
+
+`loss.date_of_loss` is the one field on this screen where what the document says
+and what the claim record needs are not the same shape. A notice states the date
+however the broker felt like stating it — `13 September 2025, overnight,
+discovered 14 September 06:20`, `overnight on Friday`, `26 February 2026 14:52
+EST` — and `fnol_cases.date_of_loss` is a timestamp that a claim cannot be created
+without.
+
+So the value carries both, and the screen should show both:
+
+| Field | Holds | Example |
+|---|---|---|
+| `value` | The wording, exactly as the source writes it. Never reformatted. | `overnight on Friday` |
+| `typed_value` | The instant it resolves to, ISO-8601. What lands on `fnol_cases.date_of_loss`. | `2026-05-01T22:00:00+00:00` |
+| `inference_note` | What was inferred to get from one to the other, in a sentence. Null when nothing was. | `“Friday” is read as 1 May 2026 22:00, relative to the notification of 5 May 2026.` |
+
+The resolution is `app/domain/temporal.py`, it is deterministic, and it is
+anchored on `received_at` — the notice's own arrival — because that is what the
+person writing "Friday" meant by it. Three of its rules are worth knowing at the
+screen:
+
+* **A discovery date is never the date of loss.** `overnight, discovered 14
+  September 06:20` is one loss with two dates in it, and the clause after the
+  discovery word is set aside before anything is read. Where a notice states
+  *only* a discovery date it is used, and the note says so.
+* **The stated wall clock is kept as stated.** `21:04 EDT` is stored as 21:04, not
+  shifted to 01:04 the following day. The calendar day is what the policy-period
+  check, the catastrophe window and the claim all read, and a true-UTC conversion
+  moves evening losses onto the wrong one.
+* **Nothing is stored that cannot be justified.** A phrase that reads as no date,
+  or as a date after the notification arrived, leaves `typed_value` null with the
+  reason in `validation_error` — and the value itself still on the screen, for the
+  officer to correct.
+
+The extracting model is also asked for its own ISO reading of the same wording
+(`normalised` in its answer). It is used only where the resolver cannot read the
+words at all, and where the two land on different *days* the value is flagged
+`needs_review` with both readings in the note: two defensible readings of one
+notice is exactly what review is for.
+
+An officer's own correction goes through the same resolution, against the same
+notice date, so a typed "Friday" and an extracted "Friday" cannot disagree.
+
 ### Stage two — Intelligence review
 
 Unchanged by this work. The fixed extracted record on the left, and the

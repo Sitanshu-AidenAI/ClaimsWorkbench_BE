@@ -612,6 +612,72 @@ class TestTheWholeFlow:
         assert rows["policy.policy_number"].value_text == "SCHEMA-2026-0001"
         assert rows["policy.policy_number"].source_chunk_id is not None
 
+    async def test_a_date_stated_in_words_becomes_the_claim_s_date_of_loss(
+        self, session: Any
+    ) -> None:
+        """The whole point of the feature, end to end and against the real column.
+
+        `fnol_cases.date_of_loss` is a timestamp and a claim cannot be created
+        without one, but a notice states the date however the broker felt like
+        stating it. So the extracted value keeps the broker's words, the typed form
+        carries the instant they were resolved to against the notice's own arrival
+        date, and the column takes that same instant — one reading, in three
+        places, with a sentence saying how it was arrived at.
+        """
+        from app.models.extraction import ExtractionSchemaField
+
+        case = await make_case(session)
+        schema = await make_dataset(session)
+        schema.fields.append(
+            ExtractionSchemaField(
+                key="loss.date_of_loss",
+                label="Date of loss",
+                description="The date, and the time if stated, on which the loss happened.",
+                data_type="datetime",
+                group_label="Loss",
+                required=True,
+                position=3,
+            )
+        )
+        documents, signature = await prepare(session, case)
+        await session.commit()
+
+        answers = {
+            **ANSWERS,
+            "loss.date_of_loss": FieldAnswer(
+                field_key="loss.date_of_loss",
+                value="overnight on Friday",
+                confidence=0.9,
+                quote="overnight on Friday",
+                passage=None,
+            ),
+        }
+        engine = make_engine(session, _AnswerFirstPassage(answers))
+        outcome = await engine.run(
+            case,
+            schema=schema,
+            dataset=to_dataset(schema),
+            documents=documents,
+            index_signature=signature,
+        )
+        await FNOLWriteBackAdapter(FNOLRepository(session)).apply(case, outcome.values)
+        await session.commit()
+
+        value = next(row for row in outcome.values if row.field_key == "loss.date_of_loss")
+        # What the broker wrote is kept, exactly.
+        assert value.value_text == "overnight on Friday"
+        # And it is a real instant, on a Friday, no later than the notice itself.
+        assert case.date_of_loss is not None
+        assert case.date_of_loss.strftime("%A") == "Friday"
+        assert case.date_of_loss.date() <= case.received_at.date()
+        # The column and the review screen hold the same reading, not two.
+        assert value.value_json == case.date_of_loss.isoformat()
+        assert value.validation_error is None
+        assert value.needs_review is False
+        # And the officer is told how the words became the instant.
+        assert value.inference_note is not None
+        assert "Friday" in value.inference_note
+
     async def test_a_re_index_costs_the_citation_and_keeps_the_value(self, session: Any) -> None:
         """`ON DELETE SET NULL`, proved against the real constraint.
 

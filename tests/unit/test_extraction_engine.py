@@ -15,6 +15,7 @@ rest of the feature relies on without re-checking:
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -65,11 +66,16 @@ class FakeDocument:
 
 
 class FakeCase:
-    def __init__(self, body: str = "A broker writes.") -> None:
+    def __init__(
+        self, body: str = "A broker writes.", *, received_at: datetime | None = None
+    ) -> None:
         self.id = uuid.uuid4()
         self.reference = "FNOL-2026-000999"
         self.channel = "broker_email"
         self.source_body = body
+        # The notice's own date. Everything temporal is read against it, so a
+        # fake case without one cannot exercise the date of loss at all.
+        self.received_at = received_at or datetime(2026, 5, 5, 10, 4, tzinfo=UTC)
 
 
 class FakeChunkRepository:
@@ -387,6 +393,27 @@ class TestPrompting:
         assert "=== PASSAGE [C1] — slip.pdf, page 1 ===" in prompt
         assert "Policy number: CP-2026-4471" in prompt
 
+    async def test_the_prompt_states_when_the_notification_arrived(self) -> None:
+        """Half the temporal wording a broker uses is unreadable without it.
+
+        "Overnight on Friday" is a complete statement of a date of loss to anyone
+        who knows when the email was sent, and no statement at all to anyone who
+        does not — including the model being asked to normalise it.
+        """
+        document = FakeDocument(filename="slip.pdf")
+        chunk = FakeChunk(ref="c1", content="Overnight on Friday.", document_id=document.id)
+        provider = BatchProvider([])
+        engine, _ = build(provider=provider, retrieval=FakeRetrieval({"date": [chunk]}))
+
+        await engine.run(
+            FakeCase(received_at=datetime(2026, 5, 5, 10, 4, tzinfo=UTC)),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(LOSS_DATE),
+            documents=[document],  # type: ignore[list-item]
+        )
+
+        assert "Notification received: Tuesday 05 May 2026 10:04 UTC." in provider.prompts[0]
+
     async def test_a_passage_three_fields_wanted_appears_once(self) -> None:
         """Deduplication is what makes batching cheaper than one call per field."""
         document = FakeDocument(filename="slip.pdf")
@@ -609,6 +636,80 @@ class TestValuesAndCitations:
         assert value.validation_error is not None
         assert value.needs_review is True
 
+    async def test_a_date_stated_in_words_is_resolved_against_the_notice(self) -> None:
+        """The bug this feature was raised for.
+
+        The extraction is deliberately verbatim — the officer has to see what the
+        broker actually wrote — but `fnol_cases.date_of_loss` is a timestamp and a
+        claim cannot be created without one. So the value stays as written and the
+        *typed* form is resolved, here against a notice that arrived on Tuesday 5
+        May 2026.
+        """
+        document = FakeDocument(filename="notice.eml")
+        chunk = FakeChunk(
+            ref="c1", content="It failed overnight on Friday.", document_id=document.id
+        )
+        provider = BatchProvider(
+            [
+                FieldAnswer(
+                    field_key="loss.date_of_loss",
+                    value="overnight on Friday",
+                    confidence=0.9,
+                    quote="overnight on Friday",
+                    passage="C1",
+                    normalised="2026-05-01T22:00",
+                )
+            ]
+        )
+        engine, _ = build(provider=provider, retrieval=FakeRetrieval({"date": [chunk]}))
+
+        outcome = await engine.run(
+            FakeCase(received_at=datetime(2026, 5, 5, 10, 4, tzinfo=UTC)),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(LOSS_DATE),
+            documents=[document],  # type: ignore[list-item]
+        )
+
+        value = outcome.values[0]
+        assert value.value_text == "overnight on Friday"
+        assert value.value_json == "2026-05-01T22:00:00+00:00"
+        assert value.validation_error is None
+        assert value.needs_review is False
+        # And it says how it got there, in a sentence, on the row.
+        assert value.inference_note is not None
+        assert "1 May 2026" in value.inference_note
+
+    async def test_a_model_reading_the_date_as_another_day_asks_for_a_human(self) -> None:
+        """Two defensible readings of one notice is exactly what review is for."""
+        document = FakeDocument(filename="notice.eml")
+        chunk = FakeChunk(ref="c1", content="Loss on 2 May 2026.", document_id=document.id)
+        provider = BatchProvider(
+            [
+                FieldAnswer(
+                    field_key="loss.date_of_loss",
+                    value="2 May 2026",
+                    confidence=1.0,
+                    quote="2 May 2026",
+                    passage="C1",
+                    normalised="2026-04-28",
+                )
+            ]
+        )
+        engine, _ = build(provider=provider, retrieval=FakeRetrieval({"date": [chunk]}))
+
+        outcome = await engine.run(
+            FakeCase(received_at=datetime(2026, 5, 5, 10, 4, tzinfo=UTC)),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(LOSS_DATE),
+            documents=[document],  # type: ignore[list-item]
+        )
+
+        value = outcome.values[0]
+        assert value.value_json == "2026-05-02T00:00:00+00:00"
+        assert value.needs_review is True
+        assert value.inference_note is not None
+        assert "28 April 2026" in value.inference_note
+
     async def test_confidence_blends_the_model_with_the_retrieval_score(self) -> None:
         """Neither number alone is enough.
 
@@ -660,11 +761,115 @@ class TestValuesAndCitations:
 
 class TestFailureAndReuse:
     async def test_one_failed_batch_costs_that_batch_and_nothing_else(self) -> None:
-        """Losing twenty good values to one unlucky call is how a screen loses trust."""
+        """Losing twenty good values to one unlucky call is how a screen loses trust.
+
+        Run with the re-ask switched off, so this states the floor: whatever the
+        retry policy is, a batch that ends up unanswered costs its own fields and
+        no others.
+        """
         document = FakeDocument(filename="slip.pdf")
         chunk = FakeChunk(ref="c1", content="text", document_id=document.id)
         provider = BatchProvider(
             AIProviderError("the provider timed out", retryable=True),
+            [
+                FieldAnswer(
+                    field_key="loss.date_of_loss",
+                    value="08 March 2026",
+                    confidence=1.0,
+                    quote="08 March 2026",
+                    passage="C1",
+                )
+            ],
+        )
+        engine, _ = build(
+            provider=provider,
+            retrieval=FakeRetrieval({"": [chunk]}),
+            config=ExtractionSettings(fields_per_call=1, call_concurrency=1, batch_retries=0),
+        )
+
+        outcome = await engine.run(
+            FakeCase(),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(POLICY, LOSS_DATE),
+            documents=[document],  # type: ignore[list-item]
+        )
+
+        assert outcome.run.status == ExtractionRunStatus.PARTIAL
+        assert outcome.run.fields_failed == 1
+        assert outcome.run.error is not None
+        by_key = {value.field_key: value for value in outcome.values}
+        assert by_key["loss.date_of_loss"].value_text == "08 March 2026"
+        assert by_key["policy.policy_number"].value_text is None
+
+    async def test_a_batch_that_fails_once_is_asked_again(self) -> None:
+        """A truncated or malformed answer is a sampling artifact, not a verdict.
+
+        The transport is already retried underneath the provider, so a failure that
+        reaches the engine is one retrying transport cannot fix — and re-asking is
+        the difference between a notice read in full and a notice missing a quarter
+        of its fields for the rest of its life.
+        """
+        document = FakeDocument(filename="slip.pdf")
+        chunk = FakeChunk(ref="c1", content="text", document_id=document.id)
+        provider = BatchProvider(
+            AIProviderError("the model's response was truncated"),
+            [
+                FieldAnswer(
+                    field_key="policy.policy_number",
+                    value="CP-1",
+                    confidence=1.0,
+                    quote="CP-1",
+                    passage="C1",
+                )
+            ],
+            [
+                FieldAnswer(
+                    field_key="loss.date_of_loss",
+                    value="08 March 2026",
+                    confidence=1.0,
+                    quote="08 March 2026",
+                    passage="C1",
+                )
+            ],
+        )
+        engine, _ = build(
+            provider=provider,
+            retrieval=FakeRetrieval({"": [chunk]}),
+            config=ExtractionSettings(fields_per_call=1, call_concurrency=1),
+        )
+
+        outcome = await engine.run(
+            FakeCase(),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(POLICY, LOSS_DATE),
+            documents=[document],  # type: ignore[list-item]
+        )
+
+        # Nothing was lost, and the run does not report a failure it recovered from.
+        assert outcome.run.status == ExtractionRunStatus.COMPLETED
+        assert outcome.run.fields_failed == 0
+        by_key = {value.field_key: value for value in outcome.values}
+        assert by_key["policy.policy_number"].value_text == "CP-1"
+        assert by_key["loss.date_of_loss"].value_text == "08 March 2026"
+        # Three calls for two batches: the first was asked twice.
+        assert provider.calls == 3
+
+    async def test_an_unexpected_error_in_one_batch_does_not_lose_the_others(
+        self,
+    ) -> None:
+        """The batch is the unit of loss, whatever went wrong inside it.
+
+        `AIProviderError` is the failure this code expects; it is not the only one
+        a call can raise. Anything escaping the batch would propagate out of the
+        surrounding `gather` and cost the whole run — every other batch's answers
+        included — which is the one outcome the partial-run design exists to
+        prevent.
+        """
+        document = FakeDocument(filename="slip.pdf")
+        chunk = FakeChunk(ref="c1", content="text", document_id=document.id)
+        provider = BatchProvider(
+            RuntimeError("the client was closed underneath us"),
+            RuntimeError("and again on the re-ask"),
             [
                 FieldAnswer(
                     field_key="loss.date_of_loss",
@@ -690,7 +895,6 @@ class TestFailureAndReuse:
 
         assert outcome.run.status == ExtractionRunStatus.PARTIAL
         assert outcome.run.fields_failed == 1
-        assert outcome.run.error is not None
         by_key = {value.field_key: value for value in outcome.values}
         assert by_key["loss.date_of_loss"].value_text == "08 March 2026"
         assert by_key["policy.policy_number"].value_text is None

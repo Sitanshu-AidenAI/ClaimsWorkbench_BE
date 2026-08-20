@@ -170,6 +170,37 @@ class TestNormalisation:
         assert valid_loss_type(LineOfBusiness.PROPERTY, "fire") == "fire"
         assert valid_loss_type(LineOfBusiness.PROPERTY, "ransomware") is None
 
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            # The UK book. A missing space is tolerated here because the field
+            # itself says the value is a postcode.
+            ("LS11 8AX", "LS11 8AX"),
+            ("ls118ax", "LS11 8AX"),
+            ("BB18 5NX", "BB18 5NX"),
+            # The US book. The +4 add-on segments a delivery route inside one ZIP
+            # rather than naming a different place, so it is dropped — otherwise
+            # two addresses across the street compare unequal.
+            ("21226", "21226"),
+            ("21226-1234", "21226"),
+            ("MD 21226", "21226"),
+            ("2870 Patapsco Industrial Parkway, Baltimore, MD 21226", "21226"),
+            # Neither, and stored as nothing rather than as a guess.
+            ("", None),
+            ("not a postcode", None),
+            ("12 High Street", None),
+        ],
+    )
+    def test_a_postcode_is_read_on_both_books(self, value: str, expected: str | None) -> None:
+        """A US ZIP is a postcode, and dropping it costs the location signal.
+
+        `loss_postcode` is the highest-weighted location signal in policy
+        identification, and it is compared exactly. Reading only UK postcodes left
+        it empty on every US notice, so the whole axis scored nothing on half the
+        book while the extraction had read the value correctly all along.
+        """
+        assert normalisation.parse_postcode(value) == expected
+
 
 # ---------------------------------------------------------------------------
 # Matching primitives
@@ -701,3 +732,34 @@ class TestHeuristicReading:
         result = classify_from_text("Please call me back about the thing.")
         assert result.line_of_business == LineOfBusiness.UNKNOWN.value
         assert result.confidence == 0.0
+
+    def test_the_attending_fire_brigade_is_not_the_loss(self) -> None:
+        """`fire` leads the property line, and every notice mentions the brigade.
+
+        Taken in table order, one mention of the fire service outranked the escape
+        of water that actually happened — and because the validator drops any loss
+        type the model invents, this reading is what reached the case whenever the
+        model answered outside the vocabulary. An ammonia release was filed as a
+        fire on the strength of "Baltimore City Fire Department HAZMAT attended".
+        """
+        result = classify_from_text(
+            "A frozen fire sprinkler pipe burst on the third floor and caused an "
+            "escape of water through the two storeys below. The fire alarm sounded "
+            "and the fire brigade attended."
+        )
+        assert result.loss_type == "escape_of_water"
+
+    def test_a_loss_no_configured_type_describes_reads_as_nothing(self) -> None:
+        """Better empty than wrong: `other` is the model's answer to give, not this one."""
+        result = classify_from_text(
+            "A welded elbow on the liquid ammonia header failed overnight. "
+            "Baltimore City Fire Department HAZMAT attended the premises."
+        )
+        assert result.loss_type is None
+
+    def test_the_loss_the_notice_dwells_on_is_the_one_chosen(self) -> None:
+        result = classify_from_text(
+            "Fire broke out in the dye house and spread through the roof void. "
+            "The fire damage extends across two bays."
+        )
+        assert result.loss_type == "fire"

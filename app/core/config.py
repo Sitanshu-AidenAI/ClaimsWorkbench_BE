@@ -831,6 +831,17 @@ class ExtractionSettings(BaseSettings):
     #: matters.
     call_concurrency: int = 3
 
+    #: Re-asks allowed for a batch whose model call did not answer.
+    #:
+    #: The transport is already retried three times underneath this, so what
+    #: reaches here is the class of failure retrying transport cannot fix: a
+    #: response that was truncated, was not JSON, or did not match the schema.
+    #: Those are sampling artifacts, and a re-ask usually clears them — which
+    #: matters because the alternative is losing every field in the batch. One
+    #: re-ask, because a batch that fails an honest second time is failing for a
+    #: reason a third will not change, and the run reports `partial` instead.
+    batch_retries: int = 1
+
     #: How much of one call's prompt may be passages. The rest is the field list.
     max_passage_characters: int = 60_000
 

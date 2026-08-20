@@ -5,10 +5,18 @@ the engine never touches a SQLAlchemy object and stays testable with a literal.
 
 **Coercion never destroys.** A model asked for a date returns `12/13/2026` often
 enough that a parser which raises would lose the value and the citation with it.
-So every coercion returns `(coerced, error)`: the coerced form goes in
-`value_json`, the text the document actually said stays in `value_text`, and a
-failure becomes a sentence on the row and a flag for review. A value a person can
-see and correct is worth more than a null that is technically well-typed.
+So every coercion returns a `Coercion`: the coerced form goes in `value_json`, the
+text the document actually said stays in `value_text`, and a failure becomes a
+sentence on the row and a flag for review. A value a person can see and correct is
+worth more than a null that is technically well-typed.
+
+**Coercion explains itself.** A `Coercion` also carries a `note`, which is how a
+value that was *inferred* rather than copied says so. A notice reading "overnight
+on Friday" has to become a timestamp before a claim can be created, and the
+officer looking at the review screen is entitled to both: the words the broker
+wrote, and the sentence saying what they were read as and why. Only the temporal
+types produce one today, and they need a `reference` — the notice's own date — to
+produce it, which is why every coercion accepts one.
 
 The type list is deliberately short. Nine types cover an insurance dataset, and
 each one exists because something downstream reads it differently — a `money`
@@ -24,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
-from app.domain import normalisation
+from app.domain import normalisation, temporal
 
 #: Every type a field may declare. The default is `string`: a dataset author who
 #: gives no type gets the one that cannot lose information.
@@ -37,6 +45,24 @@ DATA_TYPES: frozenset[str] = frozenset(
 _TYPED = DATA_TYPES - {"string", "text"}
 
 _MONEY_RE = re.compile(r"-?\d[\d,\s]*(?:\.\d+)?")
+
+
+@dataclass(frozen=True, slots=True)
+class Coercion:
+    """What a value became, and anything a reviewer should be told about it."""
+
+    #: The coerced form, or `None` when the text could not be read as the type.
+    value: Any = None
+    #: Why it could not be, in a sentence an officer can act on. Never set
+    #: alongside a value.
+    error: str | None = None
+    #: What was inferred to arrive at the value, when anything was. `None` for a
+    #: value copied straight out of the document, which explains itself.
+    note: str | None = None
+    #: Set when a second reading of the same text is defensible and differs — a
+    #: date the extracting model normalised to another day. The caller turns this
+    #: into "needs review", because two defensible readings is what a human is for.
+    conflict: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,9 +96,15 @@ class FieldSpec:
         parts = [self.label, self.description, *self.aliases]
         return " ".join(part.strip() for part in parts if part and part.strip())
 
-    def coerce(self, value: str | None) -> tuple[Any, str | None]:
-        """`(coerced, error)`. Never raises, never discards a value."""
-        return coerce_value(value, self.data_type)
+    def coerce(
+        self,
+        value: str | None,
+        *,
+        reference: datetime | None = None,
+        hint: str | None = None,
+    ) -> Coercion:
+        """The value as this field's type. Never raises, never discards a value."""
+        return coerce_value(value, self.data_type, reference=reference, hint=hint)
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,23 +165,38 @@ def stores_typed_value(data_type: str) -> bool:
     return data_type in _TYPED
 
 
-def coerce_value(value: str | None, data_type: str) -> tuple[Any, str | None]:
+def coerce_value(
+    value: str | None,
+    data_type: str,
+    *,
+    reference: datetime | None = None,
+    hint: str | None = None,
+) -> Coercion:
     """Turn the text a document states into the type a field declares.
 
-    Returns `(coerced, error)`. `coerced` is `None` when the text could not be
-    read as the declared type — and `error` then says so in a sentence a reviewer
-    can act on, because "12/13/2026 is not a date this reads as day/month/year"
-    tells them what to do and a silent null does not.
+    A `Coercion` whose `value` is `None` and whose `error` is set is text that
+    could not be read as the declared type — and the error says so in a sentence a
+    reviewer can act on, because "12/13/2026 is not a date this reads as
+    day/month/year" tells them what to do and a silent null does not.
+
+    `reference` is when the notification arrived. Only the temporal types use it,
+    and for them it is the difference between a value and a null: "overnight on
+    Friday" means nothing without the date of the notice that says it.
+
+    `hint` is the extracting model's own reading of the same text, which the
+    temporal types check against theirs — believing it where this code cannot read
+    the wording at all, and asking for a human where the two land on different
+    days. Ignored by every other type, whose parsers do not need help.
     """
     if value is None:
-        return None, None
+        return Coercion()
     text = value.strip()
     if not text:
-        return None, None
+        return Coercion()
 
     match data_type:
         case "string" | "text":
-            return text, None
+            return Coercion(text)
         case "integer":
             return _coerce_integer(text)
         case "number":
@@ -157,18 +204,18 @@ def coerce_value(value: str | None, data_type: str) -> tuple[Any, str | None]:
         case "money":
             return _coerce_money(text)
         case "date":
-            return _coerce_temporal(text, want_time=False)
+            return _coerce_temporal(text, reference=reference, hint=hint, want_time=False)
         case "datetime":
-            return _coerce_temporal(text, want_time=True)
+            return _coerce_temporal(text, reference=reference, hint=hint, want_time=True)
         case "boolean":
             parsed = normalisation.parse_bool(text)
             if parsed is None:
-                return None, f"{text!r} does not read as yes or no."
-            return parsed, None
+                return Coercion(error=f"{text!r} does not read as yes or no.")
+            return Coercion(parsed)
         case "json":
             return _coerce_json(text)
         case _:  # pragma: no cover — normalise_data_type prevents this
-            return text, None
+            return Coercion(text)
 
 
 #: Ways a document says "there were none". Read as zero rather than as missing,
@@ -179,49 +226,57 @@ _EXPLICIT_ZERO = frozenset(
 )
 
 
-def _coerce_integer(text: str) -> tuple[Any, str | None]:
+def _coerce_integer(text: str) -> Coercion:
     count = normalisation.parse_count(text)
     if count is not None:
-        return count, None
+        return Coercion(count)
 
     cleaned = text.strip().lower().rstrip(".")
     if cleaned in _EXPLICIT_ZERO or cleaned.startswith(("none ", "no ", "nil ")):
-        return 0, None
+        return Coercion(0)
 
-    number, error = _coerce_number(text)
-    if number is None:
-        return None, error or f"{text!r} does not read as a whole number."
-    return int(number), None
+    number = _coerce_number(text)
+    if number.value is None:
+        return Coercion(error=number.error or f"{text!r} does not read as a whole number.")
+    return Coercion(int(number.value))
 
 
-def _coerce_number(text: str) -> tuple[Any, str | None]:
+def _coerce_number(text: str) -> Coercion:
     match = _MONEY_RE.search(text)
     if match is None:
-        return None, f"{text!r} contains no number."
+        return Coercion(error=f"{text!r} contains no number.")
     try:
-        return float(re.sub(r"[,\s]", "", match.group(0))), None
+        return Coercion(float(re.sub(r"[,\s]", "", match.group(0))))
     except ValueError:  # pragma: no cover — the pattern guarantees a parseable body
-        return None, f"{text!r} does not read as a number."
+        return Coercion(error=f"{text!r} does not read as a number.")
 
 
-def _coerce_money(text: str) -> tuple[Any, str | None]:
+def _coerce_money(text: str) -> Coercion:
     """Minor units, so a stored amount is an integer and never a float of pence."""
     minor = normalisation.parse_money_minor(text)
     if minor is None:
-        return None, f"{text!r} does not read as an amount of money."
-    return minor, None
+        return Coercion(error=f"{text!r} does not read as an amount of money.")
+    return Coercion(minor)
 
 
-def _coerce_temporal(text: str, *, want_time: bool) -> tuple[Any, str | None]:
-    parsed = normalisation.parse_datetime(text)
-    if parsed is None:
-        return None, f"{text!r} does not read as a date."
-    if want_time:
-        return parsed.isoformat(), None
-    return parsed.date().isoformat(), None
+def _coerce_temporal(
+    text: str, *, reference: datetime | None, hint: str | None, want_time: bool
+) -> Coercion:
+    """A date or a timestamp, read against the notice's own date.
+
+    The stored form is ISO text rather than a `datetime`, because `value_json` is
+    a JSON column: a date has to survive a round trip through it and come back
+    comparable. The reading's note travels with it, so the review screen can show
+    the words the document used *and* what they were taken to mean.
+    """
+    reading = temporal.resolve(text, reference=reference, hint=hint)
+    if reading.value is None:
+        return Coercion(error=reading.error, note=reading.note)
+    stamp = reading.value.isoformat() if want_time else reading.value.date().isoformat()
+    return Coercion(stamp, note=reading.note, conflict=reading.conflict)
 
 
-def _coerce_json(text: str) -> tuple[Any, str | None]:
+def _coerce_json(text: str) -> Coercion:
     """Parse a JSON value, tolerating the fences a model wraps them in."""
     candidate = text.strip()
     if candidate.startswith("```"):
@@ -231,9 +286,9 @@ def _coerce_json(text: str) -> tuple[Any, str | None]:
             candidate = candidate[4:]
         candidate = candidate.rsplit("```", 1)[0]
     try:
-        return json.loads(candidate.strip()), None
+        return Coercion(json.loads(candidate.strip()))
     except (ValueError, TypeError):
-        return None, "The value is not valid JSON."
+        return Coercion(error="The value is not valid JSON.")
 
 
 def render_value(coerced: Any, data_type: str) -> str | None:
@@ -257,6 +312,7 @@ def render_value(coerced: Any, data_type: str) -> str | None:
 
 __all__ = [
     "DATA_TYPES",
+    "Coercion",
     "DatasetSchema",
     "FieldSpec",
     "coerce_value",

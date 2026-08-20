@@ -5,6 +5,13 @@ pure function from `app.domain`, persist the ranked result, and never decide. Bo
 can be pointed at an external system later by swapping the repository, because
 none of the ranking logic is in SQL.
 
+They are reached differently, though. The catastrophe matcher is a pipeline stage
+of its own; the duplicate scan is not, and is run by
+`app.services.fnol.identification` as part of identifying the policy. A repeat is
+scored against the policy the notice was matched to, so the two questions are one
+stage — and running the scan anywhere else would either score against a policy
+that had not been settled yet, or score it twice.
+
 The rule they share is the one this module exists to enforce: an AI never
 introduces a claim or a catastrophe event that is not already a record in the
 database. Candidates come *from* the repository, so a hallucinated reference
@@ -21,13 +28,15 @@ officer can see why each candidate was ranked where it was.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.config import FNOLSettings, settings
 from app.core.logging import get_logger
 from app.domain import catastrophe as cat_rules
 from app.domain import duplicates as duplicate_rules
+from app.domain.enums import DuplicateResolution
+from app.models.fnol import FNOLDuplicateCandidate
 from app.repositories.catastrophe import CatEventRepository
 from app.repositories.claim import ClaimRepository
 from app.repositories.fnol import FNOLRepository
@@ -43,13 +52,37 @@ logger = get_logger(__name__)
 @dataclass(slots=True)
 class DuplicateOutcome:
     candidates: list[duplicate_rules.DuplicateAssessment]
+    #: The rows those assessments were written to, in the same order. Carried on
+    #: the outcome so that everything downstream of the scan reads what the scan
+    #: just wrote rather than querying for it again — and because the officer's
+    #: `resolution` lives on the row and not on the assessment, which is the one
+    #: thing a re-scored candidate does not tell you.
+    records: list[FNOLDuplicateCandidate] = field(default_factory=list)
+    #: How many recent notices and claims were actually scored to produce those
+    #: candidates. Carried out of the scan rather than only logged, because "no
+    #: repeat found" and "nothing was there to compare against" are different
+    #: answers and an officer cannot tell them apart from an empty list.
+    compared: int = 0
 
     @property
     def strongest(self) -> duplicate_rules.DuplicateAssessment | None:
         return self.candidates[0] if self.candidates else None
 
+    @property
+    def unresolved(self) -> list[FNOLDuplicateCandidate]:
+        """The candidates still holding the case, which are the ones that act.
+
+        A candidate an officer has decided about — linked, dismissed or accepted
+        as a repeat — is part of the record and is never pruned, but it no longer
+        raises an exception or drags the completeness score down.
+        """
+        return [
+            record for record in self.records if record.resolution == DuplicateResolution.UNRESOLVED
+        ]
+
     def as_dict(self) -> dict[str, Any]:
         return {
+            "compared": self.compared,
             "candidates": [
                 {
                     "reference": candidate.reference,
@@ -58,7 +91,7 @@ class DuplicateOutcome:
                     "reasons": [reason.as_dict() for reason in candidate.reasons],
                 }
                 for candidate in self.candidates
-            ]
+            ],
         }
 
 
@@ -103,7 +136,7 @@ class DuplicateDetectionService:
         ]
         scoring.sort(key=lambda entry: entry[0].score, reverse=True)
 
-        for assessment, record, kind in scoring:
+        records = [
             await self._fnol.upsert_duplicate(
                 case.id,
                 candidate_kind=kind,
@@ -113,6 +146,8 @@ class DuplicateDetectionService:
                 candidate_fnol_id=record.id if kind == "fnol" else None,
                 candidate_claim_id=record.id if kind == "claim" else None,
             )
+            for assessment, record, kind in scoring
+        ]
 
         await self._fnol.prune_duplicates(
             case.id, [assessment.reference for assessment, _, _ in scoring]
@@ -124,7 +159,11 @@ class DuplicateDetectionService:
             compared=len(assessments),
             candidates=len(scoring),
         )
-        return DuplicateOutcome(candidates=[assessment for assessment, _, _ in scoring])
+        return DuplicateOutcome(
+            candidates=[assessment for assessment, _, _ in scoring],
+            records=records,
+            compared=len(assessments),
+        )
 
 
 # ---------------------------------------------------------------------------

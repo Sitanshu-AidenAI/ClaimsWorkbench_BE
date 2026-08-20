@@ -757,6 +757,16 @@ async def _identification_view(context: FNOLContext, case: FNOLCase) -> api.Poli
     selected = next((match for match in matches if match.selected), None)
     present = [signal for signal in signals if signal.outcome is SignalOutcome.MATCH]
 
+    # The scan's own account of itself, read from the analysis it wrote rather than
+    # re-run: `compared` only exists there. The two counts below come from the live
+    # rows instead, because an officer resolving a candidate must move `unresolved`
+    # without the whole stage being re-identified first.
+    duplicate_analysis = await context.cases.get_analysis(case.id, AnalysisKind.DUPLICATES)
+    duplicate_payload: dict[str, Any] = (
+        (duplicate_analysis.result or {}) if duplicate_analysis is not None else {}
+    )
+    duplicate_rows = await context.cases.list_duplicates(case.id)
+
     return api.PolicyIdentificationOut(
         reference=case.reference,
         status=case.policy_identification_status,
@@ -769,6 +779,20 @@ async def _identification_view(context: FNOLContext, case: FNOLCase) -> api.Poli
         signals_missing=len(signals) - len(present),
         candidates=candidates,
         near_misses=near_misses,
+        duplicate_scan=api.DuplicateScanOut(
+            ran_at=duplicate_analysis.created_at if duplicate_analysis is not None else None,
+            compared=(
+                int(duplicate_payload["compared"])
+                if duplicate_payload.get("compared") is not None
+                else None
+            ),
+            found=len(duplicate_rows),
+            unresolved=sum(
+                1
+                for row in duplicate_rows
+                if row.resolution == DuplicateResolution.UNRESOLVED
+            ),
+        ),
         recommended_policy_id=_optional_uuid(payload.get("recommended_policy_id")),
         selected_policy_id=selected.policy_id if selected is not None else None,
         policy_confirmed=bool(case.policy_confirmed),
@@ -948,6 +972,11 @@ async def rerun_policy_identification(
     and is what an officer wants after a policy has been loaded into the book or
     after they have corrected the insured's name.
 
+    The repeat check comes with it, because it is part of the identification stage:
+    a notice that has just been matched to a different policy is a different notice
+    to the duplicate scan, and leaving the old candidates behind it would be showing
+    the officer a list scored against a policy they no longer have.
+
     A notice that has already been confirmed is left alone: re-running would
     reshuffle candidates behind a decision somebody has already taken.
     """
@@ -961,12 +990,44 @@ async def rerun_policy_identification(
             "selection instead of re-running identification."
         )
 
-    result = await context.identification.identify(case)
+    outcome = await context.identification.identify(case)
+
+    # Both analyses are rewritten, because `_identification_view` reads `strength`,
+    # `policies_compared` and the near misses out of the stored record rather than
+    # off the result. A rerun that refreshed only the candidate rows would answer
+    # with a fresh ranking and a stale explanation of it — the near-miss list would
+    # still name the policies the *previous* run rejected. The fingerprint is
+    # carried over rather than recomputed: the notice was not re-read, so what the
+    # extraction was built from has not changed.
+    for kind, result, confidence in (
+        (
+            AnalysisKind.POLICY_IDENTIFICATION,
+            outcome.result.as_dict(),
+            outcome.result.best.score if outcome.result.best else None,
+        ),
+        (
+            AnalysisKind.DUPLICATES,
+            outcome.duplicates.as_dict(),
+            outcome.duplicates.strongest.score if outcome.duplicates.strongest else None,
+        ),
+    ):
+        previous = await context.cases.get_analysis(case.id, kind)
+        await context.cases.record_analysis(
+            case.id,
+            kind=kind,
+            provider="deterministic",
+            model=None,
+            input_fingerprint=(previous.input_fingerprint if previous is not None else ""),
+            result=result,
+            confidence=confidence,
+        )
+
     await context.commit()
     logger.info(
         "fnol_policy_identification_rerun",
         reference=case.reference,
-        candidates=len(result.candidates),
+        candidates=len(outcome.result.candidates),
+        duplicates=len(outcome.duplicates.candidates),
     )
     return await _identification_view(context, case)
 

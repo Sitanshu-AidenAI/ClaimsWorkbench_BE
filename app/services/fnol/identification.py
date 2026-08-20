@@ -1,6 +1,6 @@
 """Identifying the policy behind a notice, and recording the officer's decision.
 
-The orchestration around `app.domain.policy_identification`, and it does four
+The orchestration around `app.domain.policy_identification`, and it does five
 things the pure engine deliberately cannot:
 
 1. **Reads the notice.** Builds a `NoticeSignals` from the case's columns and the
@@ -12,7 +12,14 @@ things the pure engine deliberately cannot:
 3. **Persists.** Ranked candidates become rows an officer can act on; the whole
    answer — including the near misses that fell below the line — becomes an
    analysis, because "why is my policy not in the list" needs an answer.
-4. **Records the decision.** Confirmation and referral both. A referral is a
+4. **Checks whether the loss has been notified before.** The repeat check runs
+   here, and only here. It is the same question asked of the same notice — *which
+   contract is this, and have we already seen it* — and it has to run after the
+   policy has been settled, because a repeat is scored on the policy first and
+   everything else second. Doing it in a stage of its own meant scoring a notice
+   against a policy the pipeline had chosen but a re-run of identification alone
+   never revisited, which left the duplicate list quietly stale.
+5. **Records the decision.** Confirmation and referral both. A referral is a
    decision that no policy could be identified, which is a different state from
    never having asked.
 
@@ -43,6 +50,7 @@ from app.domain.enums import (
 from app.domain.matching import normalise
 from app.repositories.fnol import FNOLRepository
 from app.repositories.policy import PolicyRepository
+from app.services.fnol.matching import DuplicateDetectionService, DuplicateOutcome
 
 logger = get_logger(__name__)
 
@@ -87,22 +95,37 @@ class Citation:
     confidence: float | None = None
 
 
+@dataclass(slots=True)
+class IdentificationOutcome:
+    """Everything the identification stage settled, in one return value.
+
+    Two answers rather than one because the stage asks two questions of the same
+    notice, and the second is only answerable once the first is: which policy is
+    this, and is this loss already on the desk under another reference.
+    """
+
+    result: engine.IdentificationResult
+    duplicates: DuplicateOutcome
+
+
 class PolicyIdentificationService:
     def __init__(
         self,
         policies: PolicyRepository,
         fnol: FNOLRepository,
+        duplicates: DuplicateDetectionService,
         *,
         config: FNOLSettings | None = None,
     ) -> None:
         self._policies = policies
         self._fnol = fnol
+        self._duplicates = duplicates
         self._config = config or settings.fnol
 
     # -- Identification ------------------------------------------------------
 
-    async def identify(self, case: Any) -> engine.IdentificationResult:
-        """Rank the policy book against this notice and persist the working.
+    async def identify(self, case: Any) -> IdentificationOutcome:
+        """Rank the policy book against this notice, then check it is not a repeat.
 
         Never binds a policy a person has not seen, with one exception that is not
         really one: an unambiguous match is written to `case.policy_id` so that
@@ -156,6 +179,13 @@ class PolicyIdentificationService:
             else:
                 case.policy_id = None
 
+        # The repeat check, and the only place it runs. It has to come after the
+        # policy has been settled: `app.domain.duplicates` weights the policy
+        # above every other signal and falls back to comparing `policy_id` when
+        # neither record quotes a number, so a scan run before this point would be
+        # scoring the strongest signal it has against a blank.
+        duplicates = await self._duplicates.detect(case)
+
         logger.info(
             "fnol_policy_identification",
             reference=case.reference,
@@ -164,8 +194,9 @@ class PolicyIdentificationService:
             near_misses=len(result.near_misses),
             status=result.status.value,
             strength=result.strength.value,
+            duplicates=len(duplicates.candidates),
         )
-        return result
+        return IdentificationOutcome(result=result, duplicates=duplicates)
 
     async def notice_signals(self, case: Any) -> engine.NoticeSignals:
         """What the notice said, with each value carrying its citation.

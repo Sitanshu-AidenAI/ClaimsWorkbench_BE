@@ -375,7 +375,15 @@ class FNOLExtractionService:
         await record(
             "loss.date_of_loss",
             loss.date_of_loss,
-            parsed=normalisation.parse_datetime(loss.date_of_loss.value, loss.time_of_loss.value),
+            parsed=normalisation.parse_datetime(
+                loss.date_of_loss.value,
+                loss.time_of_loss.value,
+                # The notice's own arrival, so a loss the model read as "yesterday
+                # afternoon" lands on the case here exactly as it does on the
+                # dataset path. Without it the words resolve against today, which
+                # on a notice processed a week late is a week wrong.
+                reference=getattr(case, "received_at", None),
+            ),
             attribute="date_of_loss",
         )
         await record(

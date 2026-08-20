@@ -473,11 +473,69 @@ def classify_from_text(
     )
 
 
+#: Phrases that contain a loss type's name without describing that loss.
+#:
+#: `fire` is the case that matters and the reason this table exists: it is the
+#: first loss type configured on the property line, and a claim notice mentions
+#: the fire service, a fire alarm or a fire door far more often than it describes
+#: a fire. Every entry here is a noun phrase naming an organisation, a piece of
+#: equipment or a document — never an event.
+_NOT_THE_LOSS = (
+    "fire department",
+    "fire brigade",
+    "fire service",
+    "fire and rescue",
+    "fire authority",
+    "fire marshal",
+    "fire officer",
+    "fire crew",
+    "firefighter",
+    "fire alarm",
+    "fire suppression",
+    "fire sprinkler",
+    "fire hydrant",
+    "fire door",
+    "fire escape",
+    "fire extinguisher",
+    "fire risk assessment",
+    "fire certificate",
+    "flood defence",
+    "flood plain",
+    "flood zone",
+    "theft alarm",
+)
+
+
 def _loss_type_from_text(lowered: str, line: LineOfBusiness) -> str | None:
-    """The first configured loss type whose name appears in the notice."""
-    for loss_type in LOSS_TYPES.get(line, ()):
+    """The configured loss type the notice talks about most, or `None`.
+
+    Counted rather than taken in list order. Order was the whole defect: `fire`
+    leads the property line, so one mention of the attending fire brigade outranked
+    six of the escape of water that actually happened. Counting makes the answer
+    depend on the notice instead of on the table, and ties still fall back to table
+    order so a genuinely balanced notice reads as it always did.
+
+    Still deliberately crude — it is a cross-check on a model and the reader of
+    last resort when no model is configured, not a classifier. It says nothing
+    about negation, so "there was no fire" counts as a mention; that costs a
+    confidence point on a rare notice, where mis-weighting the common ones cost the
+    answer.
+    """
+    scores: list[tuple[int, int, str]] = []
+    for order, loss_type in enumerate(LOSS_TYPES.get(line, ())):
         if loss_type == "other":
             continue
-        if loss_type.replace("_", " ") in lowered:
-            return loss_type
-    return None
+        phrase = loss_type.replace("_", " ")
+        hits = len(re.findall(rf"\b{re.escape(phrase)}\b", lowered))
+        if not hits:
+            continue
+        # A mention inside one of the phrases above is not a mention of the loss.
+        for decoy in _NOT_THE_LOSS:
+            if phrase in decoy:
+                hits -= lowered.count(decoy)
+        if hits > 0:
+            scores.append((hits, -order, loss_type))
+
+    if not scores:
+        return None
+    return max(scores)[2]

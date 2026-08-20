@@ -9,6 +9,7 @@ overwritten, a currency applied after the amount it was meant to qualify.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -38,6 +39,9 @@ class FakeCase:
         self.reference = "FNOL-2026-000123"
         self.source_body = body
         self.currency = "GBP"
+        #: The notice's own date, which every temporal reading is resolved
+        #: against. A case without one cannot answer "what does 'Friday' mean".
+        self.received_at = datetime(2026, 3, 16, 13, 22, tzinfo=UTC)
         self.extraction_confidence: float | None = None
         # Attributes the write-back table addresses.
         self.policy_number: str | None = None
@@ -407,11 +411,57 @@ class TestWriteBack:
         """
         repository = FakeFNOLRepository()
         adapter = FNOLWriteBackAdapter(repository)  # type: ignore[arg-type]
+        case_without_a_date = FakeCase()
         result = await adapter.apply(
-            FakeCase(),  # type: ignore[arg-type]
+            case_without_a_date,  # type: ignore[arg-type]
             [make_value("loss.date_of_loss", "08 March 2099", data_type="datetime")],
         )
         assert result.raw_loss_date == "08 March 2099"
+        assert case_without_a_date.date_of_loss is None
+
+    async def test_the_coerced_instant_is_what_lands_on_the_claim_record(self) -> None:
+        """One reading of the date, not two.
+
+        The extraction resolved the words against the notice's date, stored the
+        result and told the officer how it got there. Re-reading the text here
+        would be a second opinion nobody asked for and nobody can see — and the
+        column and the review screen would disagree the first time the two
+        readings differed.
+        """
+        repository = FakeFNOLRepository()
+        adapter = FNOLWriteBackAdapter(repository)  # type: ignore[arg-type]
+        case = FakeCase()
+
+        await adapter.apply(
+            case,  # type: ignore[arg-type]
+            [
+                make_value(
+                    "loss.date_of_loss",
+                    "overnight on Friday",
+                    data_type="datetime",
+                    typed="2026-03-13T22:00:00+00:00",
+                )
+            ],
+        )
+        assert case.date_of_loss == datetime(2026, 3, 13, 22, 0, tzinfo=UTC)
+
+    async def test_a_value_with_no_coerced_form_is_read_against_the_notice(self) -> None:
+        """The path a row written by an earlier run takes.
+
+        `value_json` is empty on a value extracted before dates were resolved, so
+        the text is re-read here — and against the same notice date, so the answer
+        is the one the extraction would have given. This case's notice arrived on
+        Monday 16 March 2026, which makes "yesterday" the Sunday.
+        """
+        repository = FakeFNOLRepository()
+        adapter = FNOLWriteBackAdapter(repository)  # type: ignore[arg-type]
+        case = FakeCase()
+
+        await adapter.apply(
+            case,  # type: ignore[arg-type]
+            [make_value("loss.date_of_loss", "yesterday", data_type="datetime")],
+        )
+        assert case.date_of_loss == datetime(2026, 3, 15, tzinfo=UTC)
 
     async def test_overall_confidence_averages_the_fields_that_answered(self) -> None:
         """Not all of them.

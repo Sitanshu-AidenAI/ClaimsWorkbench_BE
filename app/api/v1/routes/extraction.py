@@ -403,12 +403,17 @@ async def update_value(
     value.highlight_note = None
 
     if spec is not None:
-        coerced, error = spec.coerce(cleaned)
-        value.value_json = coerced if cleaned is not None else None
-        value.validation_error = error
+        # Read against the notice's own date, exactly as the model's answer was: an
+        # officer typing "Friday" into the date of loss means the same Friday the
+        # broker meant, and the two paths must not disagree about which one.
+        coerced = spec.coerce(cleaned, reference=case.received_at)
+        value.value_json = coerced.value if cleaned is not None else None
+        value.validation_error = coerced.error
+        value.inference_note = coerced.note
     else:
         value.value_json = None
         value.validation_error = None
+        value.inference_note = None
 
     # Mirrored onto the claim record in the same transaction, so the review
     # screen and the pipeline cannot disagree about what the value is.
