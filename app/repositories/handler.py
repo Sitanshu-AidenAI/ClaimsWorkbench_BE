@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.reference_data import Handler
@@ -21,6 +21,31 @@ class HandlerRepository:
     async def get_by_subject(self, subject: str) -> Handler | None:
         statement = select(Handler).where(Handler.subject == subject)
         return (await self._session.execute(statement)).scalars().first()
+
+    async def get_by_email(self, email: str) -> Handler | None:
+        """One handler by address, case-insensitively.
+
+        Used only to *adopt* a directory row when somebody signs in for the first
+        time — a colleague whose seeded record predates their account. Matched with
+        `lower()` on both sides because an address is not case-sensitive and a token
+        may present it either way, and this comparison decides whether a real person
+        claims their row or gets a duplicate.
+        """
+        statement = select(Handler).where(func.lower(Handler.email) == email.lower())
+        return (await self._session.execute(statement)).scalars().first()
+
+    def add(self, handler: Handler) -> Handler:
+        self._session.add(handler)
+        return handler
+
+    async def flush(self) -> None:
+        """Push pending inserts so a generated id is available.
+
+        Not a commit: the caller still owns the transaction. Sessions here are built
+        with `autoflush=False`, so a directory row that has just been added is
+        invisible to the next query until this runs.
+        """
+        await self._session.flush()
 
     async def list_available(self) -> Sequence[Handler]:
         """Every active handler, for the assignment engine to score.

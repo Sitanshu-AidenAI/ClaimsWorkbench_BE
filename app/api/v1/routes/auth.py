@@ -41,10 +41,12 @@ from app.core.errors import (
 )
 from app.core.logging import get_logger
 from app.core.oidc import OIDCClient, PkcePair, TokenResponse, get_oidc_client
-from app.core.security import principal_from_claims, verifier
+from app.core.security import Principal, principal_from_claims, verifier
+from app.repositories.handler import HandlerRepository
 from app.services.access.service import AccessService
 from app.services.auth.store import Grant, GrantReuseError, RefreshGrantStore
 from app.services.auth.throttle import LoginThrottle
+from app.services.handlers import HandlerDirectoryService
 
 logger = get_logger(__name__)
 
@@ -181,6 +183,7 @@ async def callback(
     client: ClientDep,
     store: StoreDep,
     config: SettingsDep,
+    session: SessionDep,
     code: Annotated[str | None, Query()] = None,
     state: Annotated[str | None, Query()] = None,
     error: Annotated[str | None, Query()] = None,
@@ -215,6 +218,11 @@ async def callback(
         id_token=tokens.id_token,
         via="sso",
     )
+
+    # The redirect flow hands the browser a cookie rather than a session payload, so
+    # it never reaches `_session_response`. Without this an SSO user would sign in
+    # for months and never appear in the directory a manager assigns from.
+    await _register_handler(session, principal)
 
     redirect = _to_frontend(config, transaction["return_to"] or "/claims", None)
     _set_grant_cookie(redirect, config, grant.handle)
@@ -322,7 +330,11 @@ async def _grant_for_logout(store: RefreshGrantStore, handle: str) -> Grant | No
 
 
 async def _session_response(
-    tokens: TokenResponse, config: Settings, session: AsyncSession
+    tokens: TokenResponse,
+    config: Settings,
+    session: AsyncSession,
+    *,
+    register: bool = False,
 ) -> SessionResponse:
     """The access token, who it belongs to, and what they may reach.
 
@@ -332,10 +344,20 @@ async def _session_response(
 
     The capability list is resolved here rather than by the client, so the rail draws
     from the same answer `require_capability` enforces on.
+
+    `register` is off by default, and that default is the point: this function serves
+    `/auth/token` as well as `/auth/login`, and a browser renews its token every few
+    minutes. Writing to the handler directory on every renewal would be a lookup and
+    a commit per user per few minutes to record something that changes when a person
+    is renamed. Sign-in is the moment; refreshing a token is not a sign-in.
     """
     claims = verifier.decode(tokens.access_token)
     principal = principal_from_claims(claims, client_id=config.keycloak.client_id)
     held = await AccessService(session).capabilities_for_roles(principal.roles)
+
+    if register:
+        await _register_handler(session, principal)
+
     return SessionResponse(
         access_token=tokens.access_token,
         # Shortened by the margin so the SPA renews before the token is actually
@@ -348,6 +370,37 @@ async def _session_response(
         roles=sorted(principal.roles),
         capabilities=sorted(c.value for c in held),
     )
+
+
+async def _register_handler(session: AsyncSession, principal: Principal) -> None:
+    """Make sure a signed-in handler exists in the directory a manager assigns from.
+
+    Called from the two paths that establish a session — the password grant and the
+    SSO callback — and from neither refresh.
+
+    Here rather than from a nightly synchronisation because the token in hand is the
+    best source of this person's subject, name and address that exists: it is what
+    the identity provider has just asserted about them. Reading the realm's user
+    list instead would need an administrative grant on Keycloak that this service
+    account does not hold and should not need.
+
+    **A failure here must not cost somebody their sign-in.** Being absent from the
+    assignment dialog is an inconvenience a manager can work around; not being able
+    to log in is not. So the write is committed on its own and a failure is logged
+    and swallowed, which is the one place in this codebase where that is the right
+    trade.
+    """
+    try:
+        await HandlerDirectoryService(HandlerRepository(session)).register(principal)
+        await session.commit()
+    except Exception:  # Deliberately broad — see the docstring: sign-in outranks this.
+        logger.warning("handler_registration_failed", subject=principal.subject, exc_info=True)
+        # Guarded in turn. A block whose whole purpose is that nothing here can cost
+        # somebody their sign-in must not raise out of its own recovery.
+        try:
+            await session.rollback()
+        except Exception:  # Deliberately broad, for the same reason.
+            logger.warning("handler_registration_rollback_failed", exc_info=True)
 
 
 # --- Sign in with a password -------------------------------------------------
@@ -417,7 +470,7 @@ async def login(
     await throttle.clear(ip=ip, email=email)
 
     logger.info("auth_signed_in", subject=principal.subject, method="password")
-    return await _session_response(tokens, config, session)
+    return await _session_response(tokens, config, session, register=True)
 
 
 def _signin_refusal(exc: AuthenticationError) -> AuthenticationError:

@@ -11,11 +11,13 @@ from fastapi import APIRouter
 
 from app.api.v1.routes import (
     access,
+    approvals,
     auth,
     claims,
     extraction,
     fnol,
     health,
+    inspections,
     mail_intake,
     meta,
     notifications,
@@ -32,6 +34,12 @@ api_router.include_router(meta.router)
 api_router.include_router(access.router)
 api_router.include_router(fnol.router)
 api_router.include_router(claims.router)
+# The adjuster's board over the same records — its own prefix, so nothing here
+# can shadow `claims`' `/{reference}` patterns.
+api_router.include_router(inspections.router)
+# The manager's queue, likewise its own prefix — see the module docstring on why
+# it carries no decision endpoint of its own.
+api_router.include_router(approvals.router)
 api_router.include_router(mail_intake.router)
 api_router.include_router(notifications.router)
 # The policy library. Its own prefix, so nothing here can shadow `fnol`'s

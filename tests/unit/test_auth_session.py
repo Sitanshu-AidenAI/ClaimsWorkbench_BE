@@ -24,6 +24,7 @@ from app.core.oidc import PkcePair, TokenResponse
 from app.domain.capabilities import Capability, capabilities_for
 from app.services.access.service import AccessService
 from app.services.auth.store import GrantReuseError, RefreshGrantStore
+from app.services.handlers import HandlerDirectoryService
 from tests.unit.fakes import FakeRedis
 
 pytestmark = pytest.mark.anyio
@@ -296,6 +297,15 @@ def auth_app(app: object, redis: FakeRedis, monkeypatch: pytest.MonkeyPatch) -> 
         return capabilities_for(roles)
 
     monkeypatch.setattr(AccessService, "capabilities_for_roles", _defaults)
+
+    # Sign-in also puts the caller in the handler directory, which is a write and
+    # therefore needs the engine these tests do not have. Stubbed for the same
+    # reason the capability lookup above is — what is under test here is the token
+    # exchange, and `test_handler_directory.py` covers the registration itself.
+    async def _no_registration(self: object, principal: object) -> None:
+        return None
+
+    monkeypatch.setattr(HandlerDirectoryService, "register", _no_registration)
 
     async def _no_session() -> AsyncIterator[None]:
         yield None

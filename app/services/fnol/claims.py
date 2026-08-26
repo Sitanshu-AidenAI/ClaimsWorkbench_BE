@@ -33,14 +33,16 @@ from app.domain.enums import (
     ClaimStatus,
     ExceptionStatus,
     FNOLStatus,
+    MovementType,
 )
 from app.domain.lifecycle import blocking_codes, can_transition
 from app.domain.references import CLAIM_PREFIX
-from app.models.claim import Claim
+from app.models.claim import Claim, ClaimReserveMovement
 from app.models.fnol import FNOLCase
 from app.repositories.claim import ClaimRepository
 from app.repositories.fnol import FNOLRepository
 from app.repositories.reference import ReferenceRepository
+from app.services.claims.coverage import ClaimCoverageService
 from app.services.fnol.audit import AuditService
 from app.services.fnol.triage import AssignmentService, TriageService
 
@@ -87,6 +89,7 @@ class ClaimCreationService:
         triage: TriageService,
         assignment: AssignmentService,
         audit: AuditService,
+        coverage: ClaimCoverageService | None = None,
     ) -> None:
         self._fnol = fnol
         self._claims = claims
@@ -94,6 +97,13 @@ class ClaimCreationService:
         self._triage = triage
         self._assignment = assignment
         self._audit = audit
+        #: Optional, and defaulted, unlike every collaborator above it. This is
+        #: the one dependency that reaches *forward* into the claims module
+        #: rather than sideways within intake, and the unit tests that predate
+        #: coverage sections construct this service without one. A claim created
+        #: without it is a claim with no coverage rows, which is exactly what
+        #: those tests are asserting about — so `None` means "skip", not "break".
+        self._coverage = coverage
 
     async def blockers(self, case: FNOLCase) -> list[Blocker]:
         """What stands between this notice and a claim, in the order to fix it."""
@@ -253,6 +263,56 @@ class ClaimCreationService:
                 "categories": triage_row.categories,
             },
         )
+
+        # The opening reserve, as a ledger entry rather than only a column.
+        #
+        # `reserve_minor` above is seeded from the notice's estimated loss, and until
+        # this existed nothing explained it: the financials tab sums the movement
+        # ledger to get what is held, found nothing, and reported the claim's own
+        # header as stale on every claim ever created. The cache and its explanation
+        # now agree by construction.
+        #
+        # Written here rather than through `ClaimCaseworkService.post_movement`
+        # because that method *adds* to the cache, which is already correct — and
+        # because triage runs below and reads `reserve_minor` to decide whether the
+        # claim is over a handler's authority, so the column has to be right before
+        # it, not after.
+        if claim.reserve_minor:
+            self._claims.add_movement(
+                ClaimReserveMovement(
+                    claim_id=claim.id,
+                    movement_type=str(MovementType.INDEMNITY),
+                    amount_minor=claim.reserve_minor,
+                    currency=claim.currency,
+                    rationale=(
+                        "Opening reserve, set from the estimated loss read off the "
+                        "notification. Revise it once the loss has been assessed."
+                    ),
+                    basis=f"Notification {case.reference}",
+                    set_by=actor,
+                    occurred_at=now,
+                )
+            )
+            self._audit.claim(
+                claim,
+                event_type=AuditEventType.RESERVE_MOVED,
+                summary=(
+                    f"Opening reserve of {claim.reserve_minor} {claim.currency} set from "
+                    f"the notification's estimated loss."
+                ),
+                actor="Claim creation",
+                actor_type=ActorType.AI,
+                after={"reserve_minor": claim.reserve_minor},
+                context={"fnol_reference": case.reference},
+            )
+
+        # The claim's coverage sections, its parties and its excess, derived from
+        # the policy and the notice in the same transaction as the claim itself.
+        # After triage rather than before it because nothing in triage reads them,
+        # and a reader of this method should meet the records in the order a
+        # handler does: what kind of claim it is, who has it, then what it covers.
+        if self._coverage is not None:
+            await self._coverage.materialise(claim, case, actor=actor)
 
         assignment = await self._assignment.recommend(claim, triage_row)
         self._audit.claim(
