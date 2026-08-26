@@ -22,6 +22,7 @@ from app.domain.enums import (
     RiskLevel,
     Severity,
 )
+from app.domain.money import format_amount, to_currency
 from app.models.claim import Claim, ClaimAssignment, ClaimTriage
 from app.repositories.claim import ClaimRepository
 from app.repositories.handler import HandlerRepository
@@ -39,6 +40,7 @@ class TriageService:
         result = rules.triage(
             severity=_severity(claim.severity),
             estimated_loss_minor=claim.reserve_minor,
+            currency=claim.currency,
             line_of_business=_line(claim.line_of_business),
             fraud_risk=_risk(case.fraud_risk),
             cat_matched=claim.cat_event_id is not None,
@@ -120,9 +122,18 @@ class AssignmentService:
     resting place for a claim.
     """
 
-    def __init__(self, handlers: HandlerRepository, claims: ClaimRepository) -> None:
+    def __init__(
+        self,
+        handlers: HandlerRepository,
+        claims: ClaimRepository,
+        *,
+        config: FNOLSettings | None = None,
+    ) -> None:
         self._handlers = handlers
         self._claims = claims
+        #: Only for the exchange rates the authority check needs — a reserve in
+        #: dollars against an authority limit in pounds is not a comparison.
+        self._config = config or settings.fnol
 
     async def recommend(self, claim: Claim, triage_row: ClaimTriage) -> ClaimAssignment:
         available = list(await self._handlers.list_available())
@@ -197,7 +208,25 @@ class AssignmentService:
         await self._handlers.increment_workload(handler.id, 1)
 
         if claim.reserve_minor and handler.authority_limit_minor:
-            claim.over_authority = claim.reserve_minor > handler.authority_limit_minor
+            # The reserve is in the claim's currency and the limit in the handler's.
+            # Comparing the integers put a $600,000 reserve inside a £500,000
+            # authority; converting first is the whole of the fix.
+            reserve = to_currency(
+                claim.reserve_minor, claim.currency, handler.currency, config=self._config
+            )
+            if reserve is None:
+                # Not comparable, so not cleared. Flagging sends the claim to the
+                # over-authority queue for a manager, which is the safe side of a
+                # comparison nobody can make.
+                claim.over_authority = True
+                logger.warning(
+                    "claim_authority_not_comparable",
+                    reference=claim.reference,
+                    reserve=format_amount(claim.reserve_minor, claim.currency),
+                    authority=format_amount(handler.authority_limit_minor, handler.currency),
+                )
+            else:
+                claim.over_authority = reserve.amount_minor > handler.authority_limit_minor
 
         logger.info(
             "claim_assigned", reference=claim.reference, handler=handler.full_name, actor=actor

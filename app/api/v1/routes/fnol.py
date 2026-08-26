@@ -788,9 +788,7 @@ async def _identification_view(context: FNOLContext, case: FNOLCase) -> api.Poli
             ),
             found=len(duplicate_rows),
             unresolved=sum(
-                1
-                for row in duplicate_rows
-                if row.resolution == DuplicateResolution.UNRESOLVED
+                1 for row in duplicate_rows if row.resolution == DuplicateResolution.UNRESOLVED
             ),
         ),
         recommended_policy_id=_optional_uuid(payload.get("recommended_policy_id")),

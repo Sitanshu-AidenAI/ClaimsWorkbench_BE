@@ -44,6 +44,7 @@ from app.domain.enums import (
 from app.models.audit import AuditEvent
 from app.models.extraction import (
     ExtractedValue,
+    ExtractedValueCitation,
     ExtractionRun,
     ExtractionSchema,
 )
@@ -1118,3 +1119,240 @@ class TestTheApi:
         assert response.json()["note"]
         # The dataset still travels, so the screen can draw empty panels.
         assert response.json()["dataset"]["field_count"] == 3
+
+
+SCHEDULE_CSV = (
+    "line,description,amount\n"
+    "1,Reinstatement of riser under policy SCHEMA-2026-0001,96400\n"
+    "2,Stock damaged beyond salvage — total estimated loss 128000,31600\n"
+)
+
+
+async def attach_schedule(db: Any, case: FNOLCase) -> FNOLDocument:
+    """A second document stating the same policy number and the same amount.
+
+    A spreadsheet rather than a second PDF, deliberately: it is the case the
+    single-citation model could not express at all. A schedule has no page
+    geometry, so before citations existed it could never be the thing a highlight
+    pointed at, and a value it corroborated looked exactly like one nothing
+    corroborated.
+    """
+    fnol = FNOLService(
+        FNOLRepository(db), AuditService(AuditRepository(db)), documents=DocumentProcessingService()
+    )
+    document = await fnol.attach_document(
+        case,
+        filename="reinstatement-schedule.csv",
+        content=SCHEDULE_CSV.encode(),
+        content_type="text/csv",
+        source=DocumentSource.EMAIL_ATTACHMENT,
+        actor="integration",
+    )
+    await FNOLRepository(db).flush()
+    return document
+
+
+@pytest.mark.integration
+class TestSourcesAcrossDocuments:
+    """One value, every document that states it — over the real endpoint.
+
+    The properties a fake cannot prove: the unique constraint really makes a
+    re-run replace a value's citations rather than add a second set, the cascade
+    really removes them with the case, and the endpoint really resolves geometry
+    for the document it was asked about rather than the one it read.
+    """
+
+    async def _run(self, api: Any, session: Any) -> tuple[FNOLCase, Any]:
+        case = await make_case(session)
+        schema = await make_dataset(session)
+        await attach_schedule(session, case)
+        await session.commit()
+
+        response = await api.post(
+            f"/api/v1/fnol/{case.reference}/extraction",
+            json={"schema_key": schema.key, "force": True, "run_pipeline": False},
+        )
+        assert response.status_code == 200, response.text
+        return case, schema
+
+    async def _evidence(self, api: Any, case: Any, schema: Any, **params: Any) -> Any:
+        response = await api.get(
+            f"/api/v1/fnol/{case.reference}/extraction/values/policy.policy_number/evidence",
+            params={"schema_key": schema.key, **params},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    async def test_a_value_two_documents_state_is_cited_in_both(
+        self, api: Any, session: Any
+    ) -> None:
+        case, schema = await self._run(api, session)
+
+        evidence = await self._evidence(api, case, schema)
+
+        citations = evidence["citations"]
+        assert len(citations) == 2
+        assert [row["role"] for row in citations] == ["primary", "corroborating"]
+
+        primary, corroborating = citations
+        # The passage the value was read from is the one shown, and it is first.
+        assert primary["filename"] == "survey-report.pdf"
+        assert primary["chunk_id"] is not None
+        assert evidence["document_id"] == primary["document_id"]
+        assert evidence["strategy"] == "chunk-grounded"
+
+        # The schedule was found by searching its text, and quotes its own wording.
+        assert corroborating["filename"] == "reinstatement-schedule.csv"
+        assert corroborating["chunk_id"] is None
+        assert corroborating["strategy"] == "document-search"
+        assert corroborating["quote"] == "SCHEMA-2026-0001"
+        assert corroborating["content_type"] == "text/csv"
+
+    async def test_the_values_list_carries_how_many_documents_agree(
+        self, api: Any, session: Any
+    ) -> None:
+        case, schema = await self._run(api, session)
+
+        response = await api.get(
+            f"/api/v1/fnol/{case.reference}/extraction", params={"schema_key": schema.key}
+        )
+        assert response.status_code == 200, response.text
+        values = {item["field_key"]: item for item in response.json()["values"]}
+
+        # Two documents state the policy number; nothing states the reporter's
+        # name, and the row says so without anybody having to click it.
+        assert values["policy.policy_number"]["citation_count"] == 2
+        assert values["notification.reporter_name"]["citation_count"] == 0
+
+    async def test_asking_for_one_source_highlights_that_source(
+        self, api: Any, session: Any
+    ) -> None:
+        case, schema = await self._run(api, session)
+        listed = (await self._evidence(api, case, schema))["citations"]
+        schedule = next(row for row in listed if row["filename"].endswith(".csv"))
+
+        evidence = await self._evidence(api, case, schema, document_id=schedule["document_id"])
+
+        assert evidence["document_id"] == schedule["document_id"]
+        assert evidence["filename"] == "reinstatement-schedule.csv"
+        # No page geometry in a spreadsheet, and the response says so rather than
+        # returning a page with nothing marked on it.
+        assert evidence["strategy"] == "text-only"
+        assert evidence["rects"] == []
+        assert evidence["note"]
+        assert evidence["text"] == "SCHEMA-2026-0001"
+        # The list is the same whichever source is being shown, so a stepper's
+        # "source 2 of 2" does not change under it.
+        assert [row["document_id"] for row in evidence["citations"]] == [
+            row["document_id"] for row in listed
+        ]
+
+    async def test_asking_for_a_document_that_does_not_cite_the_value_is_a_404(
+        self, api: Any, session: Any
+    ) -> None:
+        case, schema = await self._run(api, session)
+        body = next(
+            document
+            for document in await FNOLRepository(session).list_documents(case.id)
+            if document.source == DocumentSource.NOTIFICATION_BODY
+        )
+
+        response = await api.get(
+            f"/api/v1/fnol/{case.reference}/extraction/values/policy.policy_number/evidence",
+            params={"schema_key": schema.key, "document_id": str(body.id)},
+        )
+
+        # Falling back to the primary would label the survey report's page as the
+        # body's, which is the one mistake a provenance screen must not make.
+        assert response.status_code == 404
+
+    async def test_the_rectangles_are_cached_on_the_citation_they_belong_to(
+        self, api: Any, session: Any
+    ) -> None:
+        case, schema = await self._run(api, session)
+        first = await self._evidence(api, case, schema)
+        assert first["rects"], first["note"]
+
+        rows = (
+            (
+                await session.execute(
+                    select(ExtractedValueCitation)
+                    .join(ExtractedValue, ExtractedValue.id == ExtractedValueCitation.value_id)
+                    .where(
+                        ExtractedValue.fnol_case_id == case.id,
+                        ExtractedValue.field_key == "policy.policy_number",
+                    )
+                    .order_by(ExtractedValueCitation.rank)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # Cached on the primary, which was the one shown. The other citation is
+        # untouched: nobody has opened it, and measuring a page nobody asked for is
+        # the cost this whole design avoids.
+        assert rows[0].rects
+        assert rows[1].rects is None
+
+        again = await self._evidence(api, case, schema)
+        assert again["rects"] == first["rects"]
+
+    async def test_a_re_run_replaces_the_citations_rather_than_adding_a_second_set(
+        self, api: Any, session: Any
+    ) -> None:
+        case, schema = await self._run(api, session)
+        await api.post(
+            f"/api/v1/fnol/{case.reference}/extraction",
+            json={"schema_key": schema.key, "force": True, "run_pipeline": False},
+        )
+
+        evidence = await self._evidence(api, case, schema)
+        assert len(evidence["citations"]) == 2
+        assert [row["role"] for row in evidence["citations"]] == ["primary", "corroborating"]
+
+    async def test_a_correction_drops_every_citation(self, api: Any, session: Any) -> None:
+        case, schema = await self._run(api, session)
+
+        corrected = await api.patch(
+            f"/api/v1/fnol/{case.reference}/extraction/values/policy.policy_number",
+            params={"schema_key": schema.key},
+            json={"value": "CORRECTED-BY-A-PERSON", "reason": "The slip says otherwise."},
+        )
+        assert corrected.status_code == 200, corrected.text
+
+        evidence = await self._evidence(api, case, schema)
+        # A corroborating citation claims a document states this value. An
+        # officer's replacement is not what those documents state.
+        assert evidence["citations"] == []
+        assert evidence["strategy"] == "none"
+        assert evidence["document_id"] is None
+
+    async def test_deleting_a_case_removes_its_citations(self, api: Any, session: Any) -> None:
+        case, _ = await self._run(api, session)
+        value_ids = list(
+            (
+                await session.execute(
+                    select(ExtractedValue.id).where(ExtractedValue.fnol_case_id == case.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert value_ids
+
+        await session.delete(case)
+        await session.commit()
+
+        remaining = (
+            (
+                await session.execute(
+                    select(ExtractedValueCitation).where(
+                        ExtractedValueCitation.value_id.in_(value_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert remaining == []

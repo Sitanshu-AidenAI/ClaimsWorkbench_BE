@@ -36,6 +36,10 @@ from app.domain.references import format_reference, is_claim_reference, parse_re
 from app.domain.rules import required_fields, valid_loss_type
 
 CONFIG = FNOLSettings()
+#: The same rules with an exchange-rate table, for the comparisons that cross a
+#: currency. Rates are round numbers so the arithmetic in an assertion is legible:
+#: one dollar is 80p, and nothing converts Brazilian reais at all.
+FX_CONFIG = FNOLSettings(fx_rates={"USD": 0.80, "EUR": 0.85}, fx_rates_as_of="2026-08-01")
 NOW = datetime.now(UTC)
 
 
@@ -65,10 +69,13 @@ def make_case(**overrides: object) -> SimpleNamespace:
         "affected_assets": None,
         "injuries": None,
         "fatalities": None,
-        "business_interruption": False,
-        "structural_damage": False,
-        "environmental_exposure": False,
-        "potential_litigation": False,
+        # `None`, not `False`: these four are tri-state, and a case "defaulted to
+        # absent" has not been asked the question. `False` would mean an officer or
+        # a reader had answered it, which is what the columns exist to distinguish.
+        "business_interruption": None,
+        "structural_damage": None,
+        "environmental_exposure": None,
+        "potential_litigation": None,
         "estimated_loss_minor": None,
         "repair_estimate_minor": None,
         "currency": "GBP",
@@ -311,6 +318,73 @@ class TestSeverity:
         assert result.confidence < 0.5
         assert any(factor.key == "no_estimate" for factor in result.factors)
 
+    def test_a_dollar_estimate_is_banded_in_pounds_not_on_the_digits(self) -> None:
+        # $1,150,000 is the cobalt-ridge trench collapse. Read as pounds it clears
+        # the £1,000,000 critical threshold; read as dollars it does not.
+        case = make_case(estimated_loss_minor=1_150_000_00, currency="USD")
+        result = assessment.assess_severity(case, config=FX_CONFIG)
+        assert result.severity is Severity.HIGH
+        assert result.unconvertible_currency is None
+        detail = next(f.detail for f in result.factors if f.key == "estimated_loss")
+        # Both figures are shown: what the notice said, and what it was compared as.
+        assert "1,150,000 USD" in detail
+        assert "920,000 GBP" in detail
+
+    def test_a_large_dollar_estimate_still_reaches_critical(self) -> None:
+        case = make_case(estimated_loss_minor=30_500_000_00, currency="USD")
+        assert assessment.assess_severity(case, config=FX_CONFIG).severity is Severity.CRITICAL
+
+    def test_a_converted_band_is_held_less_confidently_than_a_native_one(self) -> None:
+        native = assessment.assess_severity(
+            make_case(estimated_loss_minor=500_000_00, currency="GBP"), config=FX_CONFIG
+        )
+        converted = assessment.assess_severity(
+            make_case(estimated_loss_minor=500_000_00, currency="USD"), config=FX_CONFIG
+        )
+        assert converted.confidence < native.confidence
+
+    def test_an_unrated_currency_is_not_banded_on_the_raw_integer(self) -> None:
+        case = make_case(estimated_loss_minor=30_500_000_00, currency="BRL")
+        result = assessment.assess_severity(case, config=FX_CONFIG)
+        # Thirty million of *something* would be critical on the digits alone.
+        assert result.severity is Severity.MEDIUM
+        assert result.unconvertible_currency == "BRL"
+        assert result.confidence < 0.5
+        detail = next(f.detail for f in result.factors if f.key == "currency_not_comparable")
+        assert "no exchange rate is configured for BRL" in detail
+
+    def test_the_human_facts_still_escalate_an_uncomparable_estimate(self) -> None:
+        case = make_case(estimated_loss_minor=1_000_00, currency="BRL", fatalities=1)
+        result = assessment.assess_severity(case, config=FX_CONFIG)
+        assert result.severity is Severity.CRITICAL
+
+    def test_the_near_limit_check_converts_before_it_compares(self) -> None:
+        # $1,000,000 against a £1,000,000 limit is 80% of it, not 100%.
+        case = make_case(estimated_loss_minor=1_000_000_00, currency="USD")
+        result = assessment.assess_severity(
+            case,
+            config=FX_CONFIG,
+            policy_limit_minor=1_000_000_00,
+            policy_currency="GBP",
+        )
+        assert any(factor.key == "near_policy_limit" for factor in result.factors)
+        case = make_case(estimated_loss_minor=500_000_00, currency="USD")
+        result = assessment.assess_severity(
+            case,
+            config=FX_CONFIG,
+            policy_limit_minor=1_000_000_00,
+            policy_currency="GBP",
+        )
+        assert not any(factor.key == "near_policy_limit" for factor in result.factors)
+
+    def test_an_uncomparable_limit_is_reported_rather_than_compared(self) -> None:
+        case = make_case(estimated_loss_minor=1_000_000_00, currency="BRL")
+        result = assessment.assess_severity(
+            case, config=FX_CONFIG, policy_limit_minor=1_000_00, policy_currency="GBP"
+        )
+        assert any(factor.key == "policy_limit_not_comparable" for factor in result.factors)
+        assert not any(factor.key == "near_policy_limit" for factor in result.factors)
+
 
 # ---------------------------------------------------------------------------
 # Fraud indicators
@@ -389,6 +463,57 @@ class TestCoverage:
         policy = make_policy(perils_covered=["ransomware"], exclusions=["war"])
         result = assessment.assess_coverage(case, policy, policy_confirmed=True)
         assert result.indicator is not CoverageIndicator.POSSIBLE_EXCLUSION
+
+    def test_the_limit_check_converts_before_it_compares(self) -> None:
+        # $1,150,000 against a £1,000,000 limit is £920,000 — inside it. The
+        # integer comparison called the same claim a breach of the limit.
+        case = make_case(
+            date_of_loss=datetime(2026, 8, 3, tzinfo=UTC),
+            cause_of_loss="fire",
+            loss_location="Unit 7, Wakefield Road, Leeds LS9 8AA",
+            estimated_loss_minor=1_150_000_00,
+            currency="USD",
+        )
+        breached = assessment.assess_coverage(
+            case,
+            make_policy(limit_amount_minor=1_000_000_00, currency="GBP"),
+            policy_confirmed=True,
+            config=FX_CONFIG,
+        )
+        limit = next(check for check in breached.checks if check.key == "limit")
+        # £920,000 is inside a £1,000,000 limit — close to it, but not over it.
+        assert limit.state == "attention"
+        assert "920,000 GBP" in limit.detail
+
+        # And well inside a larger one, where the integer comparison also cleared
+        # it but for the wrong reason.
+        clear = assessment.assess_coverage(
+            case,
+            make_policy(limit_amount_minor=5_000_000_00, currency="GBP"),
+            policy_confirmed=True,
+            config=FX_CONFIG,
+        )
+        limit = next(check for check in clear.checks if check.key == "limit")
+        assert limit.state == "pass"
+        assert "920,000 GBP" in limit.detail
+
+    def test_an_estimate_no_rate_reaches_sends_the_limit_to_review(self) -> None:
+        case = make_case(
+            date_of_loss=datetime(2026, 8, 3, tzinfo=UTC),
+            cause_of_loss="fire",
+            loss_location="Unit 7, Wakefield Road, Leeds LS9 8AA",
+            estimated_loss_minor=1_150_000_00,
+            currency="BRL",
+        )
+        result = assessment.assess_coverage(
+            case, make_policy(), policy_confirmed=True, config=FX_CONFIG
+        )
+        limit = next(check for check in result.checks if check.key == "limit")
+        assert limit.state == "attention"
+        assert "no exchange rate connects" in limit.detail
+        # An attention is what makes the verdict "review required" rather than
+        # letting an uncomparable figure read as covered.
+        assert result.indicator is CoverageIndicator.REVIEW_REQUIRED
 
     def test_an_unconfirmed_match_can_never_read_as_likely_covered(self) -> None:
         case = make_case(
@@ -526,6 +651,102 @@ def triage_for(**overrides: object) -> triage_rules.TriageResult:
     return triage_rules.triage(**payload)  # type: ignore[arg-type]
 
 
+class TestClaimSignals:
+    """What a notice says about itself, independent of the line it was filed under."""
+
+    def test_injuries_are_read_from_the_column_and_from_the_prose(self) -> None:
+        assert assessment.ClaimSignal.INJURIES in assessment.claim_signals(make_case(injuries=2))
+        assert assessment.ClaimSignal.INJURIES in assessment.claim_signals(
+            make_case(loss_description="Two employees were buried to chest height.")
+        )
+
+    def test_a_claimant_who_is_not_the_insured_is_a_third_party(self) -> None:
+        """Structural, and better than any keyword — a notice need not use the words."""
+        signals = assessment.claim_signals(
+            make_case(
+                insured_name="Cobalt Ridge Utility Contractors, LLC",
+                claimant_name="City of Overland Park",
+            )
+        )
+        assert assessment.ClaimSignal.THIRD_PARTY in signals
+
+    def test_the_same_company_spelled_two_ways_is_not_a_third_party(self) -> None:
+        signals = assessment.claim_signals(
+            make_case(
+                insured_name="Northline Logistics Ltd", claimant_name="Northline Logistics Limited"
+            )
+        )
+        assert assessment.ClaimSignal.THIRD_PARTY not in signals
+
+    def test_a_stated_no_outranks_a_keyword_in_the_prose(self) -> None:
+        """The tri-state distinction, applied consistently.
+
+        A notice that answers "environmental exposure: no" has been asked the
+        question. Letting the word "contamination" in an attached survey report
+        override that answer would be the same conflation of "no" with "nobody
+        looked" that the nullable columns exist to end.
+        """
+        prose = "The survey report notes no contamination of the watercourse."
+        answered = make_case(environmental_exposure=False, loss_description=prose)
+        assert assessment.ClaimSignal.ENVIRONMENTAL not in assessment.claim_signals(answered)
+
+        # Unanswered, same prose: now the words are the only evidence there is.
+        silent = make_case(environmental_exposure=None, loss_description=prose)
+        assert assessment.ClaimSignal.ENVIRONMENTAL in assessment.claim_signals(silent)
+
+        # And a stated yes needs no prose at all.
+        stated = make_case(environmental_exposure=True)
+        assert assessment.ClaimSignal.ENVIRONMENTAL in assessment.claim_signals(stated)
+
+
+class TestInjurySignals:
+    """The text fallback, against the words adjusters actually write.
+
+    `INJURY_SIGNALS` held nine clinical terms — fatality, fatal, died, amputation,
+    hospitalised, intensive care, serious injury and two spellings — and the notices
+    it is a fallback *for* do not use them. Cobalt Ridge's own language is "pelvic
+    fracture", "crush injury", "buried to chest height", "admitted": none of the nine.
+    So a three-casualty trench collapse produced no injury signal at all whenever the
+    structured `injuries` field had not been extracted, which on a notice recovering
+    24 of 30 fields is a coin toss.
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "two employees were buried to chest height",
+            "one has a suspected pelvic fracture",
+            "a crush injury to the lower leg",
+            "both were admitted to hospital overnight",
+            "the operative was trapped for forty minutes",
+            "an air ambulance attended",
+            "the driver was unconscious at the scene",
+            "reported to the HSE under RIDDOR",
+            "third degree burns to the forearm",
+            "he was electrocuted at the panel",
+        ],
+    )
+    def test_the_plain_language_of_a_real_notice_is_recognised(self, text: str) -> None:
+        assert assessment.has_serious_injury_signal(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Boundary matching, which is what makes broadening the list safe: a
+            # route to the major-loss desk is expensive to get wrong.
+            "no particular pattern to the damage",
+            "the burnside unit was closed",
+            "the deceleration lane was blocked",
+            "the premises adjoin st mary's hospital",
+            "a dental surgery on the ground floor",
+            "the roof was damaged by hail and nobody was on site",
+            "stock was stolen from the yard overnight",
+        ],
+    )
+    def test_words_that_merely_contain_a_clinical_term_are_not_injuries(self, text: str) -> None:
+        assert not assessment.has_serious_injury_signal(text)
+
+
 class TestTriage:
     def test_a_small_clean_claim_is_fast_tracked(self) -> None:
         result = triage_for()
@@ -552,6 +773,25 @@ class TestTriage:
     def test_specialist_lines_go_to_the_specialist_desk(self) -> None:
         result = triage_for(line_of_business=LineOfBusiness.CYBER)
         assert TriageCategory.SPECIALIST_REQUIRED in result.categories
+
+    def test_the_major_loss_threshold_is_read_in_the_base_currency(self) -> None:
+        # $600,000 is £480,000 — under the £500,000 major-loss threshold, though
+        # the integer alone clears it.
+        result = triage_for(estimated_loss_minor=600_000_00, currency="USD", config=FX_CONFIG)
+        assert TriageCategory.MAJOR_LOSS not in result.categories
+        result = triage_for(estimated_loss_minor=700_000_00, currency="USD", config=FX_CONFIG)
+        assert TriageCategory.MAJOR_LOSS in result.categories
+        detail = next(f.detail for f in result.factors if f.factor == "exposure")
+        assert "700,000 USD" in detail
+        assert "500,000 GBP major-loss threshold" in detail
+
+    def test_an_exposure_no_rate_reaches_is_not_fast_tracked(self) -> None:
+        result = triage_for(estimated_loss_minor=5_000_000_00, currency="BRL", config=FX_CONFIG)
+        assert TriageCategory.MAJOR_LOSS not in result.categories
+        # And equally not "simple": an amount nobody could weigh is not a small one.
+        assert TriageCategory.SIMPLE not in result.categories
+        assert TriageCategory.COMPLEX in result.categories
+        assert any(f.factor == "exposure_not_comparable" for f in result.factors)
 
 
 def make_handler(**overrides: object) -> SimpleNamespace:

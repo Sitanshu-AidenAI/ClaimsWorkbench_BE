@@ -25,6 +25,7 @@ from app.domain.enums import (
     Severity,
 )
 from app.domain.lifecycle import BLOCKING_EXCEPTIONS
+from app.domain.money import format_amount, to_currency
 from app.domain.normalisation import is_future_date
 from app.repositories.fnol import FNOLRepository
 
@@ -243,21 +244,68 @@ class ExceptionService:
                     )
                 )
 
-        if (
-            policy is not None
-            and policy.limit_amount_minor
-            and case.estimated_loss_minor
-            and case.estimated_loss_minor > policy.limit_amount_minor
-        ):
+        # --- Money ----------------------------------------------------------
+        # Every rule here compares an amount on the notice with a threshold or a
+        # limit, and those are denominated in currencies that need not agree. The
+        # conversion happens first, and where it cannot happen the comparison is
+        # withheld and said out loud rather than made on the raw integers.
+        estimate = case.estimated_loss_minor
+        case_currency = case.currency or self._config.base_currency
+        stated = format_amount(estimate, case_currency)
+
+        #: What a missing rate cost this notice, gathered into one exception rather
+        #: than several: the officer's remedy is the same for all of them, and one
+        #: line that names both losses reads better than two that each name one.
+        withheld: list[str] = []
+        # Asked of the severity result rather than recomputed: the band and this
+        # exception have to agree about whether the money was read, and the only
+        # way to guarantee that is for one of them to be the source.
+        if getattr(severity, "unconvertible_currency", None):
+            withheld.append(f"the {self._config.base_currency} severity and major-loss thresholds")
+
+        if policy is not None and policy.limit_amount_minor and estimate:
+            limit_stated = format_amount(policy.limit_amount_minor, policy.currency)
+            in_limit_currency = to_currency(
+                estimate, case_currency, policy.currency, config=self._config
+            )
+            if in_limit_currency is None:
+                withheld.append(f"the {limit_stated} policy limit")
+            elif in_limit_currency.amount_minor > policy.limit_amount_minor:
+                raised.append(
+                    RaisedException(
+                        ExceptionCode.EXCEEDS_POLICY_LIMIT,
+                        ExceptionSeverity.WARNING,
+                        "Estimate exceeds the policy limit",
+                        f"The estimated loss of {stated} is above the {limit_stated} limit."
+                        + (
+                            f" Compared as {in_limit_currency.disclosure}."
+                            if in_limit_currency.converted
+                            else ""
+                        ),
+                        {
+                            "limit_minor": policy.limit_amount_minor,
+                            "limit_currency": policy.currency,
+                            "estimate_minor_in_limit_currency": in_limit_currency.amount_minor,
+                        },
+                    )
+                )
+
+        if withheld:
             raised.append(
                 RaisedException(
-                    ExceptionCode.EXCEEDS_POLICY_LIMIT,
+                    ExceptionCode.CURRENCY_NOT_COMPARABLE,
                     ExceptionSeverity.WARNING,
-                    "Estimate exceeds the policy limit",
-                    f"The estimated loss of {case.estimated_loss_minor / 100:,.0f} "
-                    f"{case.currency} is above the "
-                    f"{policy.limit_amount_minor / 100:,.0f} {policy.currency} limit.",
-                    {"limit_minor": policy.limit_amount_minor},
+                    f"{case_currency} amounts could not be assessed",
+                    f"The estimate of {stated} was not compared with "
+                    f"{' or '.join(withheld)}, because no exchange rate is configured for "
+                    f"{case_currency}. The severity band on this notice was set "
+                    f"provisionally rather than from the money. Price the loss by hand, or "
+                    f"add the rate.",
+                    {
+                        "currency": case_currency,
+                        "base_currency": self._config.base_currency,
+                        "withheld": withheld,
+                    },
                 )
             )
 

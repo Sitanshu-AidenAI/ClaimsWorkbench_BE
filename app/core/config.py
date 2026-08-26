@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import time
 from functools import lru_cache
 from typing import Annotated, Literal
 
@@ -629,7 +631,43 @@ class FNOLSettings(BaseSettings):
 
     base_currency: str = "GBP"
 
-    # Severity bands, by estimated loss in minor units.
+    #: Rates *into* `base_currency`: one unit of the keyed currency is worth this
+    #: many units of the base. The base itself is 1.0 by definition and needs no
+    #: row. Every threshold in this block is denominated in the base, so this table
+    #: is what lets a book priced in dollars be banded at all — without it a
+    #: $30,500,000 fire and a £30,500,000 fire are the same integer.
+    #:
+    #: The shipped values are indicative, dated by `fx_rates_as_of`, and exist so a
+    #: deployment reading a dollar-priced book bands its claims instead of referring
+    #: every one of them. A carrier overrides them from its own treasury feed:
+    #: `CWB_FNOL_FX_RATES='{"USD": 0.78, "EUR": 0.84}'`. A currency with no row here
+    #: is not guessed at — the comparison is withheld and the case goes to review.
+    fx_rates: dict[str, float] = {
+        "USD": 0.79,
+        "EUR": 0.85,
+        "CAD": 0.58,
+        "AUD": 0.52,
+        "NZD": 0.47,
+        "CHF": 0.90,
+        "JPY": 0.0053,
+        "SGD": 0.59,
+        "HKD": 0.101,
+        "AED": 0.215,
+        "SAR": 0.211,
+        "INR": 0.0092,
+        "ZAR": 0.043,
+        "SEK": 0.076,
+        "NOK": 0.073,
+        "DKK": 0.114,
+        "PLN": 0.198,
+        "CNY": 0.109,
+    }
+    #: When those rates were taken. Disclosed wherever a converted comparison is
+    #: stated, so a severity band can be read back against the rate that produced
+    #: it rather than being taken on trust.
+    fx_rates_as_of: str = "2026-08-01"
+
+    # Severity bands, by estimated loss in minor units of `base_currency`.
     severity_medium_threshold_minor: int = 25_000_00
     severity_high_threshold_minor: int = 250_000_00
     severity_critical_threshold_minor: int = 1_000_000_00
@@ -732,11 +770,33 @@ class GraphSettings(BaseSettings):
     scope: str = "https://graph.microsoft.com/.default"
 
     mail_folder: str = "inbox"
-    #: Read only what the mailbox has not been read. Turn this off and the ledger
-    #: is the only thing keeping the same message from being worked twice — which
-    #: it does, but at the cost of re-listing the whole folder every poll.
-    unread_only: bool = True
+    #: Narrow the sweep to messages Outlook still shows as unread.
+    #:
+    #: Off by default, and the default is the fix for a real outage: `isRead` is
+    #: a flag *anyone* can set. A handler opening the shared mailbox in Outlook,
+    #: a preview pane, a phone syncing the folder, or an inbox rule all clear it,
+    #: and with this on, a message cleared before intake reached it was hidden
+    #: from every subsequent poll forever. The read flag is the claims team's
+    #: state, not intake's. `mail_intake_messages` is intake's, it is keyed on
+    #: both the Graph id and the `Message-ID`, and it is what makes re-listing a
+    #: message cost one indexed query instead of a duplicate claim.
+    #:
+    #: Turning it on is only safe where nothing but this service ever touches
+    #: the folder, and it buys nothing the watermark below does not already.
+    unread_only: bool = False
     batch_size: int = 25
+    #: How far back of the newest message already in the ledger each poll
+    #: re-reads. The watermark is what stops a poll from being bounded by
+    #: `batch_size` — but a watermark that advanced to exactly the newest
+    #: collected message would step over anything that arrived out of order,
+    #: was delivered late, or failed so badly it never got a ledger row. A day
+    #: of overlap is cheap (the ledger dedupes it) and covers all three.
+    lookback_minutes: int = 1440
+    #: Pages of `batch_size` one poll may follow before it stops and leaves the
+    #: rest to the next one. The bound exists so a mailbox with a ten-year
+    #: backlog cannot turn one poll into an unbounded crawl; `batch_size *
+    #: max_pages` is the real ceiling on what a single poll collects.
+    max_pages: int = 10
     poll_interval_seconds: int = 300
     #: Beat only schedules the poll when this is on *and* the credentials are
     #: present, so an unconfigured environment is silent rather than noisy.
@@ -817,6 +877,18 @@ class ExtractionSettings(BaseSettings):
 
     #: Passages retrieved per field before deduplication across a batch.
     passages_per_field: int = 4
+    #: Below this many passages on the case, retrieval is not used at all and every
+    #: field is given the whole corpus.
+    #:
+    #: The same threshold `docint.retrieval_min_chunks` applies on the legacy
+    #: evidence path, and it is here because the schema-driven engine did not have
+    #: it: `_retrieve` called search directly, so on a four-document notice
+    #: producing ten passages — the ordinary size of a real claim pack — a field
+    #: whose best passage scored under `docint.retrieval_min_score` was simply
+    #: dropped, with no recourse. Selecting six passages out of ten is overhead
+    #: with a downside and no upside: the whole corpus already fits in the prompt,
+    #: and narrowing it can only lose something.
+    retrieval_min_chunks: int = 12
     #: Ceiling on distinct passages in one call, after deduplication. A batch that
     #: would exceed it keeps the highest-scoring passages.
     max_passages_per_call: int = 30
@@ -856,10 +928,16 @@ class ExtractionSettings(BaseSettings):
     #: place, and neither alone is enough.
     llm_confidence_weight: float = 0.7
 
-    #: Cache resolved highlight rectangles on the value row. Turning this off
+    #: Cache resolved highlight rectangles on the citation row. Turning this off
     #: re-resolves them on every evidence request, which is correct but costs a
     #: download and a parse each time.
     cache_highlight_rects: bool = True
+
+    #: Documents cited per value: the passage the value was read from, plus every
+    #: other document found to state the same value. Six is generous for a claim
+    #: notification — past a handful the source stepper has stopped being a list of
+    #: sources and become a search result, which the occurrence search already is.
+    max_citations_per_value: int = 6
 
 
 class Settings(BaseSettings):
@@ -974,3 +1052,33 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+#: When this process read its configuration. Every value above was fixed at that
+#: moment and cannot change again for the life of the process.
+SETTINGS_LOADED_AT = time.time()
+
+
+def env_file_changed_since_load() -> float | None:
+    """Seconds since `.env` was edited, if that happened after this process
+    loaded its settings. `None` when the configuration is current.
+
+    A worker holds the settings it imported. An `.env` edited afterwards does
+    nothing at all, silently, and the process goes on reporting healthy runs
+    against configuration nobody believes it still has — a mailbox intake ran
+    for twenty-two hours on a superseded flag exactly this way, collecting
+    nothing and logging success every eight seconds.
+
+    There is nothing this can do about it from inside: the fix is a restart, and
+    a process cannot restart itself safely. What it can do is stop the drift
+    being invisible, which is the whole difference between a five-minute problem
+    and a day-long one.
+    """
+    if not _ENV_CONFIG.get("env_file"):
+        return None
+    try:
+        edited_at = os.path.getmtime(str(_ENV_CONFIG["env_file"]))
+    except OSError:
+        # No `.env` at all is the normal case in a container, where configuration
+        # arrives as real environment variables and cannot drift like this.
+        return None
+    return edited_at - SETTINGS_LOADED_AT if edited_at > SETTINGS_LOADED_AT else None

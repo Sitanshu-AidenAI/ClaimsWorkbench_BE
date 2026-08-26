@@ -70,8 +70,10 @@ schedule is registered and the API answers `503 graph_not_configured`.
 | `CWB_GRAPH_CLIENT_SECRET` | — | Client secret |
 | `CWB_GRAPH_SHARED_MAILBOX` | — | Mailbox to read, e.g. `claims@carrier.example` |
 | `CWB_GRAPH_MAIL_FOLDER` | `inbox` | Folder polled |
-| `CWB_GRAPH_UNREAD_ONLY` | `true` | Collect only unread messages |
-| `CWB_GRAPH_BATCH_SIZE` | `25` | Messages per poll |
+| `CWB_GRAPH_UNREAD_ONLY` | `false` | Narrow the sweep to unread messages. **Leave off** — see *Why the read flag is not the cursor* |
+| `CWB_GRAPH_BATCH_SIZE` | `25` | Messages per *page* |
+| `CWB_GRAPH_MAX_PAGES` | `10` | Pages one poll may follow. `BATCH_SIZE × MAX_PAGES` is the ceiling on a single poll |
+| `CWB_GRAPH_LOOKBACK_MINUTES` | `1440` | How far back of the newest ledger row each sweep re-reads |
 | `CWB_GRAPH_MAX_ATTEMPTS` | `3` | Retries before a message is left for a human |
 | `CWB_GRAPH_POLL_ENABLED` | `false` | Register the beat schedule |
 | `CWB_GRAPH_POLL_INTERVAL_SECONDS` | `300` | How often beat polls |
@@ -99,9 +101,13 @@ Attachment limits are the FNOL module's, not a second set:
 make mail-intake                      # uv run python -m app.services.mail
 uv run python -m app.services.mail --limit 5
 
-# As a scheduled worker (the deployed answer).
-CWB_GRAPH_POLL_ENABLED=true make worker
-CWB_GRAPH_POLL_ENABLED=true make beat
+# As a scheduled worker — the answer for anything but a one-off.
+# Intake is a beat schedule executed by a worker, so an API on its own looks
+# completely healthy and collects nothing. `make dev` starts API + worker + beat
+# together and one Ctrl-C stops all three; `make up-all` runs the same three in
+# containers, which is what a deployment does.
+make up      # infrastructure first
+make dev     # API + worker + beat
 
 # On demand through the API, as an intake officer, manager or admin.
 curl -X POST localhost:8000/api/v1/mail-intake/poll \
@@ -116,12 +122,20 @@ curl "localhost:8000/api/v1/mail-intake/messages?status=failed" \
 `claims-admin` — collecting a mailbox creates notifications. Reading the ledger
 is open to the wider claims read roles.
 
+`make dev` applies migrations before booting and clears beat's schedule database,
+which removes the two ways a correctly configured poll still does not run: a
+worker holding an ORM mapping older than the schema, and a stale schedule file.
+Restarting the backend is deliberately one gesture — settings are read once per
+process, so a `.env` edit that reaches the API but not the worker is a
+split-brain that is invisible from the outside.
+
 ---
 
 ## What one poll does
 
 ```
-list unread (oldest first)
+read the watermark from the ledger  (newest collected − LOOKBACK_MINUTES)
+list everything received since then (oldest first, following nextLink)
   └─ for each message, in its own transaction:
        already collected?  → skip, re-mark if the flag never landed
        failed too often?   → leave it, with the reason on the row
@@ -135,6 +149,8 @@ list unread (oldest first)
          COMMIT
          mark the message read / move it
          COMMIT
+
+reconcile: folder item count vs ledger rows → warn if the folder holds more
 ```
 
 Four properties are worth relying on:
@@ -229,6 +245,48 @@ the notifications — alongside `test_mail_intake_flow.py`, which stops at colle
 | Persistence | `app.repositories.mail_intake`, `app.models.mail_intake` | The ledger |
 | Trigger | `app.api.v1.routes.mail_intake`, `app.workers.tasks` | On demand, and on a schedule |
 
+## Why the read flag is not the cursor
+
+Intake tracks what it has collected in `mail_intake_messages`, keyed on both the
+Graph message id and the sender's `Message-ID`. It does **not** use Outlook's
+`isRead` flag for that, and the distinction cost a live claim before it was made
+explicit.
+
+`isRead` belongs to the claims team. A handler opening the shared mailbox, a
+preview pane, a phone syncing the folder or an inbox rule all clear it. With
+`UNREAD_ONLY=true`, any message whose flag was cleared before intake reached it
+was excluded from every subsequent poll — permanently — and each of those polls
+logged a successful run over an empty result. Nothing downstream noticed,
+because nothing downstream was waiting for a particular claim.
+
+Two mechanisms replace it:
+
+* **A watermark.** Each poll asks the ledger for the newest message it holds for
+  this mailbox and sweeps from `LOOKBACK_MINUTES` before it, so the window is
+  bounded by time rather than by page size. Re-reading a message already in the
+  ledger costs one indexed query.
+* **Paging.** `@odata.nextLink` is followed up to `MAX_PAGES`. Without it, a
+  folder holding one more message than `BATCH_SIZE` returned the same oldest
+  page to every poll and the newest message was never in the window — the same
+  outage from the other direction, and one no configuration change could fix.
+
+`_reconcile` then runs three checks each poll, because a blind sweep and a quiet
+mailbox otherwise produce identical logs and something has to contradict the
+silence. All three are also returned by `POST /mail-intake/poll`, so none of
+them depends on anyone reading a log:
+
+| Check | Signal | Drifts? |
+| --- | --- | --- |
+| Every listed message left a ledger row | `dropped` / `mail_intake_messages_dropped` | No — exact |
+| Unread mail exists and the sweep fetched nothing | `sweep_blind` / `mail_intake_sweep_blind` | No |
+| Folder item count vs ledger rows | `mail_intake_backlog_detected` | Yes — rows outlive deleted mail, so treat as a floor |
+
+The first is the one to trust. It compares what the poll *listed* against what it
+*recorded*, so it cannot be fooled by a counter the same broken sweep produced,
+and it does not care how many rows the ledger has accumulated over time.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause |
@@ -236,6 +294,11 @@ the notifications — alongside `test_mail_intake_flow.py`, which stops at colle
 | `503 graph_not_configured` | One of the four credentials is missing |
 | `GraphAuthError: AADSTS7000215` | Wrong client secret |
 | `403 ErrorAccessDenied` | Consent missing, or an application access policy excludes this mailbox |
-| Nothing collected, mailbox full | `CWB_GRAPH_UNREAD_ONLY=true` and the messages are already read |
+| Nothing collected, mailbox full | `CWB_GRAPH_UNREAD_ONLY=true` and the messages are already read. This is why the default is `false` |
+| `mail_intake_backlog_detected` in the log | The folder holds more messages than the ledger has rows for. If it repeats across polls the sweep is not reaching them — check `UNREAD_ONLY`, `LOOKBACK_MINUTES` and `MAX_PAGES` |
+| `graph_message_list_truncated` in the log | One poll hit `BATCH_SIZE × MAX_PAGES`. Harmless once (the next poll continues); persistent means the mailbox is filling faster than it drains |
+| Config changes have no effect | A worker reads settings once, at import. An `.env` edit needs a **worker and beat restart** — `make dev` restarts all three together. The worker now logs `worker_configuration_stale` every poll until you do, and `graph_mail_client_created` at startup shows what it is actually using |
+| `mail_intake_sweep_blind` in the log | The folder reports unread mail and the sweep returned nothing at all. This is the outage signature — the sweep is not reaching the folder |
+| `mail_intake_messages_dropped` in the log | Messages were listed and left no ledger row: neither collected nor retryable. A silent loss; needs a human |
 | Messages re-listed every poll | `CWB_GRAPH_MARK_AS_READ=false`; they are skipped by the ledger, not re-processed |
 | A message stuck at `failed` | Read `last_error` on its ledger row; it stops being retried after `CWB_GRAPH_MAX_ATTEMPTS` |

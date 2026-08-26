@@ -74,6 +74,11 @@ SIGNAL_SOURCES: tuple[tuple[str, str, str | None], ...] = (
     ("project_name", "project_name", "project.project_name"),
     ("contract_number", "contract_number", "project.contract_number"),
     ("policy_period_stated", "policy_period_stated", "policy.policy_period_stated"),
+    # The product the notice names, which separates two policies one insured holds
+    # in the same line of business. Only ever the notice's own reading: `confirm()`
+    # backfills `case.policy_type` from the policy an officer chose, and by then
+    # identification has already run and will not run again unconfirmed.
+    ("policy_type", "policy_type", "policy.policy_type"),
     ("cause_of_loss", "cause_of_loss", "loss.cause_of_loss"),
 )
 
@@ -132,6 +137,16 @@ class PolicyIdentificationService:
         coverage can say "review required" rather than "no policy located" about a
         notice which plainly has one. `policy_confirmed` stays false, and that —
         not `policy_id` — is what everything downstream treats as authoritative.
+
+        "Unambiguous" is now checked rather than asserted. It used to fall back to
+        `result.best.policy_id` whenever nothing was recommended, which is precisely
+        the ambiguous case: the engine declines to recommend when a second candidate
+        is within the ambiguity margin, and the service then wrote the first one
+        anyway. On a notice with two plausible policies that is a coin toss written
+        to a column, and coverage read against it — so an officer saw an assessment
+        against one contract with nothing saying the other was just as likely. When
+        the choice is genuinely a person's, nothing is written: the candidate list is
+        stored either way, and `policy_identification_status` says `needs_review`.
         """
         notice = await self.notice_signals(case)
         pool = await self._policies.find_identification_candidates(
@@ -174,7 +189,7 @@ class PolicyIdentificationService:
                 case.policy_identification_status = result.status.value
             if result.recommended_policy_id is not None:
                 case.policy_id = result.recommended_policy_id
-            elif result.best is not None:
+            elif result.best is not None and not result.ambiguous:
                 case.policy_id = result.best.policy_id
             else:
                 case.policy_id = None

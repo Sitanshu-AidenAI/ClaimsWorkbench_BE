@@ -172,6 +172,64 @@ class TestDiscovery:
         assert "discovered" in reading.note
 
 
+class TestABareRelativeBeforeADiscovery:
+    """ "Overnight, discovered Monday 06:40" — no explicit date anywhere in it.
+
+    Every current fixture states a date before the discovery word, so this shape has
+    never fired. On a late-reported unattended loss it misdates silently: "overnight"
+    resolves against the notification's arrival, so the loss lands the night before
+    the *email* rather than the night before it was found — out by however long the
+    broker sat on it, with no conflict and no error to say so.
+    """
+
+    #: A Thursday. The Monday before it is three days back, which is the size of the
+    #: error this class exists to close.
+    LATE = datetime(2026, 2, 26, 9, 15, tzinfo=UTC)
+
+    def test_it_is_read_against_the_discovery_and_not_the_arrival(self) -> None:
+        reading = read("Overnight, discovered Monday 06:40", notice=self.LATE)
+        # Monday was 23 February; the night before it was Sunday the 22nd.
+        assert reading.value == datetime(2026, 2, 22, 22, 0, tzinfo=UTC)
+        assert reading.basis is Basis.RELATIVE
+        assert reading.note is not None
+        assert "read against the discovery" in reading.note
+        # And the derivation note must agree with the reading rather than still
+        # claiming the notification as the anchor.
+        assert "relative to the loss being discovered on 23 February 2026" in reading.note
+
+    def test_a_clause_that_names_its_own_day_is_left_alone(self) -> None:
+        """ "Overnight on Friday" already answered the question."""
+        reading = read("Overnight on Friday, discovered Monday 06:40", notice=self.LATE)
+        assert reading.value == datetime(2026, 2, 20, 22, 0, tzinfo=UTC)
+        assert reading.note is not None
+        assert "reads as when the loss was found" in reading.note
+
+    def test_a_clause_that_says_more_than_the_word_is_left_alone(self) -> None:
+        """A clause with content may well have been dating itself.
+
+        The rule is deliberately narrow: it fires only where the clause before the
+        discovery word is nothing but the relative word, because that is the only
+        case where the word can have no other referent.
+        """
+        reading = read(
+            "The unit was left secure overnight and the damage was discovered Monday 06:40",
+            notice=self.LATE,
+        )
+        assert reading.value == datetime(2026, 2, 25, 22, 0, tzinfo=UTC)
+
+    def test_a_bare_relative_with_no_discovery_clause_is_unchanged(self) -> None:
+        reading = read("Overnight", notice=self.LATE)
+        assert reading.value == datetime(2026, 2, 25, 22, 0, tzinfo=UTC)
+        assert reading.note is not None
+        assert "relative to the notification of" in reading.note
+
+    def test_an_explicit_date_before_the_discovery_still_wins(self) -> None:
+        """The existing fixtures' shape, asserted here so the new rule cannot reach it."""
+        reading = read("23 February 2026, discovered Monday 06:40", notice=self.LATE)
+        assert reading.value == datetime(2026, 2, 23, tzinfo=UTC)
+        assert reading.basis is Basis.STATED
+
+
 class TestTheNoticeDatesItself:
     """Words that mean nothing without the date of the notification."""
 

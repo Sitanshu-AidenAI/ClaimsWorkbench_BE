@@ -79,17 +79,24 @@ uv run python main.py
 - Readiness — http://localhost:8000/api/v1/health/ready
 - Metrics — http://localhost:8000/metrics
 
-Background jobs:
+Background jobs are not optional relative to the API: scheduled work — mailbox
+intake, the document-intelligence queue, the policy-library sweep — is a beat
+schedule executed by a Celery worker, so an API running alone looks completely
+healthy and does none of it. Start the three together:
 
 ```bash
-uv run celery -A app.workers.celery_app.celery_app worker -l info
-uv run celery -A app.workers.celery_app.celery_app beat -l info
+make dev     # API + worker + beat; one Ctrl-C stops all three
 ```
 
-The whole stack, including API, worker and beat, runs with:
+It applies migrations first and clears beat's schedule database, so a worker
+cannot come up holding a mapping older than the schema or a stale schedule.
+
+The individual pieces are still there (`make run`, `make worker`, `make beat`)
+for when you want one on its own. The whole stack in containers — the same three
+services a deployment runs — is:
 
 ```bash
-docker compose up --build
+make up-all              # or: docker compose up --build
 ```
 
 ---
@@ -454,7 +461,8 @@ the one mailbox with an application access policy.
 
 ```bash
 make mail-intake                       # collect once, now
-CWB_GRAPH_POLL_ENABLED=true make beat  # every CWB_GRAPH_POLL_INTERVAL_SECONDS
+make dev                               # API + worker + beat; polls every
+                                       # CWB_GRAPH_POLL_INTERVAL_SECONDS
 curl -X POST localhost:8000/api/v1/mail-intake/poll -H "Authorization: Bearer $TOKEN"
 curl "localhost:8000/api/v1/mail-intake/messages?status=failed" -H "Authorization: Bearer $TOKEN"
 ```

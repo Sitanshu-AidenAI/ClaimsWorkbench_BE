@@ -70,6 +70,9 @@ class AssessmentServices:
             case,
             config=self._config,
             policy_limit_minor=policy.limit_amount_minor if policy else None,
+            # The limit is in the policy's currency and the estimate in the
+            # notice's; the two are not the same claim often enough to matter.
+            policy_currency=policy.currency if policy else None,
             cat_matched=cat_matched,
         )
 
@@ -87,7 +90,9 @@ class AssessmentServices:
         # `policy_id` is set only by an exact match or by an officer confirming
         # one, so it — rather than the confirmation flag alone — is what "the
         # policy is settled" means to the coverage read.
-        coverage = rules.assess_coverage(case, policy, policy_confirmed=bool(case.policy_id))
+        coverage = rules.assess_coverage(
+            case, policy, policy_confirmed=bool(case.policy_id), config=self._config
+        )
 
         case.completeness_score = completeness.score
         # An officer's severity override survives every re-run. The computed band

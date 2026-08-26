@@ -37,9 +37,26 @@ x-app-env: &app-env
   # of this stack; the embedding key is not, because it is a secret and because
   # leaving it unset is a supported mode — passages are still written and still
   # keyword-searchable, they simply are not vectorised.
-  CWB_DOCINT_QDRANT_URL: ${CWB_DOCINT_QDRANT_URL:-http://qdrant:6333}
+  # Hardcoded, not interpolated. `${CWB_DOCINT_QDRANT_URL:-...}` read the repo
+  # `.env`, where this is `http://localhost:6343` — the *host* port — and handed
+  # every container an address that resolves to itself. An in-container service
+  # address is not a developer preference, so it is not a variable. Same reason
+  # postgres, redis and minio above are literal.
+  CWB_DOCINT_QDRANT_URL: http://qdrant:6333
   CWB_DOCINT_EMBEDDING_API_KEY: ${CWB_DOCINT_EMBEDDING_API_KEY:-}
   CWB_DOCINT_OCR_URL: ${CWB_DOCINT_OCR_URL:-}
+
+# The repo `.env`, read by every app container so that container behaviour and
+# `make dev` behaviour come from one file rather than two. The `environment:`
+# block above still wins on every key it sets, which is exactly the set that is
+# host-specific — `CWB_POSTGRES_HOST=localhost` in `.env` is correct on the host
+# and wrong in a container, so it is overridden rather than inherited.
+#
+# `required: false` because CI has no `.env`; there, the explicit block is the
+# whole configuration.
+x-app-env-file: &app-env-file
+  - path: .env
+    required: false
 
 x-app-build: &app-build
   build:
@@ -57,6 +74,7 @@ services:
   # -------------------------------------------------------------------------
   api:
     <<: *app-build
+    env_file: *app-env-file
     environment: *app-env
     ports:
       - "${CWB_API_PORT:-8000}:8000"
@@ -70,6 +88,7 @@ services:
 
   worker:
     <<: *app-build
+    env_file: *app-env-file
     environment: *app-env
     command:
       - celery
@@ -89,6 +108,7 @@ services:
 
   beat:
     <<: *app-build
+    env_file: *app-env-file
     environment: *app-env
     command:
       - celery
@@ -101,6 +121,7 @@ services:
 
   migrate:
     <<: *app-build
+    env_file: *app-env-file
     environment: *app-env
     command: ["alembic", "upgrade", "head"]
     restart: "no"

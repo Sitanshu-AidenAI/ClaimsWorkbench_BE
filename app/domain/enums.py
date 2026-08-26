@@ -247,6 +247,12 @@ class ExceptionCode(StrEnum):
     FUTURE_LOSS_DATE = "future_loss_date"
     OUTSIDE_POLICY_PERIOD = "outside_policy_period"
     EXCEEDS_POLICY_LIMIT = "exceeds_policy_limit"
+    #: An amount on the notice is in a currency no configured rate reaches, so the
+    #: severity band, the major-loss flag and the limit check were all withheld
+    #: rather than decided on the raw integer. Its own code because the remedy is
+    #: neither "correct the figure" nor "choose a policy": it is "price this by
+    #: hand, or configure the rate".
+    CURRENCY_NOT_COMPARABLE = "currency_not_comparable"
     AI_PROCESSING_FAILED = "ai_processing_failed"
     DOCUMENT_UNREADABLE = "document_unreadable"
 

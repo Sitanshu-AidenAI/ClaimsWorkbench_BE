@@ -11,7 +11,11 @@ these tables become its seed rather than its competition.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from enum import StrEnum
+from functools import lru_cache
 
 from app.domain.enums import LineOfBusiness, TriageCategory
 
@@ -47,6 +51,16 @@ BASE_REQUIRED_FIELDS: tuple[RequiredField, ...] = (
     RequiredField("parties.claimant_name", "Claimant / contact", section="parties"),
     RequiredField("financial.estimated_loss", "Estimated loss", section="financial"),
     RequiredField("documents.supporting", "Supporting documentation", section="documents"),
+    # The four exposure flags. Required *as questions*: "no" is a complete answer
+    # and scores as present, and only silence counts as missing. They are here
+    # because the columns became tri-state and silence had nowhere else to go —
+    # it used to be written as `false`, read by severity as `bool()`, and shown to
+    # nobody, so an unassessed pollution exposure was indistinguishable from a
+    # ruled-out one on a claim where extraction had recovered 24 of 30 fields.
+    RequiredField("loss.business_interruption", "Business interruption", section="loss"),
+    RequiredField("loss.structural_damage", "Structural damage", section="loss"),
+    RequiredField("loss.environmental_exposure", "Environmental exposure", section="loss"),
+    RequiredField("additional.potential_litigation", "Litigation exposure", section="additional"),
 )
 
 #: Added on top of the base set, per line of business.
@@ -88,11 +102,108 @@ LOB_REQUIRED_FIELDS: dict[LineOfBusiness, tuple[RequiredField, ...]] = {
 }
 
 
-def required_fields(line_of_business: LineOfBusiness | None) -> tuple[RequiredField, ...]:
-    """The full requirement set for a line, base first so the order is stable."""
-    if line_of_business is None:
-        return BASE_REQUIRED_FIELDS
-    return BASE_REQUIRED_FIELDS + LOB_REQUIRED_FIELDS.get(line_of_business, ())
+#: Facts about a loss that make a field necessary whatever line the classifier
+#: settled on. A `RequiredField` is a question the notice has to answer, and the
+#: question "who was hurt" is asked by two people being in hospital, not by a
+#: keyword tally picking `casualty` over `construction`.
+class ClaimSignal(StrEnum):
+    """A condition read off the notice that adds requirements of its own."""
+
+    INJURIES = "injuries"
+    FATALITIES = "fatalities"
+    THIRD_PARTY = "third_party"
+    ENVIRONMENTAL = "environmental"
+    LITIGATION = "litigation"
+    VEHICLE = "vehicle"
+
+
+#: Added on top of the base and per-line sets, per detected signal.
+#:
+#: These compose. The defect they exist to close is a real one: a trench collapse
+#: with two hospitalised workers and £481k of third-party exposure tied three ways
+#: between `liability`, `casualty` and `construction`, and the winner was decided
+#: by dict-insertion order. Whichever line won, only that line's requirements
+#: applied — so `parties.third_parties` and `loss.injuries` were asked for or not
+#: on the strength of a coin toss. A notice that says people were hurt has to
+#: state who and how many regardless of which line the words leaned towards.
+SIGNAL_REQUIRED_FIELDS: dict[ClaimSignal, tuple[RequiredField, ...]] = {
+    ClaimSignal.INJURIES: (
+        RequiredField("loss.injuries", "Injuries reported", critical=True, section="loss"),
+        RequiredField("parties.witnesses", "Witnesses", section="parties"),
+        RequiredField(
+            "additional.authorities_involved", "Authorities involved", section="additional"
+        ),
+    ),
+    ClaimSignal.FATALITIES: (
+        RequiredField("loss.fatalities", "Fatalities", critical=True, section="loss"),
+        RequiredField(
+            "additional.authorities_involved",
+            "Authorities involved",
+            critical=True,
+            section="additional",
+        ),
+        RequiredField("parties.witnesses", "Witnesses", section="parties"),
+    ),
+    ClaimSignal.THIRD_PARTY: (
+        # Not critical here, and critical under `LineOfBusiness.LIABILITY` above.
+        # The defect this closes is that the field was not required *at all* unless
+        # the classifier's tie happened to land on liability or casualty; whether an
+        # unanswered third party then blocks claim creation is the line's call, and
+        # the line already states it.
+        RequiredField("parties.third_parties", "Third party details", section="parties"),
+    ),
+    ClaimSignal.ENVIRONMENTAL: (
+        RequiredField(
+            "additional.authorities_involved", "Authorities involved", section="additional"
+        ),
+        RequiredField("loss.affected_assets", "Affected property or assets", section="loss"),
+    ),
+    ClaimSignal.LITIGATION: (
+        RequiredField("parties.third_parties", "Third party details", section="parties"),
+    ),
+    ClaimSignal.VEHICLE: (
+        RequiredField("loss.affected_assets", "Vehicle details", section="loss"),
+        RequiredField("additional.police_reference", "Police reference", section="additional"),
+    ),
+}
+
+
+def required_fields(
+    line_of_business: LineOfBusiness | None,
+    signals: Iterable[ClaimSignal] = (),
+) -> tuple[RequiredField, ...]:
+    """The full requirement set for a line and what the notice actually says.
+
+    Base first, then the line's own additions, then anything the detected signals
+    add, so the order is stable and a field's position does not move when a new
+    signal fires. A path named more than once appears once, and the strictest
+    claim on it wins: a field that is critical under any rule that reached it is
+    critical, because "we can create the claim without this" and "we cannot" is
+    not something to average.
+    """
+    ordered: dict[str, RequiredField] = {}
+
+    def add(requirement: RequiredField) -> None:
+        existing = ordered.get(requirement.path)
+        if existing is None:
+            ordered[requirement.path] = requirement
+        elif requirement.critical and not existing.critical:
+            # Keep the first label and section — the base table's wording is the
+            # one the review form is built around — and take only the escalation.
+            ordered[requirement.path] = RequiredField(
+                existing.path, existing.label, critical=True, section=existing.section
+            )
+
+    for requirement in BASE_REQUIRED_FIELDS:
+        add(requirement)
+    if line_of_business is not None:
+        for requirement in LOB_REQUIRED_FIELDS.get(line_of_business, ()):
+            add(requirement)
+    for signal in signals:
+        for requirement in SIGNAL_REQUIRED_FIELDS.get(signal, ()):
+            add(requirement)
+
+    return tuple(ordered.values())
 
 
 # ---------------------------------------------------------------------------
@@ -361,16 +472,200 @@ LITIGATION_SIGNALS: tuple[str, ...] = (
     "lawsuit",
 )
 
-#: Phrases that indicate a third party is seriously hurt, which changes the route
+#: Phrases that indicate somebody is seriously hurt, which changes the route
 #: regardless of the reserve.
+#:
+#: The original list held nine clinical terms, and the notices this is a fallback
+#: for do not use them. A real trench-collapse notice reads "two employees were
+#: buried to chest height", "a pelvic fracture", "a crush injury", "admitted
+#: overnight" — and matched none of the nine, so a two-casualty incident read as
+#: having no injury signal at all whenever the structured `injuries` field was not
+#: extracted.
+#:
+#: Every entry is matched on word boundaries by `matches_any`, which is what makes
+#: broadening it safe: a route to the major-loss desk is expensive to get wrong, and
+#: "icu" must not be reachable from "particular" nor "hospital" from a loss at one.
+#: A trailing `*` marks a stem — `fractur*` reaches fracture, fractured and
+#: fracturing — and stems are long enough that what else they could reach is not a
+#: word anybody writes.
 INJURY_SIGNALS: tuple[str, ...] = (
-    "fatality",
+    # Fatal.
     "fatal",
+    "fatalit*",
     "died",
+    "deceased",
+    "pronounced dead",
+    "killed",
+    "loss of life",
+    # Named injuries that are serious by definition.
     "life-changing",
-    "amputation",
-    "hospitalised",
-    "hospitalized",
+    "life changing",
+    "amputat*",
+    "degloving",
+    "crush injur*",
+    "crushed",
+    "fractur*",
+    "broken leg",
+    "broken arm",
+    "broken back",
+    "broken hip",
+    "broken pelvis",
+    "spinal",
+    "paralys*",
+    "paralyz*",
+    "head injur*",
+    "traumatic brain",
+    "internal bleeding",
+    "haemorrhage",
+    "hemorrhage",
+    "degree burns",
+    "suffered burns",
+    "burns to",
+    "asphyxi*",
+    "electrocut*",
+    "impaled",
+    "impalement",
+    "severed",
+    # Where they ended up. "Admitted" is the word a notice uses when it will not
+    # name the injury, and it means the same thing.
+    "hospitalis*",
+    "hospitaliz*",
+    "taken to hospital",
+    "admitted to hospital",
+    "admitted overnight",
     "intensive care",
-    "serious injury",
+    "critical condition",
+    "emergency surgery",
+    "air ambulance",
+    "medevac",
+    "life flight",
+    "trauma centre",
+    "trauma center",
+    "icu",
+    # Plain language for the mechanism, which is often all a first notice states.
+    "serious injur*",
+    "seriously injured",
+    "severely injured",
+    "critically injured",
+    "multiple casualt*",
+    "buried",
+    "trapped",
+    "pinned",
+    "fell from height",
+    "fall from height",
+    "unconscious",
+    "riddor",
 )
+
+#: Phrases that say somebody who is not the insured has been affected, or is
+#: coming. One of these present is what makes third-party details a required
+#: field — independently of which line of business the classifier settled on,
+#: which is the point: the exposure exists whether the notice reads as
+#: `liability`, `casualty` or `construction`.
+THIRD_PARTY_SIGNALS: tuple[str, ...] = (
+    "third party",
+    "third-party",
+    "third parties",
+    "member of the public",
+    "members of the public",
+    "passer-by",
+    "passerby",
+    "pedestrian",
+    "neighbouring",
+    "neighboring",
+    "adjoining owner",
+    "adjoining propert*",
+    "adjacent propert*",
+    "claimant solicitor",
+    "letter of claim",
+    "public liability",
+    "bodily injury",
+    "injured party",
+    "tenant",
+    "subcontractor employee",
+    "employee of ",
+    "damage to the highway",
+)
+
+#: Phrases that say the loss has reached the ground, the water or the air. Same
+#: reasoning as the third-party list: a pollution exposure is a fact about the
+#: loss, not about the line it was filed under.
+ENVIRONMENTAL_SIGNALS: tuple[str, ...] = (
+    "contaminat*",
+    "pollut*",
+    "spillage",
+    "spilled",
+    "spilt",
+    "release to ground",
+    "groundwater",
+    "watercourse",
+    "storm drain",
+    "environment agency",
+    "environmental protection",
+    "hazmat",
+    "chemical release",
+    "ammonia release",
+    "fuel leak",
+    "oil leak",
+    "asbestos",
+    "silt runoff",
+)
+
+#: Phrases that say a vehicle is in the loss, whatever the line it was filed
+#: under. `vin` is deliberately absent: matched on a word boundary it is still one
+#: letter away from every "vinyl" and "vineyard" in a property notice, and the
+#: registration terms below carry the same fact without the risk.
+VEHICLE_SIGNALS: tuple[str, ...] = (
+    "vehicle",
+    "lorry",
+    "hgv",
+    "tipper",
+    "flatbed",
+    "registration number",
+    "number plate",
+    "licence plate",
+    "license plate",
+    "rear-ended",
+    "collided with",
+)
+
+
+@lru_cache(maxsize=64)
+def signal_pattern(terms: tuple[str, ...]) -> re.Pattern[str]:
+    r"""One compiled alternation over `terms`, boundaried where that means anything.
+
+    A leading `\b` always. A trailing one only when the term ends in a word
+    character *and* is not marked as a stem, because `"employee of "\b` can never
+    match and `"fractur"\b` never matches "fractured" — a term that silently drops
+    itself out of the alternation is worse than no term at all, because the list
+    still reads as covering the case.
+
+    A trailing `*` marks a stem: `"fractur*"` matches fracture, fractured and
+    fracturing. Written out rather than inferred, because "does this word carry a
+    suffix" is not something a pattern builder can be trusted to guess, and a wrong
+    guess either loses the inflections or reaches into the middle of an unrelated
+    word.
+
+    A stem does match any longer word beginning with it — "fracturewood" would hit
+    `fractur*`. That is the trade, and it is a small one: the defect this protects
+    against is a *leading*-boundary failure, `car` inside `Carbondale`, and stems are
+    kept long enough that the compounds they could reach are not words. Every entry
+    marked as a stem is at least six characters for that reason.
+    """
+    alternatives = sorted({term for term in terms if term}, key=len, reverse=True)
+    parts: list[str] = []
+    for term in alternatives:
+        if term.endswith("*"):
+            parts.append(r"\b" + re.escape(term[:-1]))
+        else:
+            parts.append(r"\b" + re.escape(term) + (r"\b" if term[-1:].isalnum() else ""))
+    # Case-insensitive rather than relying on every caller to have normalised.
+    # `has_serious_injury_signal` is handed `text_signals(case)`, which is lowered —
+    # and was also handed raw notice text by anything that did not know that, so
+    # "RIDDOR" read as no signal at all.
+    return re.compile("|".join(parts), re.IGNORECASE)
+
+
+def matches_any(text: str, terms: Iterable[str]) -> bool:
+    """Whether any of `terms` appears in `text` as a word rather than a substring."""
+    return bool(signal_pattern(tuple(terms)).search(text))

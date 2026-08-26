@@ -83,6 +83,23 @@ class DocumentChunkRepository:
             statement = statement.limit(limit)
         return (await self._session.execute(statement)).scalars().all()
 
+    async def list_for_case(
+        self, case_id: uuid.UUID, *, limit: int | None = None
+    ) -> Sequence[FNOLDocumentChunk]:
+        """Every passage on a case, in document then chunk order.
+
+        What the whole-corpus fallback sends when a case is too small for selecting
+        among its passages to be worth the risk of dropping one.
+        """
+        statement = (
+            select(FNOLDocumentChunk)
+            .where(FNOLDocumentChunk.fnol_case_id == case_id)
+            .order_by(FNOLDocumentChunk.fnol_document_id, FNOLDocumentChunk.chunk_index)
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
+        return (await self._session.execute(statement)).scalars().all()
+
     async def count_for_document(self, document_id: uuid.UUID) -> int:
         statement = select(func.count(FNOLDocumentChunk.id)).where(
             FNOLDocumentChunk.fnol_document_id == document_id

@@ -326,18 +326,28 @@ npx tsc -b && npx vitest run && npm run build
   sentence naming OCR. Nothing else depends on it: adding it later is a
   registration in `documents/text.py` plus a client module, with no change to
   chunking, retrieval, citation or the API.
-* **No evaluation set.** Retrieval narrowing the prompt is the point, but it can
-  lose a value stated once and oddly worded that no field query happens to match.
-  Four things mitigate it by design — the notification body is always sent whole,
-  below `retrieval_min_chunks` the whole corpus is sent instead, queries are
-  per-field, and there is a score floor — but none of it is *measured*. Five to
-  ten real notices with known expected values, run as an integration test, is the
-  highest-value next piece of work in this area.
-* **The demo corpus is small.** Five documents produce ~10 passages, which is
-  below `CWB_DOCINT_RETRIEVAL_MIN_CHUNKS` (12) on the legacy evidence path, so
-  that path sends the whole corpus rather than narrowing it. The dataset engine
-  retrieves per field regardless. Raise the setting or add documents to exercise
-  narrowing specifically.
+* **Field-level accuracy is still not measured.** Retrieval narrowing the prompt is
+  the point, but it can lose a value stated once and oddly worded that no field
+  query happens to match. Four things mitigate it by design — the notification body
+  is always sent whole, below `CWB_EXTRACT_RETRIEVAL_MIN_CHUNKS` the whole corpus is
+  sent instead, queries are per-field, and there is a score floor — but no field's
+  *value* is compared against a known answer anywhere. What now is measured is the
+  layer below it: `case_data/_ground_truth/MATCHING_GROUND_TRUTH.json` states the
+  expected policy for all 24 packs, and `make eval-matching` scores the matcher
+  against it with `tests/unit/test_matching_ground_truth.py` as the regression
+  guard. That harness feeds the answer key's field values straight in, so it holds
+  extraction constant at perfect on purpose — a matching failure on correct inputs
+  is a matching bug, and one on extracted inputs could be either. Extending the key
+  to per-field expected values, driven through a real run, is the next piece.
+* **The corpus a real pack produces is small, and the engine now knows it.** Four
+  documents produce ~10 passages, below the floor of 12, so both paths send the
+  whole corpus rather than narrowing it. That used to be true of the legacy evidence
+  path only: `SchemaExtractionEngine._retrieve` called search directly, so on nearly
+  every real fixture a field whose best passage scored under
+  `CWB_DOCINT_RETRIEVAL_MIN_SCORE` was dropped with no recourse. It now checks
+  `CWB_EXTRACT_RETRIEVAL_MIN_CHUNKS` first and records `retrieval_strategy =
+  whole-corpus` on the run when it fires. Raise the setting or add documents to
+  exercise narrowing specifically.
 * **PDF highlight rendering is not covered by a unit test.** Rectangle
   *resolution* is tested against real PDFs on the backend, and the viewer's
   non-PDF paths are tested on the frontend, but drawing boxes over a pdf.js render

@@ -20,7 +20,11 @@ from app.domain.assessment import FIELD_READERS
 from app.domain.enums import FieldSource
 from app.domain.extraction import ExtractedField, FNOLExtraction
 from app.domain.heuristics import extract_from_text
-from app.domain.rules import BASE_REQUIRED_FIELDS, LOB_REQUIRED_FIELDS
+from app.domain.rules import (
+    BASE_REQUIRED_FIELDS,
+    LOB_REQUIRED_FIELDS,
+    SIGNAL_REQUIRED_FIELDS,
+)
 from app.repositories.fnol import FNOLRepository
 from app.services.ai.base import AIProvider, AIProviderError
 from app.services.fnol.evidence import SECTION_QUERIES, EvidenceBundle, FNOLEvidenceService
@@ -54,6 +58,7 @@ _FIELD_META: dict[str, tuple[str, str]] = {
     for requirement in (
         *BASE_REQUIRED_FIELDS,
         *(field for fields in LOB_REQUIRED_FIELDS.values() for field in fields),
+        *(field for fields in SIGNAL_REQUIRED_FIELDS.values() for field in fields),
     )
 }
 _FIELD_META.update(

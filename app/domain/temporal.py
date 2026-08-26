@@ -267,8 +267,23 @@ def resolve(
     searched = before
     found_when = _find_date(after, anchor) if after else None
 
+    #: What a relative phrase was read against, and how a note should name it.
+    relative_anchor, relative_source = anchor, "the notification of"
+
     if hit is not None and found_when is not None:
-        notes.append(f"“{after}” reads as when the loss was found, so it was not used.")
+        rebased = _rebase_on_discovery(before, hit, found_when, anchor)
+        if rebased is not None:
+            notes.append(
+                f"“{hit.phrase.strip()}” states no day of its own, so it is read against "
+                "the discovery rather than against the notification's arrival — the notice "
+                "says the loss happened the night before it was found, not the night before "
+                "it was reported."
+            )
+            hit = rebased
+            relative_anchor = datetime.combine(found_when.day, anchor.timetz())
+            relative_source = "the loss being discovered on"
+        else:
+            notes.append(f"“{after}” reads as when the loss was found, so it was not used.")
     elif hit is None and found_when is not None:
         # Nothing before the discovery word carried a date, so the notice states
         # only when the loss was found. That is the best answer available, and it
@@ -298,7 +313,11 @@ def resolve(
         return refused
 
     if hit.basis is not Basis.STATED:
-        notes.append(_derivation_note(hit, stamp, anchor, clock is not None))
+        notes.append(
+            _derivation_note(
+                hit, stamp, relative_anchor, clock is not None, against=relative_source
+            )
+        )
     if clock is not None:
         # "tonight" carries its own hour, and the derivation note has already
         # quoted it. Saying it twice reads as two separate inferences.
@@ -602,6 +621,54 @@ def _split_discovery(text: str) -> tuple[str, str]:
     return text[: match.start()].strip(" -–—;:"), text[match.start() :].strip()
 
 
+def _is_bare_relative(before: str, hit: _DateHit) -> bool:
+    """Whether the clause before "discovered" is nothing but a relative word.
+
+    "Overnight," is bare. "Overnight on Friday" is not — it names a day, and that day
+    is the answer. "The unit was left secure overnight" is not either: it says
+    something, and a clause that says something may well be dating itself.
+
+    Tested by removing the matched phrase and looking for anything alphanumeric left,
+    which is exactly the question and needs no vocabulary of its own.
+    """
+    if hit.basis is not Basis.RELATIVE:
+        return False
+    start, end = hit.span
+    if end <= start:
+        return False
+    remainder = before[:start] + before[end:]
+    return not any(char.isalnum() for char in remainder)
+
+
+def _rebase_on_discovery(
+    before: str, hit: _DateHit, found_when: _DateHit, anchor: datetime
+) -> _DateHit | None:
+    """A bare relative word re-read against the discovery date, or `None`.
+
+    The case: "Overnight, discovered Monday 06:40", on a notice that arrived several
+    days late. "Overnight" resolves against the notification's arrival, so the loss
+    was dated the night before the *email* rather than the night before the discovery
+    — silently, and by however long the broker sat on it. No conflict, no error, and
+    on a late-reported unattended loss that is the difference between a date inside
+    the policy period and one outside it.
+
+    What the notice actually asserts is that the loss happened overnight *before it
+    was found*, so the discovery date is the anchor that sentence was written
+    against. Only for a bare relative clause: anything that names a day of its own
+    already answered the question, and anything that says more than the word might
+    not have been dating itself at all.
+
+    Returns `None` when the rule does not apply or changes nothing, so the caller's
+    existing note stands.
+    """
+    if not _is_bare_relative(before, hit):
+        return None
+    rebased = _find_date(before, datetime.combine(found_when.day, anchor.timetz()))
+    if rebased is None or rebased.day == hit.day:
+        return None
+    return rebased
+
+
 def _without_date(text: str, hit: _DateHit) -> str:
     """The text a time is looked for in.
 
@@ -710,11 +777,24 @@ def _refuse(stamp: datetime, anchor: datetime, raw: str) -> Reading | None:
     return None
 
 
-def _derivation_note(hit: _DateHit, stamp: datetime, anchor: datetime, timed: bool) -> str:
-    """One sentence saying what was inferred and what it was inferred from."""
+def _derivation_note(
+    hit: _DateHit,
+    stamp: datetime,
+    anchor: datetime,
+    timed: bool,
+    *,
+    against: str = "the notification of",
+) -> str:
+    """One sentence saying what was inferred and what it was inferred from.
+
+    `against` names the thing the phrase was read relative to. It is a parameter
+    because that is not always the notification: a bare relative word before a
+    discovery clause is read against the discovery, and a note that said
+    "notification" there would contradict the reading it is explaining.
+    """
     shown = f"{_pretty(stamp.date())} {stamp:%H:%M}" if timed else _pretty(stamp.date())
     return (
-        f"“{hit.phrase.strip()}” is read as {shown}, relative to the notification of "
+        f"“{hit.phrase.strip()}” is read as {shown}, relative to {against} "
         f"{_pretty(anchor.date())}."
     )
 

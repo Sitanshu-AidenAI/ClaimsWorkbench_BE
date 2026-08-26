@@ -251,6 +251,44 @@ class TestPdfHighlighting:
         assert len(rects) == 2
         assert rects[0].top < rects[1].top
 
+    def test_a_heading_above_the_field_does_not_steal_the_highlight(self) -> None:
+        """The bug that made a highlight look like it had jumped a line.
+
+        A claim form heads a section with the same word its first field starts
+        with, which is what a claim form does:
+
+            POLICY
+            Policy number:            CP-4471-88210
+
+        Matching from the heading reaches full length by skipping one token — the
+        heading's own word — so a search that stopped at the first full-length run
+        drew two boxes: one over the heading, and one over the value line with its
+        first word missing. The contiguous run is the right answer and this is that
+        assertion.
+        """
+        content = build_pdf(["POLICY\nPolicy number: CP-4471-88210\nInsured name: Harborline"])
+
+        rects, note = resolve_pdf_rects(content, page_index=0, text="Policy number: CP-4471-88210")
+
+        assert note is None
+        # One line, one box — and it starts at the left margin, which is where the
+        # word "Policy" of the *field* sits rather than where the heading does.
+        assert len(rects) == 1
+        assert rects[0].x0 == pytest.approx(60.0, abs=1.0)
+        # The heading is drawn 20pt above the field in the fixture, and is not in it.
+        assert rects[0].top > 20
+
+    def test_an_interloper_is_still_tolerated_when_there_is_no_clean_run(self) -> None:
+        # The tolerance exists for a stray glyph between two words of a quote — a
+        # footnote marker, a page number — and preferring clean runs must not have
+        # removed it.
+        content = build_pdf(["Estimated loss: GBP * 128,000 as advised"])
+
+        rects, note = resolve_pdf_rects(content, page_index=0, text="GBP 128,000")
+
+        assert note is None
+        assert len(rects) == 1
+
     def test_text_that_is_not_on_the_page_returns_no_rectangles_and_a_reason(
         self, survey: tuple[bytes, str, list[Region]]
     ) -> None:

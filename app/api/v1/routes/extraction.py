@@ -37,10 +37,16 @@ from app.domain.enums import (
     ExtractionSchemaStatus,
     FieldSource,
 )
-from app.models.extraction import ExtractedValue, ExtractionSchema, ExtractionSchemaField
+from app.models.extraction import (
+    ExtractedValue,
+    ExtractedValueCitation,
+    ExtractionSchema,
+    ExtractionSchemaField,
+)
 from app.models.fnol import FNOLCase, FNOLDocument
 from app.schemas import extraction as api
-from app.services.extraction.locate import rect_from_dict, rect_to_dict
+from app.services.extraction import corroborate
+from app.services.extraction.locate import PDF_CONTENT_TYPE, rect_from_dict, rect_to_dict
 from app.services.extraction.registry import to_dataset
 from app.services.extraction.schema import normalise_data_type
 
@@ -275,6 +281,7 @@ async def get_extraction(
     run = await context.runs.latest_run(case.id, schema.id)
     values = await context.runs.list_values(case.id, schema.id)
     filenames = await _filenames(context, case)
+    counts = await context.runs.count_citations(case.id, schema.id)
     required = {field.key for field in schema.fields if field.required}
 
     return api.ExtractionResult(
@@ -286,6 +293,7 @@ async def get_extraction(
                 value,
                 filename=filenames.get(value.source_document_id),
                 required=value.field_key in required,
+                citations=counts.get(value.id, 0),
             )
             for value in values
         ],
@@ -399,8 +407,10 @@ async def update_value(
     value.quote = None
     value.char_start = None
     value.char_end = None
-    value.rects = None
-    value.highlight_note = None
+    # And every citation with it. A corroborating citation says "this document also
+    # states this value", which stops being true the moment the value changes to
+    # something the document does not state.
+    await context.runs.replace_citations(value, [])
 
     if spec is not None:
         # Read against the notice's own date, exactly as the model's answer was: an
@@ -450,6 +460,7 @@ async def value_evidence(
     context: FNOLContextDep,
     principal: ReadAccess,
     schema_key: Annotated[str | None, Query()] = None,
+    document_id: Annotated[uuid.UUID | None, Query()] = None,
     refresh: Annotated[bool, Query()] = False,
 ) -> api.EvidenceOut:
     """The document, page, text and rectangles behind one extracted value.
@@ -458,10 +469,17 @@ async def value_evidence(
     reached, so a viewer showing no highlight can say *why* rather than showing a
     page with nothing marked on it.
 
-    Rectangles are cached on the value row after the first request. Resolving
-    them means downloading the file and parsing a page's word geometry, and a
-    reviewer stepping between two fields on one document should not pay that
-    twice. `refresh=true` recomputes them.
+    **One value, several documents.** `citations` lists every document found to
+    state this value — the passage it was read from first, then each document that
+    turned out to agree. The highlight in the body of the response is for one of
+    them: the primary by default, or the one `document_id` names. That is the whole
+    contract of the source stepper: one request per source a reviewer actually
+    opens, and the list of the others comes free with each.
+
+    Rectangles are cached per citation after the first request. Resolving them
+    means downloading the file and measuring a page's word geometry, and a
+    reviewer stepping between two documents and back should not pay that twice.
+    `refresh=true` recomputes them.
     """
     del principal
     case = await context.fnol.get(reference)
@@ -471,44 +489,55 @@ async def value_evidence(
     if value is None:
         raise NotFoundError(f"No field {field_key!r} has been recorded on this notification.")
 
-    document = (
-        await context.cases.get_document(value.source_document_id)
-        if value.source_document_id is not None
-        else None
-    )
-    if document is None:
+    citations = list(await context.runs.list_citations(value.id))
+    documents = {document.id: document for document in await context.cases.list_documents(case.id)}
+    # A citation whose document has been deleted cannot happen — the foreign key
+    # cascades — but a citation whose document belongs to another case would be a
+    # cross-case leak, so the join is filtered rather than assumed.
+    citations = [row for row in citations if row.document_id in documents]
+
+    if not citations:
         return _evidence_without_document(value)
 
-    chunk = (
-        await context.chunks.get(value.source_chunk_id)
-        if value.source_chunk_id is not None
-        else None
-    )
+    active = _active_citation(citations, document_id)
+    document = documents[active.document_id]
+    listed = [api.to_citation(row, documents[row.document_id]) for row in citations]
 
-    cached = value.rects
-    if cached is not None and not refresh:
+    if active.rects is not None and not refresh:
         return _evidence(
             value,
             document,
-            rects=[rect_from_dict(rect) for rect in cached],
-            text=value.quote,
-            char_start=value.char_start,
-            char_end=value.char_end,
-            page_number=value.page_number,
-            section_label=value.section_label,
-            strategy="chunk-grounded" if chunk is not None else "document-search",
-            note=value.highlight_note,
+            rects=[rect_from_dict(rect) for rect in active.rects],
+            text=active.quote,
+            char_start=active.char_start,
+            char_end=active.char_end,
+            page_number=active.page_number,
+            section_label=active.section_label,
+            strategy=_cached_strategy(active, document),
+            note=active.highlight_note,
+            chunk_id=active.chunk_id,
+            citations=listed,
         )
 
-    location = await context.locator.resolve_evidence(
-        document, chunk, quote=value.quote, value=value.value_text
+    location = await context.locator.resolve_citation(
+        document,
+        quote=active.quote,
+        char_start=active.char_start,
+        page_number=active.page_number,
+        section_label=active.section_label,
+        grounded=active.chunk_id is not None,
     )
 
     if context.extraction_config.cache_highlight_rects:
-        value.rects = [rect_to_dict(rect) for rect in location.rects]
-        value.highlight_note = location.note
+        active.rects = [rect_to_dict(rect) for rect in location.rects]
+        active.highlight_note = location.note
         if location.page_number is not None:
-            value.page_number = location.page_number
+            active.page_number = location.page_number
+            if active.role == corroborate.ROLE_PRIMARY:
+                # Kept in step with the citation it came from: the values list
+                # renders "page 2" off the value row, and two answers to which page
+                # a value is on is one too many.
+                value.page_number = location.page_number
         await context.commit()
 
     return _evidence(
@@ -519,9 +548,11 @@ async def value_evidence(
         char_start=location.char_start,
         char_end=location.char_end,
         page_number=location.page_number,
-        section_label=location.section_label or value.section_label,
+        section_label=location.section_label or active.section_label,
         strategy=location.strategy,
         note=location.note,
+        chunk_id=active.chunk_id,
+        citations=listed,
     )
 
 
@@ -602,6 +633,37 @@ async def _filenames(context: FNOLContext, case: FNOLCase) -> dict[uuid.UUID | N
     return {document.id: document.filename for document in documents}
 
 
+def _active_citation(
+    citations: list[ExtractedValueCitation], document_id: uuid.UUID | None
+) -> ExtractedValueCitation:
+    """The citation to draw: the one asked for, or the one to show first.
+
+    Asking for a document this value does not cite is a 404 rather than a silent
+    fall back to the primary. A viewer that got the primary back after asking for
+    the engineer's report would label the notice's page as the report's, which is
+    the one class of mistake a provenance screen must not make.
+    """
+    if document_id is None:
+        return citations[0]
+    for row in citations:
+        if row.document_id == document_id:
+            return row
+    raise NotFoundError("This value is not cited in that document.")
+
+
+def _cached_strategy(citation: ExtractedValueCitation, document: FNOLDocument) -> str:
+    """The strategy label that goes with a set of cached rectangles.
+
+    Derived rather than stored, because it describes the *answer* — how precisely
+    the highlight could be placed — while `citation.strategy` describes how the
+    citation was found. They differ for a spreadsheet: found by search, and
+    reported as text-only because there is no page to draw on.
+    """
+    if not citation.rects and document.content_type != PDF_CONTENT_TYPE:
+        return "text-only"
+    return citation.strategy
+
+
 def _evidence_without_document(value: ExtractedValue) -> api.EvidenceOut:
     """The honest answer for a value with nothing to point at.
 
@@ -626,6 +688,7 @@ def _evidence_without_document(value: ExtractedValue) -> api.EvidenceOut:
         char_end=None,
         rects=[],
         strategy="none",
+        citations=[],
         note=(
             "This value was entered by an officer."
             if value.human_modified
@@ -646,6 +709,8 @@ def _evidence(
     section_label: str | None,
     strategy: str,
     note: str | None,
+    chunk_id: uuid.UUID | None,
+    citations: list[api.CitationOut],
 ) -> api.EvidenceOut:
     return api.EvidenceOut(
         field_key=value.field_key,
@@ -656,7 +721,7 @@ def _evidence(
         filename=document.filename,
         content_type=document.content_type,
         document_source=document.source,
-        chunk_id=value.source_chunk_id,
+        chunk_id=chunk_id,
         page_number=page_number,
         page_count=document.page_count,
         section_label=section_label,
@@ -666,6 +731,7 @@ def _evidence(
         rects=[api.to_rect(rect) for rect in rects],
         strategy=strategy,
         note=note,
+        citations=citations,
     )
 
 

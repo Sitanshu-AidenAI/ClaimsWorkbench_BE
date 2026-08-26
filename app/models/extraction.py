@@ -18,6 +18,11 @@ Four tables, and the split is the lifecycle:
   fingerprint that makes a re-run free, and the per-run counts that make a
   partial failure visible instead of silent.
 * `extracted_values` — one value per field, with the passage it was read from.
+* `extracted_value_citations` — every document that states that value. One row is
+  one place a reviewer can be taken to see it, and a value routinely has several:
+  the broker's email, the completed notice form and the engineer's report can all
+  print the same policy number, and "which of the three did we read" and "do the
+  three agree" are different questions an officer needs both answers to.
 
 `extracted_values` is deliberately not `fnol_extracted_fields`. That table is the
 review screen's contract and is keyed by the case's own field paths; this one is
@@ -247,10 +252,14 @@ class ExtractedValue(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     a re-run idempotent from the review screen's point of view: a value does not
     move, it changes, and a human correction on it survives the next run.
 
-    Everything a viewer needs to draw a highlight is stored here rather than
-    recomputed: the document, the passage, the page, the offsets and the quote.
-    Rectangles are the one exception — they need the file's bytes and the page
-    geometry, so they are resolved on demand and cached in `rects`.
+    The document, passage, page, offsets and quote of the *primary* citation — the
+    passage the model says it read the value from — are denormalised onto this row
+    so the review screen renders a value and its source without a join.
+    `citations` carries that same passage as its first row plus every other
+    document found to state the same value, and it is what the source stepper in
+    the viewer walks. Rectangles live there and nowhere else: they need the file's
+    bytes and a page's word geometry, so they are resolved on demand, per
+    citation, and cached on the citation row.
     """
 
     __tablename__ = "extracted_values"
@@ -312,15 +321,6 @@ class ExtractedValue(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     char_start: Mapped[int | None] = mapped_column(Integer)
     char_end: Mapped[int | None] = mapped_column(Integer)
 
-    #: Cached rectangles, `[{page_number, x0, top, x1, bottom, page_width,
-    #: page_height}]`. Resolved lazily on the first evidence request and kept, so
-    #: a reviewer clicking back and forth between two fields does not re-download
-    #: and re-parse a 30MB PDF each time. Cleared whenever the value changes.
-    rects: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB)
-    #: Why there are no rectangles, when there are none. A normal answer for a
-    #: Word document, not an error.
-    highlight_note: Mapped[str | None] = mapped_column(Text)
-
     human_modified: Mapped[bool] = mapped_column(Boolean, default=False)
     original_value: Mapped[str | None] = mapped_column(Text)
     modified_by: Mapped[str | None] = mapped_column(String(255))
@@ -328,6 +328,15 @@ class ExtractedValue(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     override_reason: Mapped[str | None] = mapped_column(Text)
 
     run: Mapped[ExtractionRun | None] = relationship(back_populates="values")
+    citations: Mapped[list[ExtractedValueCitation]] = relationship(
+        back_populates="value",
+        cascade="all, delete-orphan",
+        order_by="ExtractedValueCitation.rank",
+        # Loaded explicitly by the routes that need them. A value row is rendered
+        # thirty-eight at a time on the review screen and none of those rows need a
+        # citation until somebody clicks one.
+        lazy="raise",
+    )
 
     __table_args__ = (
         UniqueConstraint("fnol_case_id", "schema_id", "field_key", name="uq_extracted_value_field"),
@@ -339,8 +348,94 @@ class ExtractedValue(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
 
+class ExtractedValueCitation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """One document that states one value, and where in it to look.
+
+    Rows come from two places and the `role` column says which, because a reviewer
+    reads them differently:
+
+    * `primary` — a passage the model itself cited. This is where the value was
+      *read*, and it is the citation a reviewer is shown first.
+    * `corroborating` — a document found to contain the value by searching its
+      text after the fact. Nothing about the model's answer depends on it; it is
+      evidence that three documents agree, which is a confidence signal in its own
+      right and the answer to "does the engineer's report back this up".
+
+    A corroborating row is only ever written when the document's own text actually
+    contains the value. A citation pointing at a document that does not state what
+    it is cited for is worse than no citation, and inventing one is easy — which is
+    why the model's own claim about a second source is not trusted here: it is
+    re-derived from the text.
+    """
+
+    __tablename__ = "extracted_value_citations"
+
+    value_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("extracted_values.id", ondelete="CASCADE"), index=True
+    )
+    #: `primary` | `corroborating`.
+    role: Mapped[str] = mapped_column(String(16), default="corroborating")
+    #: Display order within a value: primaries first, then corroborating rows in
+    #: the order the documents were ranked. Stored rather than sorted at read time
+    #: so the stepper's "source 3 of 7" means the same thing on every request.
+    rank: Mapped[int] = mapped_column(Integer, default=0)
+
+    #: `CASCADE` rather than `SET NULL`, unlike the value's own
+    #: `source_document_id`: a citation *is* a pointer at a document, so one whose
+    #: document has been deleted is not a degraded citation, it is not one.
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("fnol_documents.id", ondelete="CASCADE"), index=True
+    )
+    #: The passage, for a primary citation. Null for a corroborating one: the value
+    #: was found in the document's text, which is not cut into passages until it is
+    #: indexed, and the offsets are the honest answer either way.
+    chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("fnol_document_chunks.id", ondelete="SET NULL")
+    )
+
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    section_label: Mapped[str | None] = mapped_column(String(128))
+
+    #: The text to mark, **as this document writes it**. A date the notice prints
+    #: as "10 January 2026" and the report prints as "2026-01-10" is one value and
+    #: two quotes, and highlighting either document with the other's wording finds
+    #: nothing.
+    quote: Mapped[str | None] = mapped_column(Text)
+    char_start: Mapped[int | None] = mapped_column(Integer)
+    char_end: Mapped[int | None] = mapped_column(Integer)
+
+    #: Cached rectangles, `[{page_number, x0, top, x1, bottom, page_width,
+    #: page_height}]`. Resolved on the first request for *this* citation and kept,
+    #: so a reviewer stepping between two documents and back does not re-download
+    #: and re-measure a 30MB PDF each time. Null means "not resolved yet"; an empty
+    #: list means "resolved, and there is no geometry" — the two are different
+    #: answers and `highlight_note` explains the second.
+    rects: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB)
+    highlight_note: Mapped[str | None] = mapped_column(Text)
+
+    #: How this citation was arrived at: `chunk-grounded` for a passage the model
+    #: cited, `document-search` for one found in the document's text.
+    strategy: Mapped[str] = mapped_column(String(24), default="document-search")
+
+    value: Mapped[ExtractedValue] = relationship(back_populates="citations")
+
+    __table_args__ = (
+        # One citation per document per value. A value stated four times in one
+        # file is still one answer to "does this file state it", and stepping
+        # between the four is what the occurrence search is for.
+        UniqueConstraint("value_id", "document_id", name="uq_value_citation_document"),
+        Index("ix_value_citations_value_rank", "value_id", "rank"),
+        CheckConstraint(
+            "char_end IS NULL OR char_start IS NULL OR char_end >= char_start",
+            name="citation_offsets_ordered",
+        ),
+        CheckConstraint("role IN ('primary', 'corroborating')", name="citation_role_known"),
+    )
+
+
 __all__ = [
     "ExtractedValue",
+    "ExtractedValueCitation",
     "ExtractionRun",
     "ExtractionSchema",
     "ExtractionSchemaField",

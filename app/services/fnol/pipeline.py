@@ -54,6 +54,7 @@ from app.domain.enums import (
     ProcessingState,
 )
 from app.domain.lifecycle import derive_status
+from app.domain.money import format_amount
 from app.models.fnol import FNOLCase
 from app.repositories.extraction import ExtractionSchemaRepository
 from app.repositories.fnol import FNOLRepository
@@ -778,7 +779,7 @@ def _summary_facts(
     these values changes.
     """
     money = (
-        f"{case.currency} {case.estimated_loss_minor / 100:,.0f}"
+        format_amount(case.estimated_loss_minor, case.currency)
         if case.estimated_loss_minor
         else None
     )

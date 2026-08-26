@@ -32,6 +32,7 @@ from app.domain.enums import (
     ClaimStatus,
 )
 from app.domain.knowledge_graph import GraphInput, build_claim_graph
+from app.domain.money import to_currency, to_major
 from app.models.claim import Claim
 from app.schemas import claims as api
 from app.schemas import knowledge_graph as kg_api
@@ -487,12 +488,23 @@ async def _detail(context: FNOLContext, claim: Claim) -> api.ClaimDetail:
         if handler and handler.authority_limit_minor
         else None
     )
+    # Subtracted in one currency or not at all. The authority limit is the
+    # handler's and the reserve is the claim's, and "£500,000 authority, $600,000
+    # reserve" is not a £100,000 overrun.
+    authority_in_claim_currency = (
+        to_currency(
+            authority.amount_minor, authority.currency, claim.currency, config=settings.fnol
+        )
+        if authority
+        else None
+    )
     over_by = (
         Money(
-            amount_minor=claim.reserve_minor - authority.amount_minor,
+            amount_minor=claim.reserve_minor - authority_in_claim_currency.amount_minor,
             currency=claim.currency,
         )
-        if authority and claim.reserve_minor > authority.amount_minor
+        if authority_in_claim_currency
+        and claim.reserve_minor > authority_in_claim_currency.amount_minor
         else None
     )
 
@@ -637,7 +649,7 @@ def _compact(amount_minor: int, currency: str) -> str:
     rounded them itself would eventually round them differently from the tile
     above the column.
     """
-    units = amount_minor / 100
+    units = to_major(amount_minor, currency)
     symbol = {"GBP": "£", "USD": "$", "EUR": "€", "SGD": "S$"}.get(currency, "")
     if abs(units) >= 1_000_000:
         return f"{symbol}{_trim(units / 1_000_000, 2)}m"

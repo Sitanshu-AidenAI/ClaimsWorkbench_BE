@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -120,9 +120,28 @@ class FakeMailClient:
         self.moved: list[tuple[str, str]] = []
         #: Appended to by the fake session too, so ordering can be asserted.
         self.journal: list[str] = []
+        #: The watermark each poll swept from, so the caller's side can be asserted.
+        self.since_seen: list[datetime | None] = []
+        #: What `folder_stats` reports. Defaults to agreeing with the ledger.
+        self.folder_total: int | None = None
+        #: Unread mail the folder claims to hold, for the blind-sweep check.
+        self.folder_unread = 0
+        self.folder_stats_error: Exception | None = None
 
-    async def list_messages(self, *, limit: int | None = None) -> list[GraphMessage]:
-        return self._messages[: limit or len(self._messages)]
+    async def list_messages(
+        self, *, limit: int | None = None, since: datetime | None = None
+    ) -> list[GraphMessage]:
+        self.since_seen.append(since)
+        visible = [
+            message for message in self._messages if since is None or message.received_at >= since
+        ]
+        return visible[: limit or len(visible)]
+
+    async def folder_stats(self, folder: str | None = None) -> tuple[int, int]:
+        if self.folder_stats_error is not None:
+            raise self.folder_stats_error
+        total = self.folder_total if self.folder_total is not None else len(self._messages)
+        return total, self.folder_unread
 
     async def list_attachments(self, message_id: str) -> list[GraphAttachmentMetadata]:
         return self._attachments.get(message_id, [])
@@ -170,6 +189,25 @@ class FakeMailRepository:
         for row in self.pending:
             if row.id is None:
                 row.id = uuid.uuid4()
+
+    async def newest_received_at(self, mailbox: str) -> datetime | None:
+        stamps = [row.received_at for row in self.rows if row.mailbox == mailbox]
+        return max(stamps) if stamps else None
+
+    async def count_for_mailbox(self, mailbox: str) -> int:
+        return sum(1 for row in self.rows if row.mailbox == mailbox)
+
+    async def count_recorded(
+        self, *, graph_message_ids: Sequence[str], internet_message_ids: Sequence[str]
+    ) -> int:
+        graph = set(graph_message_ids)
+        internet = set(internet_message_ids)
+        return sum(
+            1
+            for row in self.rows
+            if row.graph_message_id in graph
+            or (row.internet_message_id is not None and row.internet_message_id in internet)
+        )
 
     def add_attachment(self, attachment: MailIntakeAttachment) -> MailIntakeAttachment:
         record = next(row for row in self.rows if row.id == attachment.mail_intake_message_id)
@@ -555,6 +593,135 @@ class TestAttachments:
             row for row in harness.records[0].attachments if row.filename == "report-2.pdf"
         )
         assert "maximum" in (refused.detail or "")
+
+
+class TestSweepCoverage:
+    """The outage this module lost a live claim to, pinned from both ends.
+
+    A message sat in the inbox for a day, flagged read by a human opening the
+    shared mailbox, and every poll for twenty-two hours reported success on a
+    folder it could no longer see it in. Two things had to be true at once: the
+    sweep filtered on `isRead`, and it could not page past its own batch size.
+    Each of the tests below fails if either comes back.
+    """
+
+    async def test_nothing_in_the_sequence_re_reads_the_read_flag(self) -> None:
+        """The service half. The filter itself is the client's, and is pinned in
+        `test_graph_client` and `test_config`; what this holds is that no step
+        between listing and committing quietly reintroduces an `is_read` check."""
+        opened = a_message()
+        opened.is_read = True
+        harness = build([opened])
+
+        summary = await harness.service.poll()
+
+        assert summary.ingested == 1
+        assert harness.records[0].status == MailIntakeStatus.PROCESSED
+
+    async def test_the_first_poll_of_an_empty_ledger_reads_the_whole_folder(self) -> None:
+        harness = build([a_message()])
+
+        await harness.service.poll()
+
+        # `None`, not "now": a mailbox with history must be collectable, and a
+        # watermark invented at first run would strand everything before it.
+        assert harness.client.since_seen == [None]
+
+    async def test_later_polls_sweep_back_from_the_newest_collected_message(self) -> None:
+        harness = build(
+            [a_message(message_id="AAMk-2", internet_message_id="<later@broker.test>")],
+            seed=a_ledger_row(),
+            graph=GraphSettings(shared_mailbox=MAILBOX, lookback_minutes=60),
+        )
+
+        await harness.service.poll()
+
+        seeded_at = harness.repository.committed[0].received_at
+        assert harness.client.since_seen == [seeded_at - timedelta(minutes=60)]
+
+    async def test_the_lookback_keeps_a_late_delivery_inside_the_window(self) -> None:
+        """A message that arrives out of order must not fall behind the watermark.
+
+        Graph orders by `receivedDateTime`, and that is not the order things are
+        delivered in. Without the overlap, a message stamped earlier than one
+        already collected would sit below the floor and never be listed again.
+        """
+        collected_at = datetime(2026, 8, 11, 9, 14, tzinfo=UTC)
+        late = a_message(message_id="AAMk-late", internet_message_id="<late@broker.test>")
+        late.received_at = collected_at - timedelta(minutes=30)
+        harness = build(
+            [late],
+            seed=a_ledger_row(),
+            graph=GraphSettings(shared_mailbox=MAILBOX, lookback_minutes=1440),
+        )
+
+        summary = await harness.service.poll()
+
+        assert summary.ingested == 1
+
+    async def test_a_folder_holding_more_than_the_ledger_raises_the_alarm(self) -> None:
+        harness = build([a_message()])
+        harness.client.folder_total = 40
+
+        summary = await harness.service.poll()
+
+        # The count the mailbox reports, against the count intake believes. A
+        # sweep that has gone blind logs `fetched=0` and looks healthy; this pair
+        # is the only thing that contradicts it.
+        assert (summary.folder_total, summary.ledger_total) == (40, 1)
+
+    async def test_a_message_that_leaves_no_ledger_row_is_reported_as_dropped(self) -> None:
+        """The exact check, and the only one that needs no assumptions.
+
+        A message listed from the mailbox that ends the poll with no row is
+        neither collected nor queued for retry — nothing will ever look at it
+        again. This is the one failure that must never be inferred from a
+        counter, because the counters come from the same code that dropped it.
+        """
+        harness = build([a_message()])
+
+        async def _vanish(*_args: object, **_kwargs: object) -> None:
+            return None
+
+        # A collect that quietly does nothing, and a failure path that cannot
+        # write either: the row never appears under any name.
+        harness.service._collect = _vanish  # type: ignore[method-assign]
+
+        summary = await harness.service.poll()
+
+        assert summary.fetched == 1
+        assert summary.dropped == 1
+
+    async def test_unread_mail_that_the_sweep_returns_nothing_for_is_an_error(self) -> None:
+        """The signature of the twenty-two hour outage, caught in one poll.
+
+        Collection marks messages read, so unread mail the sweep fetched nothing
+        for cannot be explained away. Unlike a folder-count comparison this
+        cannot drift: it does not care how many rows the ledger has accumulated.
+        """
+        harness = build([])
+        harness.client.folder_unread = 3
+
+        summary = await harness.service.poll()
+
+        assert summary.fetched == 0
+        assert summary.sweep_blind is True
+
+    async def test_a_quiet_mailbox_is_not_mistaken_for_a_blind_sweep(self) -> None:
+        harness = build([])
+
+        summary = await harness.service.poll()
+
+        assert summary.sweep_blind is False
+
+    async def test_a_reconciliation_that_cannot_be_read_does_not_fail_the_poll(self) -> None:
+        harness = build([a_message()])
+        harness.client.folder_stats_error = GraphError("Folder counts unavailable.")
+
+        summary = await harness.service.poll()
+
+        assert summary.ingested == 1
+        assert summary.folder_total is None
 
 
 class TestFailureHandling:

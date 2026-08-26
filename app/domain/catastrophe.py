@@ -17,15 +17,74 @@ from app.core.config import FNOLSettings
 from app.domain.matching import haversine_km, normalise, tokens
 
 #: Peril words that identify an event type in a loss description.
+#:
+#: A gap here is silent and expensive: `_peril_score` returns `_PERIL_MISMATCH` when a
+#: notice states a cause it cannot recognise, and a mismatch *gates* — the event is
+#: not merely scored lower, it is discarded. So a peril the vocabulary has never heard
+#: of does not degrade to "unstated"; it actively rules the event out.
+#:
+#: The US entries below were added because three fixtures built specifically to
+#: exercise catastrophe attribution could not have matched anything: `haboob`,
+#: `microburst` and `derecho` were absent, and `cypress-landing-haboob` avoided a
+#: mismatch only because "storm" happens to be a substring of the "windstorm" in its
+#: cause text. Substring matching covering for a missing term is not coverage.
 EVENT_PERIL_TERMS: dict[str, tuple[str, ...]] = {
-    "flood": ("flood", "flooding", "inundation", "water ingress", "river burst", "surface water"),
-    "storm": ("storm", "gale", "high winds", "wind damage", "tempest"),
+    "flood": (
+        "flood",
+        "flooding",
+        "inundation",
+        "water ingress",
+        "river burst",
+        "surface water",
+        "flash flood",
+        "storm surge",
+        "levee",
+    ),
+    "storm": (
+        "storm",
+        "gale",
+        "high winds",
+        "wind damage",
+        "tempest",
+        "windstorm",
+        "straight-line wind",
+        "straight line wind",
+        "squall",
+        "gust front",
+        "downburst",
+        "microburst",
+        "derecho",
+        "haboob",
+    ),
     "cyclone": ("cyclone", "typhoon", "tropical storm"),
-    "hurricane": ("hurricane",),
+    "hurricane": ("hurricane", "tropical cyclone"),
+    "tornado": ("tornado", "twister", "funnel cloud", "ef1", "ef2", "ef3"),
+    "derecho": (
+        "derecho",
+        "straight-line wind",
+        "straight line wind",
+        "bow echo",
+        "downburst",
+    ),
+    "microburst": ("microburst", "downburst", "wet microburst", "dry microburst"),
+    "haboob": ("haboob", "dust storm", "duststorm", "dust wall", "blowing dust"),
     "earthquake": ("earthquake", "seismic", "tremor"),
-    "wildfire": ("wildfire", "bushfire", "brush fire", "forest fire"),
-    "hail": ("hail", "hailstone"),
-    "freeze": ("freeze", "frozen pipe", "burst pipe", "cold snap"),
+    "wildfire": ("wildfire", "bushfire", "brush fire", "forest fire", "grass fire"),
+    "hail": ("hail", "hailstone", "hailstorm", "hail damage"),
+    "freeze": (
+        "freeze",
+        "frozen pipe",
+        "burst pipe",
+        "cold snap",
+        "frozen sprinkler",
+        "freezing",
+        "hard freeze",
+        "arctic",
+        "polar vortex",
+        "ice dam",
+        "winter storm",
+    ),
+    "winter_storm": ("winter storm", "blizzard", "ice storm", "snow load", "freezing rain"),
     "industrial": ("explosion", "industrial incident", "plant failure", "chemical release"),
 }
 
