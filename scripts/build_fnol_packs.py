@@ -28,8 +28,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import build_demo_packs as base  # noqa: E402
-from build_demo_packs import (  # noqa: E402
+import build_demo_packs as base
+from build_demo_packs import (
     Scenario,
     build_loss_notice,
     build_report,
@@ -90,19 +90,26 @@ Kind regards,
     (s.directory / "broker-notification.eml").write_text(body)
 
 
-def build_readme(s: Scenario, expected: str, confidence: str, why: str,
-                 exercises: tuple[str, ...]) -> None:
-    facts = "\n".join(f"| {label} | {value} |" for label, value in (
-        ("Line of business", s.line_of_business),
-        ("Insured", s.insured),
-        ("Broker", f"{s.broker} — {s.handler}, {s.handler_role}"),
-        ("Policy number on the notice", f"`{s.policy_number}`" if s.policy_number else "*not stated*"),
-        ("Broker reference", f"`{s.broker_reference}`"),
-        ("Date of loss", f"{s.date_of_loss}, {s.time_of_loss}"),
-        ("Loss location", s.loss_location),
-        ("Cause", s.cause),
-        ("Estimated loss", f"{s.currency} {s.estimated_loss}"),
-    ))
+def build_readme(
+    s: Scenario, expected: str, confidence: str, why: str, exercises: tuple[str, ...]
+) -> None:
+    facts = "\n".join(
+        f"| {label} | {value} |"
+        for label, value in (
+            ("Line of business", s.line_of_business),
+            ("Insured", s.insured),
+            ("Broker", f"{s.broker} — {s.handler}, {s.handler_role}"),
+            (
+                "Policy number on the notice",
+                f"`{s.policy_number}`" if s.policy_number else "*not stated*",
+            ),
+            ("Broker reference", f"`{s.broker_reference}`"),
+            ("Date of loss", f"{s.date_of_loss}, {s.time_of_loss}"),
+            ("Loss location", s.loss_location),
+            ("Cause", s.cause),
+            ("Estimated loss", f"{s.currency} {s.estimated_loss}"),
+        )
+    )
     points = "\n".join(f"* {line}" for line in exercises)
     verdict = f"`{expected}`" if expected != "NO_MATCH" else "**NO_MATCH**"
     body = f"""# {s.title}

@@ -90,12 +90,28 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
+# 4,400 lines of case data, not code: twenty-four broker notices with the subject
+# lines, exposure answers and rationale notes they really carry. A line limit earns
+# its keep by making logic reviewable, and here it would do the opposite — the long
+# lines are single string literals like an email subject, and the only way to shorten
+# one is to break it into concatenated fragments. That hurts twice over. These strings
+# are the ground truth the matching evaluation scores against, so a space moved across
+# a fragment boundary is a silent change to an expected value; and a subject line
+# split down the middle can no longer be found by grepping for the subject.
+"scripts/fnol_scenarios.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
 [tool.ruff.format]
 quote-style = "double"
+# Linted, but not reformatted. The formatter's preferred layout for this file is a
+# 4,400-line rewrite — it joins the hand-aligned schedule rows onto single lines,
+# which then breaks the line limit it cannot fix, so running it makes `ruff check`
+# worse rather than better. The rows are tabular on purpose: a damage schedule read
+# column-by-column is how you spot that one of twenty-four packs has the wrong
+# currency. Excluded here rather than repo-wide, so `ruff check` still applies to it.
+exclude = ["scripts/fnol_scenarios.py"]
 
 # ---------------------------------------------------------------------------
 # Tests

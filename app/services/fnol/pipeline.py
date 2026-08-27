@@ -347,6 +347,17 @@ class FNOLPipeline:
                 documents=documents,
                 index_signature=index.signature,
             )
+            # A provider that was configured and could not be reached is not the
+            # same thing as no provider at all, and `extract` degrades to the
+            # deterministic reader in both cases — so the returned extraction
+            # cannot tell them apart. `error` can: `_heuristic` leaves it unset,
+            # and only the `AIProviderError` branch fills it in. That is the whole
+            # distinction. A desk with no API key is *working as configured* and
+            # must keep the regex reading it has always had; a desk running on
+            # model extraction whose upstream is down has failed to read the
+            # notice, and saying otherwise is how an outage becomes invisible —
+            # the values are a fallback, not the answer that was asked for.
+            provider_failed = outcome.error is not None
             if outcome.extraction is None:
                 extraction_failed = True
                 await self._repository.record_analysis(
@@ -361,6 +372,7 @@ class FNOLPipeline:
                     latency_ms=outcome.latency_ms,
                 )
             else:
+                extraction_failed = provider_failed
                 field_confidences = await self._extraction.apply(
                     case, outcome.extraction, evidence=outcome.evidence
                 )
@@ -381,6 +393,12 @@ class FNOLPipeline:
                         "retrieval": (outcome.evidence.trace if outcome.evidence else {}),
                     },
                     confidence=outcome.extraction.overall_confidence,
+                    # `failed` matters twice: it is what the officer sees when they
+                    # ask why the form is thin, and it is what stops `reused` above
+                    # from treating the fallback as a cached answer — which would
+                    # make one outage permanent for every notice that arrived
+                    # during it.
+                    status="failed" if provider_failed else "completed",
                     error=outcome.error,
                     latency_ms=outcome.latency_ms,
                 )
@@ -388,8 +406,15 @@ class FNOLPipeline:
                     case,
                     event_type=AuditEventType.EXTRACTION_COMPLETED,
                     summary=(
-                        f"Notification read by {outcome.provider} with "
-                        f"{outcome.extraction.overall_confidence:.0%} overall confidence."
+                        (
+                            "Notification read by the deterministic extractor: the model "
+                            "provider could not be reached."
+                        )
+                        if provider_failed
+                        else (
+                            f"Notification read by {outcome.provider} with "
+                            f"{outcome.extraction.overall_confidence:.0%} overall confidence."
+                        )
                     ),
                     context={"provider": outcome.provider, "model": outcome.model},
                 )
