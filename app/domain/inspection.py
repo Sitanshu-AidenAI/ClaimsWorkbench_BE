@@ -19,7 +19,10 @@ Five rules live here and nowhere else:
   a courtesy, not a guarantee; and
 * which chip on the adjuster's queue an inspection sits under (`matches_chip`),
   which is where the distinction between a *status* and a *fact about the report*
-  is actually made.
+  is actually made; and
+* whose visit it is (`owns_inspection`, `may_record_findings`), which is what lets
+  a loss adjuster record their own findings without being able to record anybody
+  else's.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Protocol
 
-from app.domain.enums import DamageSeverity, InspectionStatus
+from app.domain.enums import CLAIM_WORK_ROLES, DamageSeverity, InspectionStatus
 
 # ---------------------------------------------------------------------------
 # Transitions
@@ -360,6 +363,91 @@ def is_overdue(report: Report, *, report_due_at: datetime | None, now: datetime)
     return report_due_at < now
 
 
+# ---------------------------------------------------------------------------
+# Whose visit is it
+# ---------------------------------------------------------------------------
+
+
+def owns_inspection(
+    *,
+    adjuster_subject: str | None,
+    adjuster_email: str | None,
+    subject: str | None,
+    email: str | None,
+) -> bool:
+    """Whether this visit was instructed to this person.
+
+    Two ways to be the same person, and the order matters. The account wins where
+    there is one: `adjuster_subject` is set the first time the adjuster records
+    anything, and from then on the link survives their address changing. The email
+    is the fallback that makes the first time possible at all — a visit is
+    instructed to a named contact long before that person signs in, and a rule that
+    only understood accounts would refuse every adjuster on their first visit.
+
+    An inspection with neither recorded belongs to nobody, and returns `False` for
+    everyone. That is not a gap: it is the ordinary state of a visit instructed to a
+    firm, and it means the handler records the findings — which is what happened for
+    every inspection before these columns existed.
+
+    Comparison on the address is case-folded and trimmed, because it arrives from
+    two places that disagree about both: a handler typing it into the commission
+    dialog, and an identity provider asserting it in a token.
+    """
+    if subject and adjuster_subject and subject == adjuster_subject:
+        return True
+
+    #: Only when no account has been claimed. Once `adjuster_subject` is set it is
+    #: the answer, and a stale address on the row must not re-open the visit to
+    #: whoever happens to hold that mailbox now.
+    if adjuster_subject is None and email and adjuster_email:
+        return _address(email) == _address(adjuster_email)
+
+    return False
+
+
+def may_record_findings(
+    *,
+    roles: Iterable[str],
+    adjuster_subject: str | None,
+    adjuster_email: str | None,
+    subject: str | None,
+    email: str | None,
+) -> bool:
+    """Whether this caller may record attendance, findings or actions on this visit.
+
+    Two answers, and only one of them is about ownership.
+
+    A caller holding any of `CLAIM_WORK_ROLES` may record on any visit, and that is
+    not laxity. They commission the visit, they chase it, and on a small loss they
+    write down what the adjuster told them on the telephone — the note on
+    `INSPECTION_WORK_ROLES` says so. A handler restricted to visits assigned to them
+    could not do the job the inspection exists to serve.
+
+    Everybody else — in practice a loss adjuster, since the route's role gate has
+    already turned away anyone who is neither — may record only on their own visit.
+    Without that clause, widening the gate to admit adjusters at all would let any
+    adjuster write findings onto any inspection on the desk, which is worse than the
+    read-only board it replaced.
+
+    Roles rather than capabilities here on purpose: this is a rule about what a
+    persona *is* rather than a board an administrator may re-delegate, which is the
+    line `require_roles` and `require_capability` already draw.
+    """
+    if any(role in CLAIM_WORK_ROLES for role in roles):
+        return True
+
+    return owns_inspection(
+        adjuster_subject=adjuster_subject,
+        adjuster_email=adjuster_email,
+        subject=subject,
+        email=email,
+    )
+
+
+def _address(value: str) -> str:
+    return value.strip().casefold()
+
+
 __all__ = [
     "ATTENDED_STATUSES",
     "CHIPS",
@@ -377,7 +465,9 @@ __all__ = [
     "is_settled",
     "matches_chip",
     "material_count",
+    "may_record_findings",
     "outstanding_actions",
+    "owns_inspection",
     "priced_count",
     "quantified_minor",
     "quantified_total",

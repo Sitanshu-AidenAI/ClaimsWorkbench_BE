@@ -32,9 +32,15 @@ claim was created. It is the same line `app.services.claims` draws everywhere.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationError,
+)
 from app.domain import claim_lifecycle
 from app.domain import inspection as rules
 from app.domain.enums import (
@@ -66,6 +72,7 @@ class ClaimInspectionService:
         actor: str,
         adjuster_name: str | None = None,
         adjuster_firm: str | None = None,
+        adjuster_email: str | None = None,
         report_due_at: datetime | None = None,
         site_kind: str | None = None,
         site_address: str | None = None,
@@ -82,6 +89,14 @@ class ClaimInspectionService:
         the visit cannot proceed without. Anything more specific — the unit, the
         gate code, who has the keys — is the caller's to supply, and is null until
         somebody does rather than guessed at.
+
+        **`adjuster_email` is what makes the visit somebody's.** Optional, and null
+        is the ordinary case — a firm is instructed before a person is named. Given
+        one, the adjuster can see the visit on their own board and record their own
+        findings against it; without one the visit belongs to nobody and the handler
+        records them, which is how every inspection worked before the address
+        existed. See `ClaimInspection.adjuster_subject` for how the account is
+        claimed against it later.
 
         One per claim. A second call is a conflict rather than a second row: the
         `more_needed → visit_booked` loop is how a follow-up visit is recorded, and
@@ -110,6 +125,10 @@ class ClaimInspectionService:
                 status=str(InspectionStatus.TO_SCHEDULE),
                 adjuster_name=adjuster_name,
                 adjuster_firm=adjuster_firm,
+                #: Stored lowercased and trimmed, because it is compared against an
+                #: address an identity provider asserts and the two disagree about
+                #: both. Normalising on the way in beats normalising at every read.
+                adjuster_email=adjuster_email.strip().lower() if adjuster_email else None,
                 commissioned_by=actor,
                 commissioned_at=now,
                 report_due_at=report_due_at,
@@ -510,6 +529,60 @@ class ClaimInspectionService:
         return action
 
     # -- Shared --------------------------------------------------------------
+
+    async def authorise_recording(
+        self,
+        claim: Claim,
+        *,
+        roles: Sequence[str],
+        subject: str | None,
+        email: str | None,
+        actor: str,
+    ) -> ClaimInspection:
+        """Check this caller may record on this visit, and claim their account if so.
+
+        Returns the inspection, so a caller does not fetch it twice.
+
+        The check is `app.domain.inspection.may_record_findings` and the decision is
+        entirely there — this method's own work is the *adoption*: an adjuster
+        admitted on the strength of the address the visit was instructed to has their
+        subject written onto the row, so every later read is by account and survives
+        the address changing. Adoption on the first write rather than on sign-in,
+        because sign-in does not know which visits are theirs and this does.
+
+        Raises `PermissionDeniedError` rather than returning a flag. The routes that
+        call it have already passed a role gate, so reaching here and failing means a
+        loss adjuster is writing to somebody else's visit — which is a refusal, not a
+        branch.
+        """
+        inspection = await self._require(claim)
+
+        if not rules.may_record_findings(
+            roles=roles,
+            adjuster_subject=inspection.adjuster_subject,
+            adjuster_email=inspection.adjuster_email,
+            subject=subject,
+            email=email,
+        ):
+            raise PermissionDeniedError(
+                f"The field inspection on {claim.reference} is not assigned to you. "
+                "An adjuster records findings on their own visits; ask the handler who "
+                "commissioned this one to reassign it."
+            )
+
+        #: Adoption, and only where an account is genuinely new to the row. Never an
+        #: overwrite: a subject already recorded is the answer, and replacing it here
+        #: would silently move the visit to whoever wrote last.
+        if inspection.adjuster_subject is None and subject and inspection.adjuster_email:
+            inspection.adjuster_subject = subject
+            #: The name too, but only if the row has none. A handler who typed one is
+            #: describing the instruction, and the token's display name is not better
+            #: information about who was instructed.
+            if not inspection.adjuster_name:
+                inspection.adjuster_name = actor
+            await self._claims.flush()
+
+        return inspection
 
     async def _require(self, claim: Claim) -> ClaimInspection:
         inspection = await self._claims.get_inspection(claim.id)

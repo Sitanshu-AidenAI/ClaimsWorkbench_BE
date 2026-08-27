@@ -547,6 +547,28 @@ class ClaimInspection(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     adjuster_name: Mapped[str | None] = mapped_column(String(255))
     adjuster_firm: Mapped[str | None] = mapped_column(String(255))
 
+    #: Who the visit is *somebody's*, rather than what they are called.
+    #:
+    #: The name above cannot answer that. It is free text a handler typed, and it
+    #: was the only link this record had — so the board could not narrow to one
+    #: adjuster's own work and nothing could tell whose findings a write would be.
+    #: These two are what make an inspection assignable:
+    #:
+    #: * `adjuster_email` is the address the instruction went to. Knowable at
+    #:   commission time, and knowable *before the adjuster has an account* — which
+    #:   is the ordinary case, because a firm is instructed before a person signs in.
+    #: * `adjuster_subject` is their account, claimed against the email the first
+    #:   time they record anything. Adoption rather than insertion, the same shape
+    #:   `HandlerDirectoryService.register` uses and for the same reason: the link
+    #:   then survives the address changing.
+    #:
+    #: Both nullable, and a null pair is not a gap to be filled in. A visit
+    #: instructed to a firm with no named contact is a real state, and it means the
+    #: handler records the findings — which is what happened for every inspection
+    #: before this column existed.
+    adjuster_subject: Mapped[str | None] = mapped_column(String(128), index=True)
+    adjuster_email: Mapped[str | None] = mapped_column(String(320), index=True)
+
     commissioned_by: Mapped[str] = mapped_column(String(255))
     commissioned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     #: When the visit is booked for. Null between commissioning and booking.

@@ -477,6 +477,12 @@ class InspectionCommissionRequest(SchemaBase):
 
     adjuster_name: str | None = Field(default=None, max_length=255)
     adjuster_firm: str | None = Field(default=None, max_length=255)
+    #: The adjuster's own address, and the one field here that changes who may do
+    #: what. Given it, the visit appears on that adjuster's board and they record
+    #: their own findings against it; left out, the visit belongs to nobody and the
+    #: handler records them. Optional like the rest, because a firm is instructed
+    #: before a person is named — see `ClaimInspection.adjuster_subject`.
+    adjuster_email: str | None = Field(default=None, max_length=320)
     scheduled_at: datetime | None = None
     report_due_at: datetime | None = None
 

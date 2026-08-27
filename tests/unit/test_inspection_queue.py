@@ -116,9 +116,15 @@ class FakeClaimRepo:
         self.asked_for: str | None = None
 
     async def inspection_queue(
-        self, *, adjuster_name: str | None = None
+        self,
+        *,
+        adjuster_subject: str | None = None,
+        adjuster_email: str | None = None,
     ) -> list[tuple[Any, Any, int, str | None, int]]:
-        self.asked_for = adjuster_name
+        #: Both, because the service narrows on identity rather than on a display
+        #: name and either column can carry it — the subject once the adjuster has
+        #: recorded something, the address before that.
+        self.asked_for = (adjuster_subject, adjuster_email)
         return self.rows
 
     async def inspection_by_claim_reference(self, reference: str) -> tuple[Any, Any] | None:
@@ -305,17 +311,39 @@ class TestWhoseBoardItIs:
         result = await service.queue(chip="all", now=NOW)
 
         assert result.whole_desk is True
-        assert repo.asked_for is None
-        assert "cannot yet be narrowed" in result.description
+        assert repo.asked_for == (None, None)
+        assert "not only your own" in result.description
 
     @pytest.mark.asyncio
     async def test_narrowing_to_one_adjuster_says_so_instead(self) -> None:
         service, repo, _ = build([row()])
-        result = await service.queue(chip="all", adjuster_name="H. Okonjo", now=NOW)
+        result = await service.queue(
+            chip="all",
+            adjuster_subject="kc-9f1",
+            adjuster_email="h.okonjo@adjusters.example",
+            now=NOW,
+        )
 
         assert result.whole_desk is False
-        assert repo.asked_for == "H. Okonjo"
+        assert repo.asked_for == ("kc-9f1", "h.okonjo@adjusters.example")
         assert "commissioned to you" in result.description
+
+    @pytest.mark.asyncio
+    async def test_an_address_alone_is_enough_to_narrow(self) -> None:
+        """The first visit, before the adjuster has recorded anything.
+
+        `adjuster_subject` is claimed on the first write, so an adjuster's very first
+        visit is identified by the address the handler was given and nothing else. A
+        board that needed the subject would show them an empty list on the one day it
+        matters most.
+        """
+        service, repo, _ = build([row()])
+        result = await service.queue(
+            chip="all", adjuster_email="h.okonjo@adjusters.example", now=NOW
+        )
+
+        assert result.whole_desk is False
+        assert repo.asked_for == (None, "h.okonjo@adjusters.example")
 
 
 # ---------------------------------------------------------------------------

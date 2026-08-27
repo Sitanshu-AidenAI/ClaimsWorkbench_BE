@@ -30,6 +30,7 @@ from app.domain.enums import (
     CLAIM_ASSIGN_ROLES,
     CLAIM_WORK_ROLES,
     FNOL_READ_ROLES,
+    INSPECTION_WORK_ROLES,
     AnalysisKind,
     AuditEventType,
     ClaimStatus,
@@ -59,6 +60,22 @@ AssignAccess = Annotated[Principal, Depends(require_roles(*CLAIM_ASSIGN_ROLES))]
 #: because a handler works their own file; narrower than `ReadAccess`, because an
 #: intake officer's job ends when the notice becomes a claim.
 WorkAccess = Annotated[Principal, Depends(require_roles(*CLAIM_WORK_ROLES))]
+
+#: Recording *on* an inspection — attendance, findings, follow-ups.
+#:
+#: Wider than `WorkAccess` by exactly one persona, and the whole point of the
+#: set: a loss adjuster's findings are their own work product, and a desk where
+#: the handler types them up attributes them to somebody else. `CLAIM_WORK_ROLES`
+#: excludes adjusters, so while these four routes used `WorkAccess` the one write
+#: the domain gave an adjuster — filing — was refused until attendance and an
+#: observation existed, both of which only a handler could record. The adjuster
+#: could never clear a blocker they were not allowed to satisfy.
+#:
+#: The role gate is half the rule. `ClaimInspectionService.authorise_recording`
+#: is the other half and scopes an adjuster to their own visit — without it,
+#: admitting adjusters here would let any adjuster write onto any inspection on
+#: the desk, which is worse than the read-only board this replaces.
+InspectionWorkAccess = Annotated[Principal, Depends(require_roles(*INSPECTION_WORK_ROLES))]
 
 #: The queue's status chips, in lifecycle order rather than alphabetically.
 _STATUS_LABELS: tuple[tuple[str, str], ...] = (
@@ -619,6 +636,7 @@ async def commission_inspection(
         actor=actor,
         adjuster_name=payload.adjuster_name,
         adjuster_firm=payload.adjuster_firm,
+        adjuster_email=payload.adjuster_email,
         report_due_at=payload.report_due_at,
         site_kind=payload.site_kind,
         site_address=payload.site_address,
@@ -675,7 +693,7 @@ async def record_inspection_attendance(
     reference: str,
     payload: api.InspectionAttendanceRequest,
     context: FNOLContextDep,
-    principal: WorkAccess,
+    principal: InspectionWorkAccess,
 ) -> sections_api.ClaimInspectionOut:
     """The visit happened. Everything the tab derives from a visit unlocks here.
 
@@ -684,6 +702,16 @@ async def record_inspection_attendance(
     not be able to hold it as a finding.
     """
     claim = await _load(context, reference)
+    #: Whose visit this is, before anything is written to it. Handlers and managers
+    #: pass unconditionally; a loss adjuster passes only on their own visit, and
+    #: has their account claimed against the row on the way through.
+    await context.inspection.authorise_recording(
+        claim,
+        roles=principal.roles,
+        subject=principal.subject,
+        email=principal.email,
+        actor=_actor(principal),
+    )
     await context.inspection.record_attendance(
         claim,
         attended_at=payload.attended_at,
@@ -737,7 +765,7 @@ async def add_inspection_observation(
     reference: str,
     payload: api.InspectionObservationRequest,
     context: FNOLContextDep,
-    principal: WorkAccess,
+    principal: InspectionWorkAccess,
 ) -> sections_api.ClaimInspectionOut:
     """One element of the risk, how badly it came off, and what it was costed at.
 
@@ -746,6 +774,16 @@ async def add_inspection_observation(
     would be the second implementation of an arithmetic that has one correct answer.
     """
     claim = await _load(context, reference)
+    #: Whose visit this is, before anything is written to it. Handlers and managers
+    #: pass unconditionally; a loss adjuster passes only on their own visit, and
+    #: has their account claimed against the row on the way through.
+    await context.inspection.authorise_recording(
+        claim,
+        roles=principal.roles,
+        subject=principal.subject,
+        email=principal.email,
+        actor=_actor(principal),
+    )
     await context.inspection.add_observation(
         claim,
         element=payload.element,
@@ -770,10 +808,20 @@ async def add_inspection_action(
     reference: str,
     payload: api.InspectionActionRequest,
     context: FNOLContextDep,
-    principal: WorkAccess,
+    principal: InspectionWorkAccess,
 ) -> sections_api.ClaimInspectionOut:
     """Something that has to happen before the inspection is done with."""
     claim = await _load(context, reference)
+    #: Whose visit this is, before anything is written to it. Handlers and managers
+    #: pass unconditionally; a loss adjuster passes only on their own visit, and
+    #: has their account claimed against the row on the way through.
+    await context.inspection.authorise_recording(
+        claim,
+        roles=principal.roles,
+        subject=principal.subject,
+        email=principal.email,
+        actor=_actor(principal),
+    )
     await context.inspection.add_action(
         claim,
         label=payload.label,
@@ -795,7 +843,7 @@ async def set_inspection_action_done(
     action_id: uuid.UUID,
     payload: api.InspectionActionUpdateRequest,
     context: FNOLContextDep,
-    principal: WorkAccess,
+    principal: InspectionWorkAccess,
 ) -> sections_api.ClaimInspectionOut:
     """Mark one follow-up done, or open again.
 
@@ -804,6 +852,16 @@ async def set_inspection_action_done(
     read here follows.
     """
     claim = await _load(context, reference)
+    #: Whose visit this is, before anything is written to it. Handlers and managers
+    #: pass unconditionally; a loss adjuster passes only on their own visit, and
+    #: has their account claimed against the row on the way through.
+    await context.inspection.authorise_recording(
+        claim,
+        roles=principal.roles,
+        subject=principal.subject,
+        email=principal.email,
+        actor=_actor(principal),
+    )
     await context.inspection.set_action_done(
         claim, action_id=action_id, done=payload.done, actor=_actor(principal)
     )
