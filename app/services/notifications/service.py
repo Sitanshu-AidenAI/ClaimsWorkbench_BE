@@ -270,6 +270,48 @@ class NotificationService:
 
     # -- Keys -----------------------------------------------------------------
 
+    async def mail_intake_unhealthy(
+        self,
+        *,
+        state: object,
+        detail: str,
+        mailbox: str | None,
+        last_run_at: datetime | None,
+        last_run_age_seconds: float | None,
+        dedupe_key: str,
+    ) -> Notification | None:
+        """Announce that mail is not being collected.
+
+        The only producer here that is not about a notice, and the reason it
+        belongs on the same panel is the reader: a handler waiting on a broker's
+        email has no other way to learn that the mailbox stopped being read. Every
+        other row on the panel announces mail that arrived; this one announces
+        mail that cannot.
+
+        `critical` rather than `warning`. Nothing else in the product silently
+        drops inbound claims, and the tone is what decides whether somebody looks
+        today or on Monday.
+        """
+        age = (
+            f"{round(last_run_age_seconds / 3600, 1)} hours"
+            if last_run_age_seconds and last_run_age_seconds >= 3600
+            else f"{round((last_run_age_seconds or 0) / 60)} minutes"
+        )
+        return await self.record(
+            kind=NotificationKind.MAIL_INTAKE_UNHEALTHY,
+            tone=NotificationTone.CRITICAL,
+            title="Mailbox intake is not collecting",
+            body=detail,
+            dedupe_key=dedupe_key,
+            occurred_at=last_run_at,
+            context={
+                "state": str(state),
+                "mailbox": mailbox,
+                "last_run_at": last_run_at.isoformat() if last_run_at else None,
+                "last_run_age": age if last_run_at else None,
+            },
+        )
+
     @staticmethod
     def run_key(kind: NotificationKind, case_id: uuid.UUID, started_at: datetime) -> str:
         """One key per pipeline run, so a re-delivered task is not a second row.

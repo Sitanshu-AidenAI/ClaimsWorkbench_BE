@@ -155,4 +155,70 @@ class MailIntakeAttachment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
 
-__all__ = ["MailIntakeAttachment", "MailIntakeMessage"]
+class MailIntakeRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """One poll of the mailbox: when it ran, what it found, and whether it worked.
+
+    This table exists because of a failure that has no other trace. Every safety
+    net in `app.services.mail.intake` — the dropped-message reconciliation, the
+    blind-sweep check, the folder-against-ledger count — is computed *inside* a
+    poll, so all of them are silent in the one case that matters most: no poll
+    ran at all. A dead scheduler and an empty mailbox produce identical evidence
+    (no rows, no errors, a healthy API), and the difference has twice been found
+    only by someone noticing that a broker's email never arrived — once six days
+    later.
+
+    A row per attempt, written whether the attempt succeeded or not, makes "when
+    did intake last run" a question the database answers. That is what lets a
+    process which is *not* the poller — the API, which is always up — notice the
+    poller is gone. A detector that runs inside the thing it watches cannot
+    report the thing being dead.
+
+    Deliberately append-only and deliberately cheap: one small row per poll. At
+    the aggressive end of the configured interval that is a few thousand rows a
+    day, which is why `prune` exists on the repository and why nothing here
+    stores a message body.
+    """
+
+    __tablename__ = "mail_intake_runs"
+
+    mailbox: Mapped[str] = mapped_column(String(320), index=True)
+    #: Who asked: `schedule` (Celery beat), `manual` (the trigger endpoint) or
+    #: `cli` (`python -m app.services.mail`). Kept because a mailbox that only
+    #: ever moves when a human presses the button is exactly the condition this
+    #: table was added to make visible.
+    trigger: Mapped[str] = mapped_column(String(16), default="schedule", index=True)
+
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: The watermark this poll swept forward from. `None` means the whole folder
+    #: was read, which is what an empty ledger asks for.
+    swept_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    fetched: Mapped[int] = mapped_column(Integer, default=0)
+    ingested: Mapped[int] = mapped_column(Integer, default=0)
+    duplicates: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    abandoned: Mapped[int] = mapped_column(Integer, default=0)
+    #: Messages listed that left no ledger row — a silent loss. See the intake
+    #: service's `_reconcile`.
+    dropped: Mapped[int] = mapped_column(Integer, default=0)
+
+    folder_total: Mapped[int | None] = mapped_column(Integer)
+    folder_unread: Mapped[int | None] = mapped_column(Integer)
+    ledger_total: Mapped[int | None] = mapped_column(Integer)
+    sweep_blind: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    #: False when the mailbox could not be listed at all. A poll that listed the
+    #: folder and had individual messages fail is `ok`: those failures are rows
+    #: in `mail_intake_messages` with their own retry count.
+    ok: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        # The health check's only query: the newest run for one mailbox.
+        Index("ix_mail_intake_runs_mailbox_started_at", "mailbox", started_at.desc()),
+        CheckConstraint("fetched >= 0", name="mail_run_fetched_non_negative"),
+    )
+
+
+__all__ = ["MailIntakeAttachment", "MailIntakeMessage", "MailIntakeRun"]

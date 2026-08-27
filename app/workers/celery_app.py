@@ -58,10 +58,26 @@ celery_app.conf.update(
 )
 
 # Periodic schedule. Entries are added here as scheduled work is defined.
+#
+# **Every interval below comes from `settings`, never from a literal here.** That is
+# a rule rather than a style preference, and it was paid for: an interval written as
+# a number in this file cannot be read out of the environment, cannot be changed
+# without a code edit, and — worst of the three — cannot be *seen*. Mailbox intake
+# went days without collecting because nothing anywhere stated what the scheduler
+# was actually doing, and the fix for that class of fault begins with every
+# schedule having exactly one place it is defined and one name it answers to.
+#
+# The name each one answers to is its `CWB_*` environment variable; the effective
+# values are logged once at import by `_log_effective_schedule` at the bottom of
+# this module, because a process reads its configuration at startup and keeps it.
 celery_app.conf.beat_schedule = {
-    "heartbeat-every-5-minutes": {
+    # Named for what it is, not for how often it runs. It was
+    # `heartbeat-every-5-minutes`, which stopped being true the moment the
+    # interval became a setting — and a name that states a value is a second
+    # place that value is written down.
+    "heartbeat": {
         "task": "app.workers.tasks.heartbeat",
-        "schedule": 300.0,
+        "schedule": float(settings.celery.heartbeat_interval_seconds),
     },
 }
 
@@ -76,15 +92,16 @@ if settings.docint.enabled and settings.docint.queue_poll_enabled:
         "task": "app.workers.tasks.process_queued_cases",
         "schedule": float(settings.docint.queue_poll_interval_seconds),
     }
-    # The backstop for a worker killed mid-index. Hourly is often enough: the failure
-    # it recovers from is rare, and the recovery is not urgent so much as necessary.
+    # The backstop for a worker killed mid-index. Hourly by default: the failure it
+    # recovers from is rare, and the recovery is necessary rather than urgent.
     celery_app.conf.beat_schedule["reap-stale-indexing"] = {
         "task": "app.workers.tasks.reap_stale_indexing",
-        "schedule": 3600.0,
+        "schedule": float(settings.docint.reap_interval_seconds),
     }
     logger.info(
         "document_intelligence_schedule_registered",
         interval_seconds=settings.docint.queue_poll_interval_seconds,
+        reap_interval_seconds=settings.docint.reap_interval_seconds,
     )
 
 # The policy library's own sweep. Registered separately from the document-intelligence
@@ -92,20 +109,20 @@ if settings.docint.enabled and settings.docint.queue_poll_enabled:
 # claim-document indexing with no policy library, and can load a policy library into an
 # environment where mailbox intake is not configured at all.
 if settings.policy_library.enabled:
-    # The backstop for an upload whose enqueue never reached a worker. A minute is
-    # frequent enough that an administrator watching the screen sees it move, and rare
-    # enough that an empty queue costs one indexed query per tick.
+    # The backstop for an upload whose enqueue never reached a worker.
     celery_app.conf.beat_schedule["ingest-pending-policy-documents"] = {
         "task": "app.workers.tasks.ingest_pending_policy_documents",
-        "schedule": 60.0,
+        "schedule": float(settings.policy_library.ingest_poll_interval_seconds),
     }
     celery_app.conf.beat_schedule["reap-stale-policy-ingest"] = {
         "task": "app.workers.tasks.reap_stale_policy_ingest",
-        "schedule": 3600.0,
+        "schedule": float(settings.policy_library.reap_interval_seconds),
     }
     logger.info(
         "policy_library_schedule_registered",
         collection=settings.policy_library.qdrant_collection,
+        interval_seconds=settings.policy_library.ingest_poll_interval_seconds,
+        reap_interval_seconds=settings.policy_library.reap_interval_seconds,
     )
 
 if settings.graph.poll_enabled and settings.graph.configured:
@@ -113,10 +130,66 @@ if settings.graph.poll_enabled and settings.graph.configured:
         "task": "app.workers.tasks.poll_mail_intake",
         "schedule": float(settings.graph.poll_interval_seconds),
     }
+    # Housekeeping on the run ledger that makes a stopped poller visible.
+    celery_app.conf.beat_schedule["prune-mail-intake-runs"] = {
+        "task": "app.workers.tasks.prune_mail_intake_runs",
+        "schedule": float(settings.graph.run_prune_interval_seconds),
+    }
     logger.info(
         "mail_intake_schedule_registered",
         interval_seconds=settings.graph.poll_interval_seconds,
+        run_retention_days=settings.graph.run_retention_days,
+        run_prune_interval_seconds=settings.graph.run_prune_interval_seconds,
     )
+
+
+#: The environment variable each schedule answers to, for the startup log. Stated
+#: here rather than derived, because the mapping from a settings field to its
+#: `CWB_*` name goes through a per-class `env_prefix` and is not recoverable from
+#: the value — and the whole point of the line is that a reader does not have to
+#: go and work it out.
+SCHEDULE_ENV_NAMES: dict[str, str] = {
+    "heartbeat": "CWB_CELERY_HEARTBEAT_INTERVAL_SECONDS",
+    "process-queued-fnol-cases": "CWB_DOCINT_QUEUE_POLL_INTERVAL_SECONDS",
+    "reap-stale-indexing": "CWB_DOCINT_REAP_INTERVAL_SECONDS",
+    "ingest-pending-policy-documents": "CWB_POLICY_INGEST_POLL_INTERVAL_SECONDS",
+    "reap-stale-policy-ingest": "CWB_POLICY_REAP_INTERVAL_SECONDS",
+    "poll-mail-intake": "CWB_GRAPH_POLL_INTERVAL_SECONDS",
+    "prune-mail-intake-runs": "CWB_GRAPH_RUN_PRUNE_INTERVAL_SECONDS",
+}
+
+
+def _log_effective_schedule() -> None:
+    """State, once at import, exactly what this process will run and how often.
+
+    A worker and a beat read their configuration at import and keep it for as long
+    as they live, so "what is the schedule" is a question about a *process*, not
+    about a file — and an `.env` edited thirteen minutes after a worker started has
+    already produced one multi-day outage on this deployment. `.env` says what the
+    next process will do; this line says what this one is doing.
+
+    It also makes an *absent* entry visible, which is the harder half. A schedule
+    that was never registered because a feature switch is off looks exactly like a
+    schedule that is running fine and finding nothing, and mailbox intake is the
+    entry where that confusion costs claims.
+    """
+    entries = {
+        name: float(entry["schedule"])
+        for name, entry in sorted(celery_app.conf.beat_schedule.items())
+        if isinstance(entry.get("schedule"), (int, float))
+    }
+    logger.info(
+        "beat_schedule_effective",
+        entries={
+            name: {"every_seconds": seconds, "env": SCHEDULE_ENV_NAMES.get(name, "—")}
+            for name, seconds in entries.items()
+        },
+        registered=len(entries),
+        not_registered=sorted(set(SCHEDULE_ENV_NAMES) - set(entries)),
+    )
+
+
+_log_effective_schedule()
 
 
 @setup_logging.connect

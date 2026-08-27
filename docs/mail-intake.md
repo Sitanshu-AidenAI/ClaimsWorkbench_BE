@@ -287,6 +287,109 @@ and it does not care how many rows the ledger has accumulated over time.
 
 ---
 
+## Changing the poll interval
+
+One place, one name:
+
+```bash
+CWB_GRAPH_POLL_INTERVAL_SECONDS=300     # default 300; this deployment runs 8
+```
+
+Everything else is derived from it and needs no separate tuning — `stale_after` is
+`max(4 × interval, 180s)`, so shortening the poll automatically tightens the alarm.
+
+There are no interval literals in `app/workers/celery_app.py`; every beat entry reads a
+settings field, and `tests/unit/test_beat_schedule.py` fails if a number is put back. All
+seven live together under **Scheduled work** in `.env`:
+
+| Entry | Variable | Default |
+| --- | --- | --- |
+| `poll-mail-intake` | `CWB_GRAPH_POLL_INTERVAL_SECONDS` | 300 |
+| `process-queued-fnol-cases` | `CWB_DOCINT_QUEUE_POLL_INTERVAL_SECONDS` | 60 |
+| `reap-stale-indexing` | `CWB_DOCINT_REAP_INTERVAL_SECONDS` | 3600 |
+| `ingest-pending-policy-documents` | `CWB_POLICY_INGEST_POLL_INTERVAL_SECONDS` | 60 |
+| `reap-stale-policy-ingest` | `CWB_POLICY_REAP_INTERVAL_SECONDS` | 3600 |
+| `prune-mail-intake-runs` | `CWB_GRAPH_RUN_PRUNE_INTERVAL_SECONDS` | 86400 |
+| `heartbeat` | `CWB_CELERY_HEARTBEAT_INTERVAL_SECONDS` | 300 |
+
+`CWB_GRAPH_POLL_ENABLED` is a separate switch and stays with the Graph credentials; only
+intervals live in the schedule block.
+
+**A worker and a beat read these once, at import.** Changing one needs a worker *and* beat
+restart — `make dev` restarts all three together. Each process logs
+`beat_schedule_effective` at startup listing every entry, its interval and the variable
+that changes it, so what a *running* process is doing is answerable without guessing which
+`.env` it started with.
+
+---
+
+## Is it actually collecting?
+
+Every check described above runs *inside* a poll. `_reconcile`, `mail_intake_sweep_blind`
+and `graph_message_list_truncated` are all good checks, and all of them share one blind
+spot: they need a poll to be running in order to say anything.
+
+When nothing is polling, every one of them is silent. A dead scheduler and an empty
+mailbox leave identical evidence — no new rows, no errors, `/health` returns `ok` — and
+the only thing that eventually contradicts the silence is a broker asking where their
+email went. On this deployment that has happened repeatedly: messages received on 21 and
+24 August were collected on the 27th, up to five days and twenty-two hours late, by a
+poll somebody ran by hand.
+
+So there are two more pieces, and both deliberately live **outside** the poller.
+
+### `mail_intake_runs`
+
+One small row per poll attempt, written whether the attempt succeeded or failed, carrying
+the counters, the watermark and — importantly — the `trigger`:
+
+| trigger | who asked |
+| --- | --- |
+| `schedule` | Celery beat, the way a deployment is meant to collect mail |
+| `manual` | `POST /mail-intake/poll`, usually because somebody noticed nothing had arrived |
+| `cli` | `python -m app.services.mail` |
+
+This makes "when did intake last run" a question the database answers rather than one
+that needs a worker's log — which is exactly what does not exist when the worker is gone.
+Rows are pruned after `CWB_GRAPH_RUN_RETENTION_DAYS` (default 14) by a daily beat task.
+
+### `GET /api/v1/mail-intake/status`
+
+The verdict, computed from that table and nothing else. It takes **no Graph client**: one
+cannot be built without credentials, so an endpoint that needed a mailbox could not report
+a missing mailbox, and a tenant outage would take down the endpoint whose job is to name
+the tenant outage.
+
+| state | meaning |
+| --- | --- |
+| `ok` | A scheduled poll landed recently. Fetching nothing is still `ok` — a quiet mailbox is normal |
+| `not_configured` | No Graph credentials. Not a fault; intake is not part of this deployment |
+| `disabled` | Configured, but `CWB_GRAPH_POLL_ENABLED=false` |
+| `never_run` | Configured and enabled, and no poll has ever been recorded. **Nothing is collecting mail** — start the worker and beat |
+| `stale` | No poll for longer than `4 × poll_interval` (minimum 3 minutes). **The scheduler is gone** |
+| `failing` | Polls are landing and the last one could not read the mailbox — check the credentials and the secret's expiry |
+| `losing_mail` | The last poll listed messages that left no ledger row, or the folder reports unread mail a sweep returned nothing for |
+
+A recent **manual** poll reports `stale`, not `ok`, and that is the point. Somebody
+pressing the trigger button makes mail appear, which is the disguise this fault has worn
+every previous time; a mailbox kept alive by a human is a broken mailbox with a busy
+person in front of it.
+
+### The watchdog
+
+`app.services.mail.watchdog` runs the same check on a timer **in the API process**, every
+60 seconds after a 90-second startup grace. That process choice is the whole design: the
+thing being watched is the beat/worker pair, and a watchdog inside the process it watches
+reports nothing when that process is gone.
+
+When the verdict is bad it logs `mail_intake_unhealthy` every tick — the operator's
+question is asked in the present tense — and writes one `critical` notification per state
+per hour to the desk panel, because a log line is only read by somebody who already
+suspects a problem, and nobody suspected one for six days. Recovery logs
+`mail_intake_recovered`.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause |
@@ -301,4 +404,8 @@ and it does not care how many rows the ledger has accumulated over time.
 | `mail_intake_sweep_blind` in the log | The folder reports unread mail and the sweep returned nothing at all. This is the outage signature — the sweep is not reaching the folder |
 | `mail_intake_messages_dropped` in the log | Messages were listed and left no ledger row: neither collected nor retryable. A silent loss; needs a human |
 | Messages re-listed every poll | `CWB_GRAPH_MARK_AS_READ=false`; they are skipped by the ledger, not re-processed |
+| Nothing has arrived and no error anywhere | Call `GET /api/v1/mail-intake/status`. `never_run` or `stale` means nothing is polling: an API on its own runs no scheduled work — start the worker and beat with `make dev` |
+| `mail_intake_unhealthy` in the API log | The watchdog has decided intake is not collecting. The `state` and `detail` fields say which fault and what to do |
+| Status says `stale` but a manual poll works | That is the diagnosis, not a contradiction: collection works, the *scheduler* is dead. Pressing the button is not a fix |
+| `/mail-intake/status` returns `never_run` on a healthy-looking deployment | Either the worker and beat were never started, or migration `0013_mail_intake_runs` has not been applied |
 | A message stuck at `failed` | Read `last_error` on its ledger row; it stops being retried after `CWB_GRAPH_MAX_ATTEMPTS` |

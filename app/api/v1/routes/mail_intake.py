@@ -19,10 +19,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps.auth import require_roles
-from app.api.deps.services import MailIntakeContextDep
+from app.api.deps.services import MailIntakeContextDep, MailIntakeHealthContextDep
 from app.core.logging import get_logger
 from app.core.security import Principal
-from app.domain.enums import FNOL_READ_ROLES, FNOL_WRITE_ROLES, MailIntakeStatus
+from app.domain.enums import (
+    FNOL_READ_ROLES,
+    FNOL_WRITE_ROLES,
+    MailIntakeStatus,
+    MailIntakeTrigger,
+)
 from app.schemas import mail_intake as api
 
 logger = get_logger(__name__)
@@ -53,7 +58,7 @@ async def poll_mailbox(
     second notification.
     """
     logger.info("mail_intake_triggered", actor=principal.username or principal.subject)
-    summary = await context.intake.poll(limit=limit)
+    summary = await context.intake.poll(limit=limit, trigger=MailIntakeTrigger.MANUAL)
     return api.to_run_result(summary)
 
 
@@ -82,3 +87,52 @@ async def list_messages(
         page_size=page_size,
         status_counts=await context.messages.status_counts(),
     )
+
+
+@router.get(
+    "/status",
+    response_model=api.MailIntakeStatusResult,
+    summary="Is mail actually being collected?",
+)
+async def intake_status(
+    principal: ReadAccess,
+    context: MailIntakeHealthContextDep,
+    runs: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> api.MailIntakeStatusResult:
+    """Report whether the poller is alive, from a process that is not the poller.
+
+    This is the endpoint that closes the hole every other check in mail intake
+    shares. `_reconcile`, `sweep_blind` and the truncation warning are all
+    computed *during* a poll, so all three go quiet in the one case that has
+    actually bitten this deployment: no poll running at all. A dead scheduler and
+    an empty mailbox leave identical evidence — until something outside the
+    scheduler is asked.
+
+    Note the dependency it does *not* take: no Graph client. Building one raises
+    when credentials are missing, so a health route that needed a mailbox could
+    not report a missing mailbox, and a tenant outage would take down the very
+    endpoint whose job is to name the tenant outage. The verdict comes out of
+    `mail_intake_runs`, which is a local table.
+
+    Read access rather than write: this answers a question, and the people who
+    ask it first are the handlers wondering where a broker's email went.
+    """
+    del principal
+    report = await context.health.report()
+    recent = await context.messages.list_runs(limit=runs)
+
+    if not report.healthy:
+        # Logged here as well as returned, because the caller is often a UI panel
+        # whose reader is not watching a terminal — and because this line in the
+        # API's log is the one trace of the fault that exists when the worker is
+        # not running to write any.
+        logger.error(
+            "mail_intake_unhealthy",
+            state=report.state.value,
+            mailbox=report.mailbox,
+            last_run_at=report.last_run_at.isoformat() if report.last_run_at else None,
+            last_run_age_seconds=report.last_run_age_seconds,
+            detail=report.detail,
+        )
+
+    return api.to_status_result(report, list(recent))

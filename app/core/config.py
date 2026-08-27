@@ -286,6 +286,12 @@ class CelerySettings(BaseSettings):
     worker_max_tasks_per_child: int = 200
     task_always_eager: bool = False
     timezone: str = "UTC"
+    #: How often the liveness heartbeat task runs. Every beat interval in this
+    #: application is a setting rather than a literal in `celery_app.py`, and that
+    #: is a deliberate rule, not tidiness: a schedule number nobody can read out of
+    #: the environment is a number nobody knows is in effect. Mailbox intake spent
+    #: days silently not collecting for exactly that class of reason.
+    heartbeat_interval_seconds: int = 300
 
 
 class ObservabilitySettings(BaseSettings):
@@ -446,6 +452,10 @@ class DocumentIntelligenceSettings(BaseSettings):
     queue_poll_interval_seconds: int = 60
     #: Cases enqueued per beat tick.
     queue_batch_size: int = 20
+    #: How often the backstop for a worker killed mid-index runs. Hourly is often
+    #: enough: the failure it recovers from is rare, and the recovery is necessary
+    #: rather than urgent.
+    reap_interval_seconds: int = 3600
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -602,6 +612,12 @@ class PolicyLibrarySettings(BaseSettings):
     ingest_max_attempts: int = 3
     #: A document stuck mid-ingest for longer than this lost its worker.
     stale_ingest_minutes: int = 30
+    #: How often the backstop for an upload whose enqueue never reached a worker
+    #: runs. A minute is frequent enough that an administrator watching the screen
+    #: sees it move, and rare enough that an empty queue costs one indexed query.
+    ingest_poll_interval_seconds: int = 60
+    #: How often a document stuck mid-ingest is returned to the queue.
+    reap_interval_seconds: int = 3600
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -804,6 +820,14 @@ class GraphSettings(BaseSettings):
     #: How many times one message is retried before it is left alone for a human.
     #: Without this, a message that cannot be processed is retried forever.
     max_attempts: int = 3
+    #: How long a `mail_intake_runs` row is kept. One row per poll is ten
+    #: thousand a day at an eight-second interval, and the rows earn their place
+    #: only for as long as someone might ask what happened *this* week — the
+    #: health verdict itself needs just the newest one.
+    run_retention_days: int = 14
+    #: How often the retention above is applied. Daily: the rows are small and the
+    #: retention is counted in days, so a tighter sweep would only cost queries.
+    run_prune_interval_seconds: int = 86400
 
     timeout_seconds: float = 30.0
     http_max_attempts: int = 3

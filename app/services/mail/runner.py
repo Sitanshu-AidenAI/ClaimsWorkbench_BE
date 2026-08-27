@@ -11,11 +11,14 @@ queued notice. Extraction is the next phase and will consume what this leaves.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, settings
 from app.core.logging import get_logger
 from app.db.session import get_session_factory
+from app.domain.enums import MailIntakeTrigger
 from app.integrations.graph.client import GraphMailClient, get_mail_client
 from app.repositories.audit import AuditRepository
 from app.repositories.fnol import FNOLRepository
@@ -58,6 +61,7 @@ def build_mail_intake_service(
 async def run_mail_intake(
     *,
     limit: int | None = None,
+    trigger: str = MailIntakeTrigger.SCHEDULE,
     client: GraphMailClient | None = None,
     config: Settings | None = None,
 ) -> MailIntakeSummary:
@@ -71,7 +75,22 @@ async def run_mail_intake(
     async with factory() as session:
         service = build_mail_intake_service(session, client=client, config=config)
         try:
-            return await service.poll(limit=limit)
+            return await service.poll(limit=limit, trigger=trigger)
         except Exception:
             await session.rollback()
             raise
+
+
+async def prune_mail_intake_run_records(config: Settings | None = None) -> int:
+    """Drop run records past their retention. Returns how many went.
+
+    Here rather than on the health service because it is housekeeping on a table,
+    needs no Graph client, and its only caller is a Celery task.
+    """
+    config = config or settings
+    cutoff = datetime.now(UTC) - timedelta(days=config.graph.run_retention_days)
+    factory = get_session_factory()
+    async with factory() as session:
+        removed = await MailIntakeRepository(session).prune_runs(before=cutoff)
+        await session.commit()
+        return removed

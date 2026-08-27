@@ -51,7 +51,7 @@ from app.models.fnol import (
     FNOLParty,
     FNOLPolicyMatch,
 )
-from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage
+from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage, MailIntakeRun
 from app.models.notification import Notification, NotificationRead
 from app.models.policy_document import PolicyDocument, PolicyDocumentChunk
 from app.models.reference_data import (
@@ -100,6 +100,7 @@ __all__ = [
     "Handler",
     "MailIntakeAttachment",
     "MailIntakeMessage",
+    "MailIntakeRun",
     "Notification",
     "NotificationRead",
     "Policy",

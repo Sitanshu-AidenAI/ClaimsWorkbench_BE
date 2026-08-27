@@ -771,6 +771,66 @@ class MailAttachmentStatus(StrEnum):
     FAILED = "failed"
 
 
+class MailIntakeTrigger(StrEnum):
+    """Who asked for a mailbox poll.
+
+    Recorded on every `MailIntakeRun` because the distinction is diagnostic, not
+    bookkeeping: a mailbox whose only runs are `manual` is a mailbox with no
+    working scheduler, and that is the exact fault this vocabulary was added to
+    make legible. Someone pressing the button makes mail appear, which is what
+    keeps the underlying failure hidden.
+    """
+
+    #: Celery beat, the way a deployment is meant to collect mail.
+    SCHEDULE = "schedule"
+    #: `POST /api/v1/mail-intake/poll` — a human, usually because nothing arrived.
+    MANUAL = "manual"
+    #: `python -m app.services.mail`, for setting a mailbox up.
+    CLI = "cli"
+
+
+class MailIntakeHealth(StrEnum):
+    """What the mailbox poller looks like from outside itself.
+
+    Ordered worst-last is deliberate: `WORST_FIRST` below reads this as a
+    severity ranking, so a caller never has to hand-order the states.
+    """
+
+    #: Collecting, on time.
+    OK = "ok"
+    #: No Graph credentials. Not a fault — intake is simply not part of this
+    #: deployment — and reported separately so nobody hunts a dead scheduler.
+    NOT_CONFIGURED = "not_configured"
+    #: Configured, but `poll_enabled` is off. A deliberate choice, said out loud.
+    DISABLED = "disabled"
+    #: Enabled and configured, and no poll has ever been recorded. Either the
+    #: worker and beat have never been started, or the migration adding
+    #: `mail_intake_runs` has not been applied.
+    NEVER_RUN = "never_run"
+    #: Polls are landing, and the last one could not read the mailbox.
+    FAILING = "failing"
+    #: The last poll reported a silent loss: messages listed that left no ledger
+    #: row, or a folder holding unread mail a sweep returned nothing for.
+    LOSING_MAIL = "losing_mail"
+    #: No poll for materially longer than the configured interval. The scheduler
+    #: is gone: this is the state that used to be invisible.
+    STALE = "stale"
+
+
+#: Severity order, worst last. The health check reports the single worst thing
+#: true of intake, and this is where that ordering lives rather than in an `if`
+#: chain a later state can be forgotten from.
+MAIL_INTAKE_HEALTH_SEVERITY: tuple[MailIntakeHealth, ...] = (
+    MailIntakeHealth.OK,
+    MailIntakeHealth.NOT_CONFIGURED,
+    MailIntakeHealth.DISABLED,
+    MailIntakeHealth.LOSING_MAIL,
+    MailIntakeHealth.FAILING,
+    MailIntakeHealth.NEVER_RUN,
+    MailIntakeHealth.STALE,
+)
+
+
 class NotificationKind(StrEnum):
     """What a handler is being told about.
 
@@ -788,6 +848,13 @@ class NotificationKind(StrEnum):
     FNOL_PROCESSING_STARTED = "fnol.processing_started"
     FNOL_PROCESSING_SUCCEEDED = "fnol.processing_succeeded"
     FNOL_PROCESSING_FAILED = "fnol.processing_failed"
+
+    #: Mailbox collection has stopped, or has started losing mail. The one kind
+    #: here that is not about a notice, and it belongs on the panel for the same
+    #: reason the others do: a handler waiting on a broker's email has no other
+    #: way to learn that nothing is being collected. Everything else in this
+    #: module announces mail that arrived; this announces mail that cannot.
+    MAIL_INTAKE_UNHEALTHY = "mail_intake.unhealthy"
 
 
 class NotificationTone(StrEnum):

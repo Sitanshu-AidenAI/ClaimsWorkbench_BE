@@ -13,6 +13,7 @@ import asyncio
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine, init_engine
+from app.domain.enums import MailIntakeTrigger
 from app.integrations.graph.client import close_mail_client
 from app.services.mail.intake import MailIntakeSummary
 from app.services.mail.runner import run_mail_intake
@@ -23,7 +24,7 @@ logger = get_logger(__name__)
 async def _poll_once(limit: int | None) -> MailIntakeSummary:
     await init_engine(settings)
     try:
-        return await run_mail_intake(limit=limit)
+        return await run_mail_intake(limit=limit, trigger=MailIntakeTrigger.CLI)
     finally:
         await close_mail_client()
         await dispose_engine()

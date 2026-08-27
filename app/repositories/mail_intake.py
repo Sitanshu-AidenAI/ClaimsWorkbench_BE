@@ -12,11 +12,11 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.enums import MailIntakeStatus
-from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage
+from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage, MailIntakeRun
 
 
 class MailIntakeRepository:
@@ -148,6 +148,68 @@ class MailIntakeRepository:
             MailIntakeMessage.status == status.value
         )
         return int((await self._session.execute(statement)).scalar_one())
+
+    # -- Runs ------------------------------------------------------------------
+    #
+    # The poll's own audit trail. Read by the health check in a *different*
+    # process from the one that writes it, which is the whole point: see
+    # `MailIntakeRun`.
+
+    def add_run(self, run: MailIntakeRun) -> MailIntakeRun:
+        self._session.add(run)
+        return run
+
+    async def latest_run(self, mailbox: str | None = None) -> MailIntakeRun | None:
+        """The most recent poll attempt for one mailbox, successful or not.
+
+        `mailbox` is optional only so an operator listing can ask for everything.
+        The health check always passes one, and must: a deployment that has been
+        repointed at a second mailbox would otherwise grade the new inbox on the
+        old one's runs and call a scheduler healthy that has never touched it.
+        `never_run` is the honest answer for an address nothing has polled.
+        """
+        statement = select(MailIntakeRun).order_by(MailIntakeRun.started_at.desc()).limit(1)
+        if mailbox:
+            statement = statement.where(MailIntakeRun.mailbox == mailbox)
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def latest_successful_run(self, mailbox: str | None = None) -> MailIntakeRun | None:
+        """The most recent poll of this mailbox that actually reached it.
+
+        Distinguished from `latest_run` because a scheduler that is alive and
+        failing every poll is a different fault from one that has stopped, and
+        the two want different sentences in front of an operator.
+        """
+        statement = (
+            select(MailIntakeRun)
+            .where(MailIntakeRun.ok.is_(True))
+            .order_by(MailIntakeRun.started_at.desc())
+            .limit(1)
+        )
+        if mailbox:
+            statement = statement.where(MailIntakeRun.mailbox == mailbox)
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def list_runs(
+        self, *, mailbox: str | None = None, limit: int = 20
+    ) -> Sequence[MailIntakeRun]:
+        """The last few polls, newest first. For the "why has nothing arrived" screen."""
+        statement = select(MailIntakeRun).order_by(MailIntakeRun.started_at.desc()).limit(limit)
+        if mailbox:
+            statement = statement.where(MailIntakeRun.mailbox == mailbox)
+        return (await self._session.execute(statement)).scalars().all()
+
+    async def prune_runs(self, *, before: datetime) -> int:
+        """Drop run rows older than `before`, returning how many went.
+
+        One row per poll at an eight-second interval is ten thousand rows a day.
+        The rows earn their place for as long as someone might ask what happened
+        this week; beyond that they are a table that only grows.
+        """
+        result = await self._session.execute(
+            delete(MailIntakeRun).where(MailIntakeRun.started_at < before)
+        )
+        return int(result.rowcount or 0)
 
     # -- Deletion --------------------------------------------------------------
 

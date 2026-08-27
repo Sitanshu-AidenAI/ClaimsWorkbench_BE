@@ -16,6 +16,7 @@ from app.core.config import env_file_changed_since_load, settings
 from app.core.logging import get_logger
 from app.db.pool import close_pool, init_pool
 from app.db.session import dispose_engine, init_engine
+from app.domain.enums import MailIntakeTrigger
 from app.integrations.graph.client import close_mail_client
 from app.services.cache import close_redis, init_redis
 from app.services.intelligence.indexing import TransientIndexError
@@ -27,7 +28,7 @@ from app.services.intelligence.runner import (
     run_case_pipeline,
     run_document_index,
 )
-from app.services.mail.runner import run_mail_intake
+from app.services.mail.runner import prune_mail_intake_run_records, run_mail_intake
 from app.services.policies.ingestion import TransientIngestError
 from app.services.policies.runner import (
     release_stale_ingest,
@@ -163,7 +164,7 @@ def poll_mail_intake(limit: int | None = None) -> dict[str, int | str]:
         return {"status": "not_configured"}
 
     try:
-        summary = run_async(run_mail_intake(limit=limit))
+        summary = run_async(run_mail_intake(limit=limit, trigger=MailIntakeTrigger.SCHEDULE))
     except Exception as exc:
         # Raised only when the mailbox could not be listed at all: a per-message
         # failure never reaches here, it becomes a ledger row.
@@ -191,6 +192,33 @@ def poll_mail_intake(limit: int | None = None) -> dict[str, int | str]:
         "duplicates": summary.duplicates,
         "failed": summary.failed,
     }
+
+
+@celery_app.task(name="app.workers.tasks.prune_mail_intake_runs")
+def prune_mail_intake_runs() -> dict[str, int | str]:
+    """Drop mailbox poll records older than the configured retention.
+
+    The run ledger is what makes a stopped poller visible, and it is written once
+    per poll — ten thousand rows a day at the interval this deployment uses. The
+    health verdict reads only the newest row; the rest are there so somebody can
+    see a pattern over the last week or two. Beyond that they are a table that
+    only grows.
+
+    Note the failure mode this task cannot have: if beat is dead, this does not
+    run — but neither does the poll that writes the rows, so nothing accumulates.
+    The two are silent together, which is the right way round.
+    """
+    if not settings.graph.configured:
+        return {"status": "not_configured"}
+
+    removed = run_async(prune_mail_intake_run_records())
+    if removed:
+        logger.info(
+            "mail_intake_runs_pruned",
+            removed=removed,
+            retention_days=settings.graph.run_retention_days,
+        )
+    return {"status": "ok", "removed": removed}
 
 
 # --- Document intelligence ----------------------------------------------------
