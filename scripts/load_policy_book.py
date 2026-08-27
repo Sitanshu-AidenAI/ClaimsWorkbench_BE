@@ -26,10 +26,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import delete, select  # noqa: E402
+from sqlalchemy import delete, select
 
-from app.db.session import dispose_engine, init_engine, session_scope  # noqa: E402
-from app.models.reference_data import Policy, PolicyLocation  # noqa: E402
+from app.db.session import dispose_engine, init_engine, session_scope
+from app.models.reference_data import Policy, PolicyLocation
 
 BOOK = Path(__file__).resolve().parent.parent / "policy" / "policy-book.json"
 
@@ -81,20 +81,19 @@ async def load(*, reset: bool = False) -> int:
             policy.locations = [
                 {
                     "location_ref": ref,
-                    "description": description,
+                    "description": desc,
                     "address": address,
                     "postcode": postcode,
                     "sum_insured_minor": sum_insured,
                     "deductible_minor": deductible,
                     "is_primary": is_primary,
                 }
-                for ref, description, address, postcode, sum_insured, deductible, is_primary
-                in schedule
+                for ref, desc, address, postcode, sum_insured, deductible, is_primary in schedule
             ]
             policy.locations_scheduled = [
                 PolicyLocation(
                     location_ref=ref,
-                    description=description,
+                    description=desc,
                     address=address,
                     postcode=postcode,
                     country=payload.get("country"),
@@ -102,8 +101,7 @@ async def load(*, reset: bool = False) -> int:
                     deductible_minor=deductible,
                     is_primary=is_primary,
                 )
-                for ref, description, address, postcode, sum_insured, deductible, is_primary
-                in schedule
+                for ref, desc, address, postcode, sum_insured, deductible, is_primary in schedule
             ]
             session.add(policy)
             inserted += 1
@@ -129,8 +127,9 @@ async def _run(*, reset: bool) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--reset", action="store_true",
-                        help="delete the synthetic policies before loading")
+    parser.add_argument(
+        "--reset", action="store_true", help="delete the synthetic policies before loading"
+    )
     args = parser.parse_args()
 
     inserted = asyncio.run(_run(reset=args.reset))

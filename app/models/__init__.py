@@ -14,7 +14,25 @@ from __future__ import annotations
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.access import RoleCapability
 from app.models.audit import AuditEvent
-from app.models.claim import Claim, ClaimAssignment, ClaimTriage
+from app.models.claim import (
+    Claim,
+    ClaimAssignment,
+    ClaimCoverage,
+    ClaimCoverageParty,
+    ClaimDeductible,
+    ClaimFraudDisposition,
+    ClaimInspection,
+    ClaimInspectionAction,
+    ClaimInspectionObservation,
+    ClaimNote,
+    ClaimParty,
+    ClaimRecovery,
+    ClaimRecoveryEvent,
+    ClaimRecoveryTask,
+    ClaimReserveMovement,
+    ClaimSiuCase,
+    ClaimTriage,
+)
 from app.models.extraction import (
     ExtractedValue,
     ExtractionRun,
@@ -50,6 +68,20 @@ __all__ = [
     "CatEvent",
     "Claim",
     "ClaimAssignment",
+    "ClaimCoverage",
+    "ClaimCoverageParty",
+    "ClaimDeductible",
+    "ClaimFraudDisposition",
+    "ClaimInspection",
+    "ClaimInspectionAction",
+    "ClaimInspectionObservation",
+    "ClaimNote",
+    "ClaimParty",
+    "ClaimRecovery",
+    "ClaimRecoveryEvent",
+    "ClaimRecoveryTask",
+    "ClaimReserveMovement",
+    "ClaimSiuCase",
     "ClaimTriage",
     "ExtractedValue",
     "ExtractionRun",

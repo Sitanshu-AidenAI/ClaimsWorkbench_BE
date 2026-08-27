@@ -620,3 +620,82 @@ a good backend rather than a degraded stub — the screen says which mode it is 
 rather than leaving it to be inferred. The engine, the signals, the confidence
 ladder and the measured accuracy against the synthetic corpus:
 **[docs/policy-library.md](docs/policy-library.md)**.
+
+---
+
+## Claims Workbench
+
+What a handler does to a claim after intake has finished with it. Eight writes and
+one read, under `app/services/claims/` — deliberately a separate package from
+`app/services/fnol/`, because that one works a *notification* and this one works
+the *claim*.
+
+```bash
+TOKEN=...  # a claims-handler, claims-manager or claims-admin token
+
+# The six operational tabs, in one read
+curl -H "Authorization: Bearer $TOKEN" \
+     http://localhost:8000/api/v1/claims/CLM-2026-000001/sections
+
+# A note, filed against the tab it was written on
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"body":"Chased the adjuster; visit now Thursday.","section":"inspection"}' \
+     http://localhost:8000/api/v1/claims/CLM-2026-000001/notes
+
+# Raise the indemnity reserve by GBP 20,000. A SIGNED DELTA, not a new total.
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"movement_type":"indemnity","amount_minor":2000000,"rationale":"Revised after the survey."}' \
+     http://localhost:8000/api/v1/claims/CLM-2026-000001/reserve
+
+# Approve the settlement. Refused without a reason, and refused if anything blocks it.
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"decision":"approve_settlement","reason":"Adjuster figure accepted."}' \
+     http://localhost:8000/api/v1/claims/CLM-2026-000001/decision
+
+# Confirm a coverage section. A reason is needed only to depart from the proposal.
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"standpoint":"confirmed","claimed_minor":142600000}' \
+     http://localhost:8000/api/v1/claims/CLM-2026-000001/coverages/fire
+
+# Add the loss adjuster — a role no broker's email ever names.
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"role":"loss_adjuster","name":"I. McGregor","organisation":"McGregor & Co"}' \
+     http://localhost:8000/api/v1/claims/CLM-2026-000001/parties
+
+# Record an aggregate excess. Its remaining figure accounts for other claims.
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"deductible_type":"aggregate","amount_minor":2500000}' \
+     http://localhost:8000/api/v1/claims/CLM-2026-000001/deductible
+```
+
+Two things about this module are worth knowing before reading the code.
+
+**A reserve movement is a signed delta and the ledger is the definition of the
+figure.** `claims.reserve_minor` is a cache of the sum of
+`claim_reserve_movements`, kept in step by the one write that appends to it. A
+movement of zero is refused by a database constraint, because a movement that
+changes nothing explains nothing.
+
+**Two of the six sections are not built, and the payload says so** rather than
+filling the gaps with plausible defaults. Each section carries `available` and a
+sentence saying why — the inspection and the recovery register have no model behind
+them, and a screen that cannot tell "nothing commissioned" from "we do not record
+visits" teaches a handler to distrust the sections that are real.
+
+**Coverage sections are proposed, never decided.** The policy's named perils become
+one row each at claim creation, and every one lands *in question* unless the policy
+is bound and its checks passed. A failed peril check never excludes a section: a
+rule flagging a problem is a reason to look, not a refusal to pay. What the rules
+proposed is kept beside where the section stands, so an override reads as an
+override — and a reason is required only when the two differ.
+
+**Two rules about the excess are worth knowing before reading the code.** Only an
+aggregate erodes across other claims on the policy; every other type starts whole
+every time, and netting other losses off it would understate what the insured
+carries. And a **franchise does not deduct** — it is a threshold, so a loss above it
+pays in full. Treating it as an ordinary excess understates every settlement that
+clears it.
+
+The state machine, what blocks a settlement, the ledger arithmetic, the coverage
+model and the honest scoring against the RFP:
+**[docs/claims-workbench.md](docs/claims-workbench.md)**.

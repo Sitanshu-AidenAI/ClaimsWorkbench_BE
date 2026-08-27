@@ -1,0 +1,83 @@
+To: claims.workbench@aidenai.com
+Subject: FNOL - Rivergate Development Partners - fire in completed unit, Charlotte NC - BR-3358-20471
+
+FIRST NOTIFICATION OF LOSS
+Submitted by Ashcombe Vail Commercial Insurance Services · Broker reference AV/BR/2025/3358
+
+NOTIFICATION
+Reported by:              Marguerite Tolliver-Sandoval
+Reporting organisation:   Ashcombe Vail Commercial Insurance Services
+Role:                     Senior Broker
+Email:                    m.tolliver-sandoval@ashcombevail.example
+Telephone:                +1 704 555 0168
+Date reported:            20 August 2026
+
+POLICY
+Policy number:            BR-3358-20471
+Insured name:             Rivergate Development Partners, LLC
+Insured organisation:     Rivergate Development Partners, LLC
+Insured contact:          development@rivergatedp.example
+Policy type:              Builder's Risk - Completed Value
+Period of cover:          15 April 2025 to 15 October 2026
+
+PROJECT
+Project name:             Rivergate Parkway Phase II - Buildings C and D
+Contract number:          RDP-RP2-2025-0044
+Contract parties:         Rivergate Development Partners, LLC (owner); Vanterra
+                          Construction Group, LLC (general contractor)
+
+LOSS
+Date and time of loss:    19 August 2026, approximately 04:15 local
+Loss location:            2650 Rivergate Parkway, Charlotte, NC 28273
+Country:                  United States
+Cause of loss:            Fire. The fire began in a ground-floor unit of Building C
+                          that had reached practical completion and was awaiting
+                          final inspection. The Charlotte Fire Department attributed
+                          the origin to a temporary lighting transformer left
+                          energised overnight in the unit's utility cupboard. The
+                          building's sprinkler system was installed but not yet
+                          charged, the permanent water supply having not been
+                          commissioned.
+
+Description:              One ground-floor unit is fire damaged throughout, with the
+                          kitchen and utility cupboard destroyed. Two adjoining
+                          units and the corridor above have smoke and heat damage to
+                          finishes. Fire crews forced two external doors. No
+                          structural steel or slab damage is reported. Buildings A
+                          and B, already handed over and occupied, were unaffected.
+
+Affected assets:          Building C unit C-104 (fire); units C-105 and C-106 and
+                          first-floor corridor (smoke and heat); two external doors
+                          (forced entry); temporary lighting installation
+
+Injuries:                 0
+Fatalities:               0
+Structural damage:        No - fire crews confirmed no damage to structural steel or
+                          slab, engineer's letter to follow
+Business interruption:    Yes - handover of Building C delayed, currently estimated
+                          at six weeks
+Environmental exposure:   No
+
+FINANCIAL
+Currency:                 USD
+Estimated loss:           185,000
+Repair estimate:          178,400
+
+ADDITIONAL
+Authorities involved:     Charlotte Fire Department
+Incident reference:       CFD-2026-0819-3341
+Police reference:         None
+Potential litigation:     No
+
+Supporting documents to follow: Charlotte Fire Department incident report,
+photographs of unit C-104 and the adjoining units, the general contractor's
+reinstatement estimate, and confirmation from the mechanical subcontractor of the
+sprinkler commissioning status at the date of loss.
+
+The insured is content for the contractor to begin making safe and drying out. Please
+confirm whether you require an adjuster to attend before that work starts.
+
+Kind regards
+Marguerite Tolliver-Sandoval
+Senior Broker
+Ashcombe Vail Commercial Insurance Services

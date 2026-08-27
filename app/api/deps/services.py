@@ -33,6 +33,14 @@ from app.repositories.policy_document import PolicyDocumentRepository
 from app.repositories.reference import ReferenceRepository
 from app.services.ai.base import AIProvider
 from app.services.ai.factory import get_ai_provider
+from app.services.claims.approvals import ClaimApprovalService
+from app.services.claims.casework import ClaimCaseworkService
+from app.services.claims.coverage import ClaimCoverageService
+from app.services.claims.inspection import ClaimInspectionService
+from app.services.claims.inspection_queue import ClaimInspectionQueueService
+from app.services.claims.recoveries import ClaimRecoveryService
+from app.services.claims.sections import ClaimSectionsService
+from app.services.claims.siu import ClaimSiuService
 from app.services.documents.service import DocumentProcessingService
 from app.services.extraction.engine import SchemaExtractionEngine
 from app.services.extraction.locate import EvidenceLocator
@@ -148,6 +156,33 @@ class FNOLContext:
     identification: PolicyIdentificationService
     triage: TriageService
     assignment: AssignmentService
+    #: The claim workbench's two services: assembling the six operational sections,
+    #: and the three writes a handler makes to a claim. Held here rather than behind
+    #: `FNOLService` because the claim is the other side of the intake boundary —
+    #: see `app.services.claims` on why that line is drawn where it is.
+    sections: ClaimSectionsService
+    casework: ClaimCaseworkService
+    #: CLAWS entry categories 4, 5, 6 and 7 — the sections, the parties on
+    #: them and the excess. Held beside the other two rather than inside
+    #: `sections`, because it is written by the routes and read by the assembly.
+    coverage: ClaimCoverageService
+    #: The loss-adjuster visit: commissioning it, booking it, and what it found.
+    #: Beside `coverage` for the same reason — written by the routes, read by the
+    #: assembly, and a collaborator neither of the other two needs to know about.
+    inspection: ClaimInspectionService
+    #: The same records read from the adjuster's side: their queue, one report,
+    #: and filing it. A second service rather than more methods on the first,
+    #: because it answers a different person's question — see
+    #: `app.services.claims.inspection_queue`.
+    inspection_queue: ClaimInspectionQueueService
+    #: The last two sections to become real: money coming back, and the
+    #: investigation. Beside the others for the same reason — written by the routes,
+    #: read by the assembly.
+    recoveries: ClaimRecoveryService
+    siu: ClaimSiuService
+    #: The manager's queue over the same records. Its own service because it
+    #: answers a different person's question — see `app.services.claims.approvals`.
+    approvals: ClaimApprovalService
     documents: DocumentProcessingService
     #: Passage storage and search. Held on the context so the evidence and search
     #: routes can read passages without building the whole FNOL service graph.
@@ -280,6 +315,7 @@ def build_context(
 
     triage = TriageService(claims)
     assignment = AssignmentService(handlers, claims)
+    coverage = ClaimCoverageService(claims, cases, policies, audit)
     identification = PolicyIdentificationService(
         policies, cases, DuplicateDetectionService(cases, claims)
     )
@@ -307,6 +343,7 @@ def build_context(
             triage=triage,
             assignment=assignment,
             audit=audit,
+            coverage=coverage,
         ),
         deletion=FNOLDeletionService(
             cases,
@@ -322,6 +359,14 @@ def build_context(
         identification=identification,
         triage=triage,
         assignment=assignment,
+        sections=ClaimSectionsService(claims, cases, policies, handlers, audit, coverage),
+        coverage=coverage,
+        casework=ClaimCaseworkService(claims, handlers, audit),
+        inspection=ClaimInspectionService(claims, audit),
+        inspection_queue=ClaimInspectionQueueService(claims, audit),
+        recoveries=ClaimRecoveryService(claims, audit),
+        siu=ClaimSiuService(claims, audit),
+        approvals=ClaimApprovalService(claims, cases, handlers, coverage),
         documents=documents,
         chunks=chunks,
         retrieval=retrieval,

@@ -1,0 +1,85 @@
+To: claims.workbench@aidenai.com
+Subject: FNOL - Meridian Grid Holdings - haboob damage during erection, Mesa AZ - BR-1147-30926
+
+FIRST NOTIFICATION OF LOSS
+Submitted by Sonoran Ridge Risk Advisors, LLC · Broker reference SRR/BR/2025/1147
+
+NOTIFICATION
+Reported by:              Dolores Ashcroft-Nkemelu
+Reporting organisation:   Sonoran Ridge Risk Advisors, LLC
+Role:                     Account Executive
+Email:                    d.ashcroft-nkemelu@sonoranridgerisk.example
+Telephone:                +1 480 555 0114
+Date reported:            17 August 2026
+
+POLICY
+Policy number:            BR-1147-30926
+Insured name:             Meridian Grid Holdings, LLC
+Insured organisation:     Meridian Grid Holdings, LLC
+Insured contact:          projects@meridiangrid.example
+Policy type:              Builder's Risk / Installation
+Period of cover:          1 July 2025 to 1 January 2027
+
+PROJECT
+Project name:             Cypress Landing 230kV Collector Substation
+Contract number:          MGH-CL-2025-0117
+Contract parties:         Meridian Grid Holdings, LLC (owner); Ironbark Constructors, Inc. (EPC contractor)
+
+LOSS
+Date and time of loss:    14 August 2026, approximately 17:40 local
+Loss location:            14900 South Cypress Landing Way, Mesa, AZ 85212
+Country:                  United States
+Cause of loss:            Haboob and monsoon rain. A dust storm front crossed the
+                          site during the afternoon build. Sustained winds were
+                          recorded at 71 mph with gusts above 80 mph. The partially
+                          erected structural steel on the collector bay had not yet
+                          received its permanent bracing and buckled across four
+                          bays. Driven rain and dust then entered two switchgear
+                          houses whose roof decking had been opened that morning for
+                          conduit penetrations.
+
+Description:              Steel on bays 6 to 9 of the collector structure is
+                          deformed and out of plumb; the contractor has isolated and
+                          fenced the area pending an engineer's assessment. Both
+                          switchgear houses have standing water and dust ingress
+                          across the internals. Three transformer bushings crated on
+                          site were struck by wind-blown debris. Testing and
+                          energisation scheduled for 2 September is suspended.
+
+Affected assets:          Collector structure steel, bays 6-9; switchgear houses
+                          SH-1 and SH-2 including internal gear; three 230kV
+                          transformer bushings, crated; site temporary power
+                          distribution
+
+Injuries:                 1
+Fatalities:               0
+Structural damage:        Yes - partially erected structural steel buckled across
+                          four bays, area isolated pending engineering assessment
+Business interruption:    Yes - energisation milestone of 2 September 2026 at risk,
+                          liquidated damages apply under the EPC contract
+Environmental exposure:   No
+
+FINANCIAL
+Currency:                 USD
+Estimated loss:           4,250,000
+Repair estimate:          Not yet available - contractor's engineer attending 19 August
+
+ADDITIONAL
+Authorities involved:     Mesa Fire and Medical Department (site attendance, no fire)
+Incident reference:       MFMD-2026-114772
+Police reference:         None
+Potential litigation:     Possible - EPC contractor disputes responsibility for the
+                          timing of the roof deck opening
+
+Supporting documents to follow: site superintendent's incident report, National
+Weather Service storm report for the Mesa area, photographs of bays 6-9 and both
+switchgear houses, contractor's preliminary reinstatement estimate.
+
+Please confirm the claim reference and the loss adjuster you intend to instruct. The
+insured would like an adjuster on site this week if possible, as the steel needs an
+engineering assessment before the area can be released back to the contractor.
+
+Kind regards
+Dolores Ashcroft-Nkemelu
+Account Executive
+Sonoran Ridge Risk Advisors, LLC

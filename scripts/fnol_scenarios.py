@@ -19,22 +19,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from build_demo_packs import Scenario  # noqa: E402
+from build_demo_packs import Scenario
 
 Rows = tuple[tuple[str, str], ...]
 
 #: Placeholders for the fields only `build_policy_document` reads. Stated once
 #: here rather than in twenty-four scenarios that never use them.
-_POLICY_DOC_UNUSED = dict(
-    policy_insured_label="Named insured",
-    policy_number_label="Policy number",
-    policy_title="",
-    policy_subtitle="",
-    policy_interest_label="Interest insured",
-    policy_interest="",
-    policy_conditions="",
-    policy_extra=(),
-)
+_POLICY_DOC_UNUSED = {
+    "policy_insured_label": "Named insured",
+    "policy_number_label": "Policy number",
+    "policy_title": "",
+    "policy_subtitle": "",
+    "policy_interest_label": "Interest insured",
+    "policy_interest": "",
+    "policy_conditions": "",
+    "policy_extra": (),
+}
 
 
 def pack(*, expected: str, confidence: str, why: str,

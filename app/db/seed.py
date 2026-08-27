@@ -727,11 +727,22 @@ CAT_EVENTS: list[dict[str, Any]] = [
 ]
 
 
+#: The demonstration desk. **None of these people has an account**, which is why
+#: none of them carries a `subject`.
+#:
+#: One of them used to, and it was a UUID typed into this file rather than one any
+#: realm had issued — so `HandlerOut.has_account` reported that a fictional
+#: colleague could be shown a claim. A directory row without a subject is somebody
+#: a manager may still assign work to (a desk does record work against a joiner)
+#: but who cannot be *shown* it, and the assignment dialog now says which is which.
+#: A fabricated subject defeated exactly that distinction.
+#:
+#: Real people arrive here by signing in — see `HandlerDirectoryService`, which
+#: also adopts a row like these when its address matches the account's.
 HANDLERS: list[dict[str, Any]] = [
     {
         "full_name": "Rebecca Marsh",
         "email": "r.marsh@carrier.com",
-        "subject": "8f2c41a9-6b2e-4c77-9a1d-1f0e5c3b7a20",
         "team": "Property",
         "job_title": "Senior Claims Handler",
         "skills": ["property", "business_interruption"],
