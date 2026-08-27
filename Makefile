@@ -2,8 +2,9 @@
 # Every target here is a shortcut, not a new source of truth.
 
 .DEFAULT_GOAL := help
-.PHONY: help install env up down logs migrate revision check lint format test test-integration \
-        run worker beat mail-intake keycloak build clean seed demo demo-reset demo-documents
+.PHONY: help install env up up-all down logs migrate revision check lint format test test-integration \
+        dev run worker beat mail-intake keycloak build clean seed demo demo-reset demo-documents \
+        eval-matching
 
 CELERY := uv run celery -A app.workers.celery_app.celery_app
 
@@ -18,8 +19,12 @@ install: ## Install dependencies (including dev extras)
 env: ## Create .env from the template if it does not exist
 	@test -f .env || (cp .env.example .env && echo "created .env — review the host ports")
 
-up: ## Start the infrastructure services
+up: ## Start the infrastructure services (no app — use `make dev` for that)
 	docker compose up -d postgres redis minio minio-init keycloak wiremock mailpit qdrant
+
+up-all: ## Start everything in containers, app included (migrations run first)
+	docker compose up -d --build migrate
+	docker compose up -d --build api worker beat
 
 down: ## Stop all services
 	docker compose down
@@ -49,13 +54,19 @@ test: ## Run the unit tests
 test-integration: ## Run the integration tests (needs Postgres + Redis)
 	uv run pytest -m integration
 
-run: ## Run the API with reload
+eval-matching: ## Score the policy matcher against case_data/_ground_truth (no DB, no model)
+	uv run python scripts/eval_policy_matching.py
+
+dev: ## Run the whole backend: API + worker + beat, one Ctrl-C stops all
+	./scripts/dev.sh
+
+run: ## Run the API alone (no worker — nothing scheduled will happen)
 	uv run python main.py
 
-worker: ## Run a Celery worker
+worker: ## Run a Celery worker alone
 	$(CELERY) worker --loglevel=info
 
-beat: ## Run Celery beat
+beat: ## Run Celery beat alone
 	$(CELERY) beat --loglevel=info
 
 mail-intake: ## Collect the shared Outlook mailbox once (needs the Graph settings)

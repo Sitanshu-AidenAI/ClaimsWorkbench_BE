@@ -235,6 +235,12 @@ class ExtractedValueOut(SchemaBase):
     section_label: str | None
     quote: str | None
 
+    #: How many documents state this value — the one it was read from included. A
+    #: confidence signal in its own right, and on the row rather than behind a
+    #: click: a value three files agree on and a value only one file mentions look
+    #: identical otherwise. `0` means nothing can be opened for this field.
+    citation_count: int = 0
+
 
 class ExtractionRunOut(SchemaBase):
     id: uuid.UUID
@@ -286,8 +292,45 @@ class ValueUpdate(SchemaBase):
 # ---------------------------------------------------------------------------
 
 
+class CitationOut(SchemaBase):
+    """One document that states a value, and where in it to look.
+
+    Everything the source stepper needs to render a chip and decide a renderer,
+    and nothing that needs the file to be opened. Rectangles are deliberately
+    absent: resolving them means downloading and measuring a page, and a value
+    with four citations would pay that four times to draw one highlight. The
+    evidence endpoint returns them for the citation being *shown*, and asking for
+    a different `document_id` shows that one.
+    """
+
+    document_id: uuid.UUID
+    filename: str
+    content_type: str | None
+    #: `email_body`, `email_attachment` or `upload`. Picks the renderer along with
+    #: `content_type`.
+    document_source: str | None
+    page_count: int | None
+
+    chunk_id: uuid.UUID | None
+    page_number: int | None
+    section_label: str | None
+
+    #: The text to mark, as *this* document writes it. A date one file prints as
+    #: "10 January 2026" and another as "2026-01-10" is one value and two quotes.
+    quote: str | None
+    char_start: int | None
+    char_end: int | None
+
+    #: `primary` — a passage the model read the value from. `corroborating` — a
+    #: document later found to state the same value. A reviewer reads the two
+    #: differently: the first is provenance, the second is agreement.
+    role: str
+    #: `chunk-grounded` | `document-search`.
+    strategy: str
+
+
 class EvidenceOut(SchemaBase):
-    """Where one value can be seen in its document."""
+    """Where one value can be seen in its documents."""
 
     field_key: str
     label: str
@@ -318,6 +361,11 @@ class EvidenceOut(SchemaBase):
     #: `chunk-grounded` | `document-search` | `text-only` | `none`.
     strategy: str
     note: str | None
+
+    #: Every document that states this value, the one above included, in stepper
+    #: order. Always present so a client can render "source 2 of 4" from the same
+    #: response that gave it the highlight, rather than a second request.
+    citations: list[CitationOut] = Field(default_factory=list)
 
 
 class LocateRequest(SchemaBase):
@@ -410,7 +458,9 @@ def to_run(row: Any) -> ExtractionRunOut:
     )
 
 
-def to_value(row: Any, *, filename: str | None = None, required: bool = False) -> ExtractedValueOut:
+def to_value(
+    row: Any, *, filename: str | None = None, required: bool = False, citations: int = 0
+) -> ExtractedValueOut:
     return ExtractedValueOut(
         field_key=row.field_key,
         label=row.label,
@@ -423,6 +473,7 @@ def to_value(row: Any, *, filename: str | None = None, required: bool = False) -
         validation_error=row.validation_error,
         inference_note=row.inference_note,
         required=required,
+        citation_count=citations,
         source=row.source,
         human_modified=row.human_modified,
         original_value=row.original_value,
@@ -450,6 +501,31 @@ def to_rect(rect: Any) -> HighlightRect:
     )
 
 
+def to_citation(row: Any, document: Any) -> CitationOut:
+    """One citation row, joined to the document it points at.
+
+    The document is passed in rather than read off the row's relationship: the
+    caller has already loaded the case's documents to render the rest of the
+    response, and a lazy load per citation here is the classic N+1 that turns one
+    click into five queries.
+    """
+    return CitationOut(
+        document_id=row.document_id,
+        filename=document.filename,
+        content_type=document.content_type,
+        document_source=document.source,
+        page_count=document.page_count,
+        chunk_id=row.chunk_id,
+        page_number=row.page_number,
+        section_label=row.section_label,
+        quote=row.quote,
+        char_start=row.char_start,
+        char_end=row.char_end,
+        role=row.role,
+        strategy=row.strategy,
+    )
+
+
 def to_occurrence(occurrence: Any) -> OccurrenceOut:
     return OccurrenceOut(
         page_number=occurrence.page_number,
@@ -463,6 +539,7 @@ def to_occurrence(occurrence: Any) -> OccurrenceOut:
 __all__ = [
     "FIELD_KEY_PATTERN",
     "SCHEMA_KEY_PATTERN",
+    "CitationOut",
     "EvidenceOut",
     "ExtractedValueOut",
     "ExtractionRequest",
@@ -480,6 +557,7 @@ __all__ = [
     "SchemaOut",
     "SchemaUpdate",
     "ValueUpdate",
+    "to_citation",
     "to_occurrence",
     "to_rect",
     "to_run",

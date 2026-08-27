@@ -13,17 +13,24 @@ without the reasons has been given a verdict rather than an assessment.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
 from app.core.config import FNOLSettings
 from app.domain.enums import CoverageIndicator, LineOfBusiness, RiskLevel, Severity
-from app.domain.matching import normalise, tokens
+from app.domain.matching import name_similarity, normalise, tokens
+from app.domain.money import Conversion, convert, format_amount, to_base, to_currency
 from app.domain.rules import (
+    ENVIRONMENTAL_SIGNALS,
     INJURY_SIGNALS,
     LITIGATION_SIGNALS,
+    THIRD_PARTY_SIGNALS,
+    VEHICLE_SIGNALS,
+    ClaimSignal,
     RequiredField,
+    matches_any,
     required_fields,
 )
 
@@ -52,12 +59,60 @@ FIELD_READERS: dict[str, str] = {
     "loss.affected_assets": "affected_assets",
     "loss.injuries": "injuries",
     "loss.fatalities": "fatalities",
+    "loss.business_interruption": "business_interruption",
+    "loss.structural_damage": "structural_damage",
+    "loss.environmental_exposure": "environmental_exposure",
     "financial.estimated_loss": "estimated_loss_minor",
     "financial.repair_estimate": "repair_estimate_minor",
     "additional.police_reference": "police_reference",
     "additional.incident_reference": "incident_reference",
     "additional.authorities_involved": "authorities_involved",
+    "additional.potential_litigation": "potential_litigation",
 }
+
+#: The tri-state exposure flags, and how a result names each one. `None` on any of
+#: these is "nobody has looked", which is a different fact from "no" and is the one
+#: the officer has to be told about.
+EXPOSURE_FLAGS: tuple[tuple[str, str], ...] = (
+    ("business_interruption", "business interruption"),
+    ("structural_damage", "structural damage"),
+    ("environmental_exposure", "environmental exposure"),
+    ("potential_litigation", "litigation exposure"),
+)
+
+#: The field paths those flags live behind, for the completeness engine.
+_EXPOSURE_PATHS: frozenset[str] = frozenset(
+    {
+        "loss.business_interruption",
+        "loss.structural_damage",
+        "loss.environmental_exposure",
+        "additional.potential_litigation",
+    }
+)
+
+
+def _claimant_is_not_the_insured(case: Any) -> bool:
+    """Whether somebody other than the insured is the one claiming.
+
+    Structural rather than lexical, and the better of the two signals: a notice does
+    not have to use the words "third party" for there to be one, and this is true of
+    the notice whatever vocabulary the broker chose. `name_similarity` rather than
+    equality, because "Northline Logistics Ltd" and "Northline Logistics Limited"
+    are one company and a string comparison would report a third party.
+    """
+    claimant = getattr(case, "claimant_name", None)
+    insured = getattr(case, "insured_name", None)
+    if not claimant or not insured:
+        return False
+    return name_similarity(claimant, insured) < 0.75
+
+
+def _oxford(items: list[str]) -> str:
+    """`a`, `a and b`, `a, b and c` — for a sentence an officer will read."""
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
 
 #: Paths whose presence is answered by something other than a column.
 DERIVED_PATHS = frozenset(
@@ -154,7 +209,7 @@ def assess_completeness(
     earned = 0.0
     available = 0.0
 
-    for requirement in required_fields(line):
+    for requirement in required_fields(line, claim_signals(case, party_roles=party_roles)):
         weight = CRITICAL_WEIGHT if requirement.critical else OPTIONAL_WEIGHT
         available += weight
 
@@ -204,9 +259,22 @@ def _is_present(
 
     value = read_field(case, requirement.path)
     if value is None:
-        return False, None
+        # For the tri-state exposure flags this is the whole point of the change:
+        # `None` is an unanswered question, and saying so is what stops it being
+        # read as a settled "no".
+        detail = (
+            "Not stated in the notification, so this exposure has not been assessed."
+            if requirement.path in _EXPOSURE_PATHS
+            else None
+        )
+        return False, detail
     if isinstance(value, str):
         return bool(value.strip()), None
+    if value is False and requirement.path in _EXPOSURE_PATHS:
+        # A stated absence is an answer, and a complete one. It scores as present
+        # and says which answer it was, because "assessed and ruled out" is exactly
+        # what the previous model could not express.
+        return True, "Stated as not applicable."
     return True, None
 
 
@@ -286,12 +354,23 @@ class SeverityResult:
     severity: Severity
     confidence: float
     factors: list[Factor] = field(default_factory=list)
+    #: The estimate's currency, when no rate reached the base currency and the
+    #: thresholds therefore went unread. Carried on the result rather than left as
+    #: a factor string because the exception layer acts on it: a band decided
+    #: without the money is a band an officer has to be told about, not one that
+    #: quietly reads as though the estimate had been weighed.
+    unconvertible_currency: str | None = None
+    #: The estimate as it was actually compared — the base-currency figure and the
+    #: rate that produced it — so the band can be read back to its arithmetic.
+    estimate_disclosure: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "severity": self.severity.value,
             "confidence": round(self.confidence, 4),
             "factors": [factor.as_dict() for factor in self.factors],
+            "unconvertible_currency": self.unconvertible_currency,
+            "estimate_disclosure": self.estimate_disclosure,
         }
 
 
@@ -300,6 +379,7 @@ def assess_severity(
     *,
     config: FNOLSettings,
     policy_limit_minor: int | None = None,
+    policy_currency: str | None = None,
     cat_matched: bool = False,
 ) -> SeverityResult:
     """The band this loss most likely sits in, and why.
@@ -308,9 +388,24 @@ def assess_severity(
     That asymmetry is intentional: a fatality on a £5,000 claim is not a low
     severity claim, but a large estimate on an otherwise unremarkable loss is
     still a large claim.
+
+    The thresholds are amounts in `config.base_currency`, so the estimate is
+    converted into it before any of them is read. An estimate whose currency has
+    no configured rate is not compared at all: the band falls back to the
+    provisional one and the result names the currency, so the case goes to a
+    person instead of being banded on the digits.
     """
     factors: list[Factor] = []
     estimate = getattr(case, "estimated_loss_minor", None)
+    currency = getattr(case, "currency", None) or config.base_currency
+    unconvertible: str | None = None
+    disclosure: str | None = None
+    in_base: Conversion | None = None
+
+    if estimate is not None:
+        in_base = to_base(estimate, currency, config=config)
+        if in_base is None:
+            unconvertible = currency
 
     if estimate is None:
         band = Severity.MEDIUM
@@ -318,20 +413,37 @@ def assess_severity(
         factors.append(
             Factor("no_estimate", "No estimated loss was stated; banded provisionally.", 0.0)
         )
+    elif in_base is None:
+        # Not banded on money at all. Comparing the raw integer against a
+        # base-currency threshold is the one thing this branch exists to refuse.
+        band = Severity.MEDIUM
+        confidence = 0.3
+        factors.append(
+            Factor(
+                "currency_not_comparable",
+                f"The estimate of {format_amount(estimate, currency)} could not be compared "
+                f"with the {config.base_currency} severity thresholds — no exchange rate is "
+                f"configured for {currency}. Banded provisionally; the figure needs a person.",
+                0.0,
+            )
+        )
     else:
-        if estimate >= config.severity_critical_threshold_minor:
+        if in_base.amount_minor >= config.severity_critical_threshold_minor:
             band = Severity.CRITICAL
-        elif estimate >= config.severity_high_threshold_minor:
+        elif in_base.amount_minor >= config.severity_high_threshold_minor:
             band = Severity.HIGH
-        elif estimate >= config.severity_medium_threshold_minor:
+        elif in_base.amount_minor >= config.severity_medium_threshold_minor:
             band = Severity.MEDIUM
         else:
             band = Severity.LOW
-        confidence = 0.7
+        # A converted figure is a weaker basis than a native one: the band now
+        # rests on a rate as well as on the estimate.
+        confidence = 0.65 if in_base.converted else 0.7
+        disclosure = in_base.disclosure or None
         factors.append(
             Factor(
                 "estimated_loss",
-                f"Estimated loss of {estimate / 100:,.0f} {getattr(case, 'currency', 'GBP')}.",
+                f"Estimated loss of {in_base.describe()}.",
                 0.5,
             )
         )
@@ -397,18 +509,65 @@ def assess_severity(
             band = floor
         confidence = min(0.95, confidence + 0.05)
 
-    if policy_limit_minor and estimate and estimate >= policy_limit_minor * 0.75:
+    # Four of the escalations above are read off tri-state columns, and `bool()`
+    # cannot tell a stated absence from an unanswered question. It never could;
+    # what is new is that the column can, so the difference is said out loud
+    # instead of being resolved silently in favour of "no". Weight 0.0 — this
+    # moves no band. It states what the band did not get to consider.
+    unassessed = [
+        label for attribute, label in EXPOSURE_FLAGS if getattr(case, attribute, None) is None
+    ]
+    if unassessed:
         factors.append(
             Factor(
-                "near_policy_limit",
-                "The estimate is at or near the policy limit.",
-                0.5,
+                "exposures_not_assessed",
+                "The notification does not say either way about "
+                + _oxford(unassessed)
+                + ", so no escalation was weighed on "
+                + ("them" if len(unassessed) > 1 else "it")
+                + ". Outstanding on the completeness list.",
+                0.0,
             )
         )
-        if _rank(Severity.HIGH) > _rank(band):
-            band = Severity.HIGH
 
-    return SeverityResult(severity=band, confidence=round(confidence, 2), factors=factors)
+    # The limit is denominated in the *policy's* currency, which is not always the
+    # notice's. Both legs are converted before the fraction is taken.
+    if policy_limit_minor and estimate:
+        limit_currency = policy_currency or currency
+        estimate_in_limit = to_currency(estimate, currency, limit_currency, config=config)
+        if estimate_in_limit is None:
+            factors.append(
+                Factor(
+                    "policy_limit_not_comparable",
+                    f"The estimate is in {currency} and the limit in {limit_currency}, and no "
+                    "rate connects them, so the estimate was not weighed against the limit.",
+                    0.0,
+                )
+            )
+        elif estimate_in_limit.amount_minor >= policy_limit_minor * 0.75:
+            factors.append(
+                Factor(
+                    "near_policy_limit",
+                    "The estimate is at or near the policy limit"
+                    + (
+                        f" ({estimate_in_limit.disclosure} against a limit of "
+                        f"{format_amount(policy_limit_minor, limit_currency)})."
+                        if estimate_in_limit.converted
+                        else "."
+                    ),
+                    0.5,
+                )
+            )
+            if _rank(Severity.HIGH) > _rank(band):
+                band = Severity.HIGH
+
+    return SeverityResult(
+        severity=band,
+        confidence=round(confidence, 2),
+        factors=factors,
+        unconvertible_currency=unconvertible,
+        estimate_disclosure=disclosure,
+    )
 
 
 def _rank(severity: Severity) -> int:
@@ -611,7 +770,13 @@ class CoverageResult:
         }
 
 
-def assess_coverage(case: Any, policy: Any | None, *, policy_confirmed: bool) -> CoverageResult:
+def assess_coverage(
+    case: Any,
+    policy: Any | None,
+    *,
+    policy_confirmed: bool,
+    config: FNOLSettings | None = None,
+) -> CoverageResult:
     """A preliminary read of the policy against the loss.
 
     Never a coverage decision, and the wording throughout says so. The strongest
@@ -620,6 +785,11 @@ def assess_coverage(case: Any, policy: Any | None, *, policy_confirmed: bool) ->
     "Bound" means either an exact policy-number match or an officer's
     confirmation — a policy the matcher merely ranked highly is not enough, and
     the verdict says "review required" rather than pretending otherwise.
+
+    `config` carries the exchange rates the limit check needs. It is optional only
+    so that a caller with no settings to hand still gets the date, status, peril
+    and location checks; without it a cross-currency estimate is reported as not
+    comparable rather than compared.
     """
     if policy is None:
         return CoverageResult(
@@ -674,7 +844,7 @@ def assess_coverage(case: Any, policy: Any | None, *, policy_confirmed: bool) ->
     peril_state, peril_detail = _peril_check(case, policy)
     checks.append(CoverageCheck("peril", "Reported cause against cover", peril_state, peril_detail))
 
-    limit_state, limit_detail = _limit_check(case, policy)
+    limit_state, limit_detail = _limit_check(case, policy, config=config)
     checks.append(CoverageCheck("limit", "Estimate against the limit", limit_state, limit_detail))
 
     if policy.deductible_amount_minor:
@@ -683,7 +853,7 @@ def assess_coverage(case: Any, policy: Any | None, *, policy_confirmed: bool) ->
                 "deductible",
                 "Deductible",
                 "pass",
-                f"{policy.deductible_amount_minor / 100:,.0f} {policy.currency} applies.",
+                f"{format_amount(policy.deductible_amount_minor, policy.currency)} applies.",
             )
         )
 
@@ -743,21 +913,60 @@ def _peril_check(case: Any, policy: Any) -> tuple[str, str]:
     return "attention", "The reported cause does not obviously match a listed peril."
 
 
-def _limit_check(case: Any, policy: Any) -> tuple[str, str]:
+def _limit_check(case: Any, policy: Any, *, config: FNOLSettings | None) -> tuple[str, str]:
+    """The estimate against the limit, once both are in the same currency.
+
+    A dollar estimate against a pound limit was previously an integer comparison
+    that read $1,150,000 as over a £1,000,000 limit. When no rate connects the
+    two the check comes back `attention`, not `pass` and not `unknown`: the
+    verdict layer turns an attention into "review required", which is where a
+    figure nobody can compare belongs.
+    """
     estimate = getattr(case, "estimated_loss_minor", None)
     limit = policy.limit_amount_minor
     if estimate is None:
         return "unknown", "No estimated loss has been stated."
     if not limit:
         return "unknown", "The matched policy does not record a limit."
-    if estimate > limit:
+
+    case_currency = getattr(case, "currency", None) or policy.currency
+    stated = format_amount(estimate, case_currency)
+    limit_stated = format_amount(limit, policy.currency)
+
+    comparable = (
+        to_currency(estimate, case_currency, policy.currency, config=config)
+        if config is not None
+        # No settings, so no rates — but two amounts already in the same currency
+        # need none. Withholding that comparison would be a different wrong answer.
+        else convert(
+            estimate, case_currency, policy.currency, base_currency=case_currency, rates={}
+        )
+    )
+    if comparable is None:
+        return (
+            "attention",
+            f"The estimate of {stated} cannot be compared with the {limit_stated} limit — "
+            f"no exchange rate connects the two currencies. The limit needs checking by hand.",
+        )
+
+    against = f"{comparable.disclosure} against {limit_stated}" if comparable.converted else None
+    if comparable.amount_minor > limit:
         return (
             "fail",
-            f"The estimate of {estimate / 100:,.0f} exceeds the limit of {limit / 100:,.0f}.",
+            f"The estimate of {stated} exceeds the limit of {limit_stated}."
+            + (f" Compared as {against}." if against else ""),
         )
-    if estimate > limit * 0.75:
-        return "attention", "The estimate is within 25% of the policy limit."
-    return "pass", f"The estimate is within the {limit / 100:,.0f} {policy.currency} limit."
+    if comparable.amount_minor > limit * 0.75:
+        return (
+            "attention",
+            "The estimate is within 25% of the policy limit."
+            + (f" Compared as {against}." if against else ""),
+        )
+    return (
+        "pass",
+        f"The estimate is within the {limit_stated} limit."
+        + (f" Compared as {against}." if against else ""),
+    )
 
 
 def _location_check(case: Any, policy: Any) -> tuple[str, str]:
@@ -856,11 +1065,63 @@ def text_signals(case: Any, extra_text: str = "") -> str:
 
 
 def has_litigation_signal(text: str) -> bool:
-    return any(signal in text for signal in LITIGATION_SIGNALS)
+    return matches_any(text, LITIGATION_SIGNALS)
 
 
 def has_serious_injury_signal(text: str) -> bool:
-    return any(signal in text for signal in INJURY_SIGNALS)
+    return matches_any(text, INJURY_SIGNALS)
+
+
+def claim_signals(case: Any, *, party_roles: Collection[str] = ()) -> tuple[ClaimSignal, ...]:
+    """The facts about this loss that add required fields of their own.
+
+    Read from the columns first and the prose second, because a structured
+    `injuries` of 2 is a better answer than the word "buried" — but the prose is
+    read at all because the structured field is missing on most notices, and a
+    requirement that only appears once extraction succeeded is a requirement that
+    is never asked for on the notices that need it most.
+
+    For the tri-state exposure flags the prose is consulted *only* when the column
+    is `None`. A stated `False` is an answer and outranks a keyword: a notice that
+    says "environmental exposure: no" while its survey report happens to use the
+    word "contamination" has been asked the question and answered it, and treating
+    the keyword as the louder of the two would be the same conflation of "no" and
+    "nobody looked" that the tri-state columns exist to end.
+
+    Deliberately independent of `line_of_business`. That is the whole point: the
+    classifier is a keyword tally that can tie three ways on one sentence, and
+    the question "who was hurt" is not one the tie-break should get to answer.
+    """
+    text = text_signals(case)
+    found: list[ClaimSignal] = []
+
+    def note(signal: ClaimSignal) -> None:
+        if signal not in found:
+            found.append(signal)
+
+    def flagged(attribute: str, *, in_prose: bool) -> bool:
+        """A tri-state flag's answer, falling back to the prose only on silence."""
+        stated = getattr(case, attribute, None)
+        return in_prose if stated is None else bool(stated)
+
+    if (getattr(case, "injuries", None) or 0) > 0 or has_serious_injury_signal(text):
+        note(ClaimSignal.INJURIES)
+    if (getattr(case, "fatalities", None) or 0) > 0:
+        note(ClaimSignal.FATALITIES)
+    if (
+        "third_party" in party_roles
+        or matches_any(text, THIRD_PARTY_SIGNALS)
+        or _claimant_is_not_the_insured(case)
+    ):
+        note(ClaimSignal.THIRD_PARTY)
+    if flagged("environmental_exposure", in_prose=matches_any(text, ENVIRONMENTAL_SIGNALS)):
+        note(ClaimSignal.ENVIRONMENTAL)
+    if flagged("potential_litigation", in_prose=has_litigation_signal(text)):
+        note(ClaimSignal.LITIGATION)
+    if matches_any(text, VEHICLE_SIGNALS):
+        note(ClaimSignal.VEHICLE)
+
+    return tuple(found)
 
 
 def utc_today() -> date:

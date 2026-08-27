@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
-from app.core.config import settings
+from app.core.config import env_file_changed_since_load, settings
 from app.core.logging import get_logger
 from app.db.pool import close_pool, init_pool
 from app.db.session import dispose_engine, init_engine
@@ -84,6 +84,35 @@ def shutdown_worker_resources() -> None:
         _loop = None
 
 
+def _warn_if_configuration_is_stale() -> None:
+    """Say so, loudly and every tick, when this process is running superseded config.
+
+    A worker fixes its settings at import and can never pick up a later `.env`
+    edit. The failure that causes is not a crash — it is a process that keeps
+    succeeding against configuration nobody believes it still has. Mailbox intake
+    spent twenty-two hours that way: the flag it needed had been changed thirteen
+    minutes after it started, and every one of the 5,272 polls that followed
+    reported a clean run over an empty result.
+
+    Repeated rather than logged once at startup on purpose. The edit usually
+    happens *while* the worker is running, so a startup line would already be
+    scrolled away by the time anyone came looking, and the operator's question is
+    always asked in the present tense: is what I changed live yet?
+    """
+    stale_by = env_file_changed_since_load()
+    if stale_by is None:
+        return
+    logger.warning(
+        "worker_configuration_stale",
+        env_file_edited_seconds_ago=round(stale_by, 1),
+        detail=(
+            "`.env` has been edited since this worker loaded its settings. Nothing it "
+            "does reflects that edit, and nothing will until the worker AND beat are "
+            "restarted. This process is running the old configuration."
+        ),
+    )
+
+
 @celery_app.task(name="app.workers.tasks.heartbeat")
 def heartbeat() -> dict[str, str]:
     """Beat-scheduled no-op, so a broken schedule is visible in logs."""
@@ -127,6 +156,8 @@ def poll_mail_intake(limit: int | None = None) -> dict[str, int | str]:
     already recorded as done. If the mailbox itself is unreachable, the next
     scheduled poll is the retry.
     """
+    _warn_if_configuration_is_stale()
+
     if not settings.graph.configured:
         logger.warning("mail_intake_skipped_unconfigured")
         return {"status": "not_configured"}

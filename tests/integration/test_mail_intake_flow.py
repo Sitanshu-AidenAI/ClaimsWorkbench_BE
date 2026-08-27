@@ -55,8 +55,15 @@ class StubMailClient:
         self._attachments = attachments
         self.marked_read: list[str] = []
 
-    async def list_messages(self, *, limit: int | None = None) -> list[GraphMessage]:
+    async def list_messages(
+        self, *, limit: int | None = None, since: datetime | None = None
+    ) -> list[GraphMessage]:
+        if since is not None and self._message.received_at < since:
+            return []
         return [self._message]
+
+    async def folder_stats(self, folder: str | None = None) -> tuple[int, int]:
+        return 1, 0
 
     async def list_attachments(self, message_id: str) -> list[GraphAttachmentMetadata]:
         return self._attachments

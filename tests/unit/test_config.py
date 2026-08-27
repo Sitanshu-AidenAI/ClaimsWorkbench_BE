@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from app.core import config
 from app.core.config import GraphSettings, PostgresSettings, RedisSettings, Settings
 
 
@@ -128,3 +131,63 @@ class TestGraphSettings:
         assert graph.mark_as_read is True
         assert graph.poll_enabled is False
         assert graph.include_inline_attachments is False
+
+    def test_the_sweep_does_not_default_to_trusting_the_read_flag(self) -> None:
+        """The default that a lost claim paid for.
+
+        `unread_only` was on, so intake asked Graph for `isRead eq false`. But
+        `isRead` belongs to the claims team — a handler opening the shared
+        mailbox in Outlook clears it — and a message cleared before intake
+        reached it was excluded from every subsequent poll, permanently, while
+        each poll went on reporting success. What has been collected is a row in
+        `mail_intake_messages`; the mailbox is not a cursor. `_env_file=None` for
+        the same reason as the test above.
+        """
+        graph = GraphSettings(_env_file=None)
+
+        assert graph.unread_only is False
+        # And the sweep must be able to reach past one page, or the same symptom
+        # returns from the other direction on any folder bigger than a batch.
+        assert graph.max_pages > 1
+        assert graph.lookback_minutes > 0
+
+
+class TestConfigurationFreshness:
+    """A process cannot reload its settings; it can at least admit they are old.
+
+    Mailbox intake once ran for twenty-two hours on a flag that had been changed
+    thirteen minutes after the worker started, reporting a successful poll every
+    eight seconds against configuration nobody believed it still had. Nothing in
+    the code was wrong. This is the guard that makes that visible in one tick.
+    """
+
+    def test_configuration_older_than_the_env_file_is_reported_as_stale(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("CWB_ENVIRONMENT=local\n")
+        monkeypatch.setitem(config._ENV_CONFIG, "env_file", str(env_file))
+        monkeypatch.setattr(config, "SETTINGS_LOADED_AT", env_file.stat().st_mtime - 60)
+
+        stale_by = config.env_file_changed_since_load()
+
+        assert stale_by is not None
+        assert stale_by == pytest.approx(60, abs=2)
+
+    def test_configuration_newer_than_the_env_file_is_current(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("CWB_ENVIRONMENT=local\n")
+        monkeypatch.setitem(config._ENV_CONFIG, "env_file", str(env_file))
+        monkeypatch.setattr(config, "SETTINGS_LOADED_AT", env_file.stat().st_mtime + 60)
+
+        assert config.env_file_changed_since_load() is None
+
+    def test_a_deployment_with_no_env_file_cannot_drift_and_says_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A container takes its configuration as real environment variables.
+        monkeypatch.setitem(config._ENV_CONFIG, "env_file", str(tmp_path / "absent"))
+
+        assert config.env_file_changed_since_load() is None

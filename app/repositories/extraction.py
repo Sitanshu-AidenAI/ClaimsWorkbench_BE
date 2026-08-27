@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,10 +20,17 @@ from sqlalchemy.orm import selectinload
 from app.domain.enums import ExtractionRunStatus, ExtractionSchemaStatus
 from app.models.extraction import (
     ExtractedValue,
+    ExtractedValueCitation,
     ExtractionRun,
     ExtractionSchema,
     ExtractionSchemaField,
 )
+
+if TYPE_CHECKING:
+    # Type-only: the citation writer lives in the service layer, and importing it
+    # here for real would close the loop `services.extraction` → `engine` →
+    # `repositories.extraction` back to itself.
+    from app.services.extraction.corroborate import CitationDraft
 
 
 class ExtractionSchemaRepository:
@@ -229,6 +237,90 @@ class ExtractionRunRepository:
                 ).scalar_one()
             ),
         }
+
+    # -- Citations -----------------------------------------------------------
+
+    async def list_citations(self, value_id: uuid.UUID) -> Sequence[ExtractedValueCitation]:
+        """One value's citations, in the order the source stepper walks them."""
+        statement = (
+            select(ExtractedValueCitation)
+            .where(ExtractedValueCitation.value_id == value_id)
+            .order_by(ExtractedValueCitation.rank, ExtractedValueCitation.created_at)
+        )
+        return (await self._session.execute(statement)).scalars().all()
+
+    async def get_citation(
+        self, value_id: uuid.UUID, document_id: uuid.UUID
+    ) -> ExtractedValueCitation | None:
+        """One value's citation of one document, if it has one."""
+        statement = select(ExtractedValueCitation).where(
+            ExtractedValueCitation.value_id == value_id,
+            ExtractedValueCitation.document_id == document_id,
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def count_citations(
+        self, case_id: uuid.UUID, schema_id: uuid.UUID
+    ) -> dict[uuid.UUID, int]:
+        """Citations per value, for one case's values, in one query.
+
+        The review screen shows the count on every row — a value three documents
+        agree on is worth more than one only one document states, and that is a
+        thing to see before clicking rather than after. One aggregate rather than a
+        relationship load per row, because thirty-eight rows would be
+        thirty-eight queries for a number.
+        """
+        statement = (
+            select(
+                ExtractedValueCitation.value_id,
+                func.count(ExtractedValueCitation.id),
+            )
+            .join(ExtractedValue, ExtractedValue.id == ExtractedValueCitation.value_id)
+            .where(
+                ExtractedValue.fnol_case_id == case_id,
+                ExtractedValue.schema_id == schema_id,
+            )
+            .group_by(ExtractedValueCitation.value_id)
+        )
+        return {row[0]: int(row[1]) for row in (await self._session.execute(statement)).all()}
+
+    async def replace_citations(
+        self, value: ExtractedValue, drafts: Sequence[CitationDraft]
+    ) -> list[ExtractedValueCitation]:
+        """Swap a value's whole citation set for the one a run just derived.
+
+        Replace rather than merge, for the same reason `replace_fields` does: the
+        set is derived as a set, and the ranks are only meaningful relative to each
+        other. Merging would also have to decide what to do with a citation whose
+        document no longer states the value — which is "delete it", so the merge
+        buys nothing but a way to get that wrong.
+
+        The cached rectangles go with the old rows, deliberately. They were
+        measured against a quote this run may have changed, and a rectangle drawn
+        round the wrong words is worse than the half-second it costs to measure
+        again.
+        """
+        await self._session.execute(
+            delete(ExtractedValueCitation).where(ExtractedValueCitation.value_id == value.id)
+        )
+        rows = [
+            ExtractedValueCitation(
+                value_id=value.id,
+                role=draft.role,
+                rank=draft.rank,
+                document_id=draft.document_id,
+                chunk_id=draft.chunk_id,
+                page_number=draft.page_number,
+                section_label=draft.section_label,
+                quote=draft.quote,
+                char_start=draft.char_start,
+                char_end=draft.char_end,
+                strategy=draft.strategy,
+            )
+            for draft in drafts
+        ]
+        self._session.add_all(rows)
+        return rows
 
     async def prune_values(
         self, case_id: uuid.UUID, schema_id: uuid.UUID, *, keep: Sequence[str]

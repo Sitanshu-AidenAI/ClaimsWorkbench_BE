@@ -168,9 +168,14 @@ class FNOLCase(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     affected_assets: Mapped[str | None] = mapped_column(Text)
     injuries: Mapped[int | None] = mapped_column(Integer)
     fatalities: Mapped[int | None] = mapped_column(Integer)
-    business_interruption: Mapped[bool] = mapped_column(Boolean, default=False)
-    structural_damage: Mapped[bool] = mapped_column(Boolean, default=False)
-    environmental_exposure: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Tri-state on purpose. `True` is a stated exposure, `False` is a stated
+    #: absence, and `None` is a question nobody has answered — which on a notice
+    #: where extraction recovered 24 of 30 fields is the ordinary case, not the
+    #: edge one. Collapsing the last two into `false` is how an unassessed
+    #: pollution exposure scored identically to an assessed absence.
+    business_interruption: Mapped[bool | None] = mapped_column(Boolean)
+    structural_damage: Mapped[bool | None] = mapped_column(Boolean)
+    environmental_exposure: Mapped[bool | None] = mapped_column(Boolean)
 
     # --- Financial -----------------------------------------------------------
     estimated_loss_minor: Mapped[int | None] = mapped_column(BigInteger)
@@ -181,7 +186,8 @@ class FNOLCase(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     police_reference: Mapped[str | None] = mapped_column(String(128))
     incident_reference: Mapped[str | None] = mapped_column(String(128))
     authorities_involved: Mapped[str | None] = mapped_column(Text)
-    potential_litigation: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Tri-state, for the reason given on `business_interruption` above.
+    potential_litigation: Mapped[bool | None] = mapped_column(Boolean)
 
     # --- Assessments (latest values, denormalised so the queue can sort) ------
     severity: Mapped[str | None] = mapped_column(String(16), index=True)

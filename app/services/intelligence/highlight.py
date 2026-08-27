@@ -212,12 +212,26 @@ def _tokens(text: str) -> list[str]:
 
 
 def _match_words(words: list[dict[str, Any]], needle: list[str]) -> list[dict[str, Any]]:
-    """The longest run of `words` matching `needle` in order.
+    """The best run of `words` matching `needle` in order.
 
     A run rather than an exact subsequence because the two engines split hyphenated
     and punctuated words differently — `CP-2026-4471` is one word to one and three to
     the other — so an all-or-nothing match would fail on exactly the values that
     matter most here.
+
+    **Longest wins, and among equals the one that skipped nothing.** Both halves of
+    that rule are load-bearing, and the second was learned from a real highlight. A
+    claim form prints a section heading above the field it heads:
+
+        POLICY
+        Policy number:            CP-4471-88210
+
+    Searching for "Policy number: CP-4471-88210" from the *heading* reaches full
+    length by skipping one token — the heading's `POLICY`, then `number`, `cp`,
+    `4471`, `88210` — so a first-full-match-wins search stopped there and drew two
+    rectangles: one over the heading, and one over the value line with its first word
+    missing. Preferring the run that skipped nothing finds the three words actually
+    quoted, on the one line they sit on.
     """
     page_tokens: list[tuple[int, str]] = []
     for position, word in enumerate(words):
@@ -228,6 +242,8 @@ def _match_words(words: list[dict[str, Any]], needle: list[str]) -> list[dict[st
         return []
 
     best: list[int] = []
+    best_skips = 0
+
     for offset in range(len(page_tokens)):
         if page_tokens[offset][1] != needle[0]:
             continue
@@ -237,6 +253,7 @@ def _match_words(words: list[dict[str, Any]], needle: list[str]) -> list[dict[st
         # enough to reconstruct which tokens matched — and reconstructing it wrongly
         # draws a rectangle over the start of the following line.
         consumed: list[int] = []
+        skips = 0
         cursor = offset
         for token in needle:
             if cursor < len(page_tokens) and page_tokens[cursor][1] == token:
@@ -247,11 +264,15 @@ def _match_words(words: list[dict[str, Any]], needle: list[str]) -> list[dict[st
                 # between two words of the quote.
                 consumed.append(cursor + 1)
                 cursor += 2
+                skips += 1
             else:
                 break
-        if len(consumed) > len(best):
-            best = consumed
-        if len(best) == len(needle):
+
+        if not best or (len(consumed), -skips) > (len(best), -best_skips):
+            best, best_skips = consumed, skips
+        if len(best) == len(needle) and best_skips == 0:
+            # Every token, contiguously. Nothing later can beat that, and the first
+            # such run is the earliest place the quote actually appears on the page.
             break
 
     if len(best) < _MIN_MATCH_TOKENS or len(best) / len(needle) < _MIN_MATCH_RATIO:

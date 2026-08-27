@@ -20,6 +20,7 @@ Three decisions are worth naming:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -89,41 +90,128 @@ class GraphMailClient:
         limit: int | None = None,
         unread_only: bool | None = None,
         folder: str | None = None,
+        since: datetime | None = None,
     ) -> list[GraphMessage]:
-        """A page of messages from the configured folder, oldest first.
+        """Messages from the configured folder, oldest first.
 
         Oldest first on purpose: notifications are worked in the order a claims
         team would have opened them, and a poll that always read the newest page
         would starve the bottom of a backlog indefinitely.
 
-        One page only. `@odata.nextLink` is not followed — the batch size bounds
-        what one poll may do, and the next poll picks up where this one stopped.
+        `@odata.nextLink` **is** followed, up to `max_pages`. It did not used to
+        be, and the omission was a claim-losing bug rather than a tuning choice:
+        with `$top=25` and an ascending sort, a folder holding twenty-six read
+        messages returns the same oldest twenty-five to every poll forever, and
+        the twenty-sixth — the one that just arrived — is never in the window.
+        Nothing about that failure is visible from the outside; the poll reports
+        success on a page of messages it has already collected.
+
+        `since` is the other half. Following pages to the end of a folder that
+        has years in it is not something a five-minute poll should do, so the
+        caller passes a watermark and Graph does the narrowing server-side. The
+        two together are what bound the sweep by *time* instead of by count:
+        every message newer than the watermark is seen, however many that is,
+        and nothing older is transferred.
         """
         unread = self._config.unread_only if unread_only is None else unread_only
+        # `batch_size` is the size of a *page*, not the size of a poll. Conflating
+        # the two is what made paging pointless: a ceiling of `batch_size` breaks
+        # out of the loop the moment the first page is full, which is the exact
+        # behaviour the paging is here to remove. A poll's real ceiling is every
+        # page it is allowed to follow, unless the caller names a smaller one.
+        page_size = self._config.batch_size
+        ceiling = limit if limit is not None else page_size * self._config.max_pages
+        page_size = min(page_size, ceiling)
+
+        filters: list[str] = []
+        if unread:
+            filters.append("isRead eq false")
+        if since is not None:
+            # Graph wants UTC, to the second, with a literal Z.
+            stamp = since.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            filters.append(f"receivedDateTime ge {stamp}")
+
         params: dict[str, Any] = {
             "$select": ",".join(MESSAGE_SELECT_FIELDS),
-            "$top": limit or self._config.batch_size,
+            "$top": page_size,
             "$orderby": "receivedDateTime asc",
         }
-        if unread:
-            params["$filter"] = "isRead eq false"
+        if filters:
+            params["$filter"] = " and ".join(filters)
 
-        path = f"{self._folder_path(folder)}/messages"
-        response = await self._request("GET", path, params=params)
-        payload = _json(response)
-        rows = payload.get("value")
-        if not isinstance(rows, list):
-            raise GraphError("The message list response carried no `value` array.")
+        messages: list[GraphMessage] = []
+        pages = 0
+        truncated = False
+        path: str | None = f"{self._folder_path(folder)}/messages"
+        # Only the first request carries params; `@odata.nextLink` is an absolute
+        # URL that already has them baked in, and re-appending would reject it.
+        request_params: dict[str, Any] | None = params
 
-        messages = [parse_message(row) for row in rows if isinstance(row, dict)]
+        while path is not None and pages < self._config.max_pages:
+            response = await self._request("GET", path, params=request_params)
+            payload = _json(response)
+            rows = payload.get("value")
+            if not isinstance(rows, list):
+                raise GraphError("The message list response carried no `value` array.")
+
+            messages.extend(parse_message(row) for row in rows if isinstance(row, dict))
+            pages += 1
+
+            if len(messages) >= ceiling:
+                truncated = len(messages) > ceiling or bool(payload.get("@odata.nextLink"))
+                messages = messages[:ceiling]
+                break
+
+            next_link = payload.get("@odata.nextLink")
+            path = next_link if isinstance(next_link, str) else None
+            request_params = None
+            if path is not None and pages >= self._config.max_pages:
+                truncated = True
+
         logger.info(
             "graph_messages_listed",
             mailbox=self.mailbox,
             folder=folder or self._config.mail_folder,
             unread_only=unread,
+            since=since.isoformat() if since else None,
+            pages=pages,
             count=len(messages),
+            truncated=truncated,
         )
+        if truncated:
+            # Not an error — the next poll continues from a watermark this batch
+            # advances — but it must not be silent, because a permanently
+            # truncated sweep and a healthy one log the same `count` otherwise.
+            logger.warning(
+                "graph_message_list_truncated",
+                mailbox=self.mailbox,
+                folder=folder or self._config.mail_folder,
+                returned=len(messages),
+                pages=pages,
+                max_pages=self._config.max_pages,
+            )
         return messages
+
+    async def folder_stats(self, folder: str | None = None) -> tuple[int, int]:
+        """`(total, unread)` item counts for the folder, for reconciliation.
+
+        Intake uses this to answer a question its own ledger cannot: does the
+        mailbox hold more than we have rows for? A poll that collects nothing
+        because the folder is empty and a poll that collects nothing because the
+        sweep cannot see the folder are indistinguishable without it.
+        """
+        response = await self._request(
+            "GET",
+            self._folder_path(folder),
+            params={"$select": "totalItemCount,unreadItemCount"},
+            allow_missing=True,
+        )
+        if response.status_code == 404:
+            return 0, 0
+        payload = _json(response)
+        total = payload.get("totalItemCount")
+        unread = payload.get("unreadItemCount")
+        return (total if isinstance(total, int) else 0, unread if isinstance(unread, int) else 0)
 
     async def get_message(self, message_id: str) -> GraphMessage | None:
         """One message, or `None` if it is no longer in the mailbox."""
@@ -305,7 +393,25 @@ def get_mail_client(config: GraphSettings | None = None) -> GraphMailClient:
     global _client
     if _client is None:
         _client = GraphMailClient(config)
-        logger.info("graph_mail_client_created", mailbox=_client.mailbox)
+        settings_used = _client._config
+        # The effective sweep settings, logged once where the client is built.
+        # A process reads its configuration at import and keeps it: a worker
+        # started before an `.env` edit runs the *old* values for as long as it
+        # lives, and the only way anyone found that out last time was by reading
+        # 5,000 lines of poll output. One line at startup answers "what is this
+        # process actually doing" without a debugger or a restart.
+        logger.info(
+            "graph_mail_client_created",
+            mailbox=_client.mailbox,
+            folder=settings_used.mail_folder,
+            unread_only=settings_used.unread_only,
+            batch_size=settings_used.batch_size,
+            max_pages=settings_used.max_pages,
+            lookback_minutes=settings_used.lookback_minutes,
+            mark_as_read=settings_used.mark_as_read,
+            move_to_folder=settings_used.move_to_folder,
+            poll_interval_seconds=settings_used.poll_interval_seconds,
+        )
     return _client
 
 

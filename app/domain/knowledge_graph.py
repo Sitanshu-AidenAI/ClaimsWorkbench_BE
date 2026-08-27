@@ -42,6 +42,8 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Any
 
+from app.domain.money import to_major
+
 # ---------------------------------------------------------------------------
 # Vocabulary
 # ---------------------------------------------------------------------------
@@ -266,7 +268,9 @@ def _money(amount_minor: int | None, currency: str | None) -> str | None:
     if amount_minor is None:
         return None
     symbol = _SYMBOLS.get((currency or "GBP").upper(), "")
-    return f"{symbol}{amount_minor / 100:,.0f}"
+    # `to_major` rather than a division by 100: a JPY amount is whole yen, and
+    # dividing it renders a ¥5,000,000 reserve as ¥50,000.
+    return f"{symbol}{to_major(amount_minor, currency):,.0f}"
 
 
 def _day(value: datetime | date | None) -> str | None:

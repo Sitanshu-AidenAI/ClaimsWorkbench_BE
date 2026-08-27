@@ -210,14 +210,106 @@ def text_similarity(left: str | None, right: str | None) -> float:
     return jaccard(tokens(left), tokens(right))
 
 
-def location_similarity(left: str | None, right: str | None) -> float:
-    """How alike two written addresses are.
+#: Words that name a distinguishable part of one site, when an identifier follows.
+#:
+#: The identifier is required, which is what keeps this from firing on prose: "the
+#: warehouse roof" names no particular warehouse and "the 2200 block of West
+#: Carbondale Avenue" names no particular block, while "Building K" and "Unit 7" do.
+_SITE_DESIGNATORS: tuple[str, ...] = (
+    "building",
+    "bldg",
+    "block",
+    "unit",
+    "suite",
+    "ste",
+    "floor",
+    "level",
+    "apartment",
+    "apt",
+    "flat",
+    "wing",
+    "annex",
+    "annexe",
+    "phase",
+    "stage",
+    "bay",
+    "plot",
+    "lot",
+    "tower",
+    "house",
+    "warehouse",
+    "dock",
+    "berth",
+    "pad",
+    "stand",
+    "pier",
+)
 
-    Containment rather than Jaccard: "Unit 7, Wakefield Road, Leeds LS9" and
-    "Leeds LS9" describe the same site, and the shorter form is what a phone
-    notification captures.
+_DESIGNATOR_RE = re.compile(
+    r"\b(?P<kind>"
+    + "|".join(_SITE_DESIGNATORS)
+    + r")\s*(?:no\.?|number|#)?\s*(?P<ident>[a-z]?[-/]?[0-9]{1,4}[a-z]?|[a-z])\b"
+)
+
+#: What a designator on one side and none on the other is worth. The same *site*,
+#: an unknown part of it — a real signal, and not the "same location" one.
+_DESIGNATOR_UNSTATED = 0.6
+#: What two different designators of the same kind are worth. Building K and
+#: Building C are two buildings, whatever the street they share.
+_DESIGNATOR_CONTRADICTED = 0.15
+
+
+def site_designators(value: str | None) -> dict[str, set[str]]:
+    """`{kind: {identifier}}` for every named part of a site in an address."""
+    found: dict[str, set[str]] = {}
+    for match in _DESIGNATOR_RE.finditer(normalise(value)):
+        found.setdefault(match["kind"], set()).add(match["ident"])
+    return found
+
+
+def designator_agreement(left: str | None, right: str | None) -> float:
+    """How much two addresses agree about *which part* of a site the loss is in.
+
+    A multiplier on the token score rather than a signal of its own, because it is
+    not a separate fact — it is a correction to how much the token overlap is worth.
+
+    The case this exists for: `windrow-grove-hail` reports "6120 East 91st Street,
+    Tulsa, OK 74137" and `windrow-grove-building-k-fire` reports the same address
+    "— Building K". Every token of the shorter one is in the longer one, so plain
+    containment scored 1.0 and the duplicate check read "Same location" — on a pair
+    of claims seven months and one peril apart whose fixture README says in as many
+    words that they should not be confused. It scored 0.6292 against a 0.62
+    threshold and landed as a review candidate.
+
+    Containment is still the right primitive: "Unit 7, Wakefield Road, Leeds LS9"
+    and "Leeds LS9" *are* the same site, and the shorter form is what a phone
+    notification captures. What containment cannot say is that the shorter form
+    left the question of which building open — so an address that names a part and
+    one that does not are the same site with an unknown part, not the same place.
     """
-    return token_containment(tokens(left), tokens(right))
+    left_parts, right_parts = site_designators(left), site_designators(right)
+    if not left_parts and not right_parts:
+        return 1.0
+
+    shared = set(left_parts) & set(right_parts)
+    if any(left_parts[kind] != right_parts[kind] for kind in shared):
+        return _DESIGNATOR_CONTRADICTED
+    if left_parts == right_parts:
+        return 1.0
+    return _DESIGNATOR_UNSTATED
+
+
+def location_similarity(left: str | None, right: str | None) -> float:
+    """How alike two written addresses are, and how sure that they are one place.
+
+    Token containment, corrected by whether the two sides agree about which part of
+    the site the loss was in. See `designator_agreement` for why the correction is a
+    multiplier and not a signal.
+    """
+    overlap = token_containment(tokens(left), tokens(right))
+    if overlap <= 0.0:
+        return overlap
+    return overlap * designator_agreement(left, right)
 
 
 EARTH_RADIUS_KM = 6371.0088

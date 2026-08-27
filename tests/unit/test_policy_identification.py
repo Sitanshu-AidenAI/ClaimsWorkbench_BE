@@ -710,6 +710,177 @@ class TestRankingAndRecommendation:
         assert result.candidates[0].policy_id == "thick"
 
 
+#: Beacon Mechanical Services, as it appears in `policy/policy-book.json`: two
+#: policies, same insured, same address, same broker, different products. Nothing
+#: but the broker reference and the product distinguishes them.
+BEACON_GL: dict[str, object] = {
+    "policy_id": "GL-8804-27153",
+    "policy_number": "GL-8804-27153",
+    "insured_name": "Beacon Mechanical Services, Inc.",
+    "insured_organisation": "Beacon Mechanical Services, Inc.",
+    "line_of_business": "liability",
+    "policy_type": "Commercial General Liability",
+    "broker_name": "Front Range Commercial Insurance Group, Inc.",
+    "broker_reference": "FRC/GL/2025/8804",
+    "broker_domain": "frontrangecommercial.example",
+}
+BEACON_FLOATER: dict[str, object] = {
+    "policy_id": "IM-7741-15530",
+    "policy_number": "IM-7741-15530",
+    "insured_name": "Beacon Mechanical Services, Inc.",
+    "insured_organisation": "Beacon Mechanical Services, Inc.",
+    "line_of_business": "engineering",
+    "policy_type": "Contractors Equipment and Installation Floater",
+    "broker_name": "Front Range Commercial Insurance Group, Inc.",
+    "broker_reference": "FRC/IM/2025/7741",
+    "broker_domain": "frontrangecommercial.example",
+}
+
+
+class TestPolicyType:
+    """The product, as distinct from the line of business.
+
+    `PolicyFacts.policy_type` was carried for display and compared by nothing, so an
+    insured holding two policies in one line was separated almost entirely by
+    `line_of_business` — the lightest signal in the set, at 0.6, and one that says
+    the same thing about both when the two products sit in the same line.
+    """
+
+    def book(self) -> list[engine.PolicyFacts]:
+        return [policy(**BEACON_GL), policy(**BEACON_FLOATER)]  # type: ignore[arg-type]
+
+    def test_without_a_policy_number_the_product_is_what_separates_them(self) -> None:
+        without = engine.identify(
+            notice(
+                insured_name="Beacon Mechanical Services, Inc.",
+                broker_domain="frontrangecommercial.example",
+                loss_day=date(2026, 3, 14),
+            ),
+            self.book(),
+            config=CONFIG,
+        )
+        scores = {candidate.policy_id: candidate.score for candidate in without.candidates}
+        # The premise: with no product stated the two are indistinguishable.
+        assert scores["GL-8804-27153"] == pytest.approx(scores["IM-7741-15530"])
+
+        stated = engine.identify(
+            notice(
+                insured_name="Beacon Mechanical Services, Inc.",
+                broker_domain="frontrangecommercial.example",
+                policy_type="Contractors equipment and installation floater",
+                loss_day=date(2026, 3, 14),
+            ),
+            self.book(),
+            config=CONFIG,
+        )
+        assert stated.candidates[0].policy_id == "IM-7741-15530"
+        assert stated.candidates[0].score - stated.candidates[1].score > (
+            CONFIG.policy_identification_ambiguity_margin
+        )
+
+    def test_the_other_product_picks_the_other_policy(self) -> None:
+        result = engine.identify(
+            notice(
+                insured_name="Beacon Mechanical Services, Inc.",
+                broker_domain="frontrangecommercial.example",
+                policy_type="Commercial general liability",
+                loss_day=date(2026, 3, 14),
+            ),
+            self.book(),
+            config=CONFIG,
+        )
+        assert result.candidates[0].policy_id == "GL-8804-27153"
+        assert outcome(result.candidates[0], "policy_type") is SignalOutcome.MATCH
+        assert outcome(result.candidates[1], "policy_type") is SignalOutcome.MISMATCH
+
+    def test_a_product_the_family_table_does_not_recognise_reads_as_partial(self) -> None:
+        """An unrecognised product name is where this is least reliable, and says so."""
+        result = engine.identify(
+            notice(
+                policy_number="POL-2026-0041",
+                insured_name="Northline Logistics Limited",
+                policy_type="Bloodstock all risks",
+                loss_day=date(2026, 3, 14),
+            ),
+            [policy(policy_type="Bloodstock All Risks")],
+            config=CONFIG,
+        )
+        assert outcome(result.candidates[0], "policy_type") is SignalOutcome.PARTIAL
+
+    def test_a_product_mismatch_warns_and_does_not_hide_the_policy(self) -> None:
+        """A broker writing the wrong product is a thing to say, not to act on.
+
+        `policy_type` is not a primary identifier: an insured commonly holds the
+        product the notice did not name, so a mismatch must not reject a candidate or
+        the officer loses the right policy to a typo.
+        """
+        result = engine.identify(
+            notice(
+                policy_number="GL-8804-27153",
+                insured_name="Beacon Mechanical Services, Inc.",
+                policy_type="Contractors equipment",
+                loss_day=date(2026, 3, 14),
+            ),
+            [policy(**BEACON_GL)],  # type: ignore[arg-type]
+            config=CONFIG,
+        )
+        best = result.candidates[0]
+        assert best.policy_id == "GL-8804-27153"
+        assert best.confidence is PolicyConfidence.EXACT
+        assert "policy_type_mismatch" in {warning.code for warning in best.warnings}
+
+    def test_the_longer_product_name_wins_the_classification(self) -> None:
+        """ "Commercial general liability" must not classify as marine on "cargo"-style
+        substring luck, and must beat the shorter "general liability" it contains."""
+        assert engine.policy_type_family("Commercial General Liability") == "general_liability"
+        assert engine.policy_type_family("Contractors Equipment") == "equipment_floater"
+        assert engine.policy_type_family("Commercial Property") == "commercial_property"
+        assert engine.policy_type_family("Bloodstock All Risks") is None
+
+
+class TestAmbiguityIsNotWrittenToTheCase:
+    def test_an_ambiguous_result_says_so_on_the_result(self) -> None:
+        """The flag the service reads instead of falling back to `best`.
+
+        `app.services.fnol.identification` used to write `result.best.policy_id`
+        whenever nothing was recommended — which is exactly the ambiguous case, so a
+        coin toss between two candidates reached the column that coverage reads
+        against.
+        """
+        result = engine.identify(
+            notice(
+                insured_name="Northline Logistics",
+                broker_name="Harding Vale Brokers",
+                loss_day=date(2026, 3, 14),
+            ),
+            [
+                policy(broker_name="Harding Vale Brokers"),
+                policy(
+                    policy_id="policy-2",
+                    policy_number="POL-2026-0198",
+                    insured_name="Northline Logistics (Scotland) Limited",
+                    broker_name="Harding Vale Brokers",
+                ),
+            ],
+            config=CONFIG,
+        )
+        assert result.recommended_policy_id is None
+        assert result.ambiguous is True
+        assert result.best is not None  # still ranked and still shown
+
+    def test_a_clear_winner_is_not_ambiguous(self) -> None:
+        result = engine.identify(
+            notice(
+                policy_number="POL-2026-0041",
+                insured_name="Northline Logistics Limited",
+                loss_day=date(2026, 3, 14),
+            ),
+            [policy(), policy(policy_id="policy-2", policy_number="CP-2026-30583")],
+            config=CONFIG,
+        )
+        assert result.ambiguous is False
+
+
 class TestSearchedOn:
     def test_the_panel_reports_what_was_searched_on_and_what_was_not(self) -> None:
         """Shown even when nothing matched.

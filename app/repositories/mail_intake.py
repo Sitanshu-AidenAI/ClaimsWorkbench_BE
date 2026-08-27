@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.enums import MailIntakeStatus
@@ -59,6 +60,49 @@ class MailIntakeRepository:
         if internet_message_id:
             return await self.find_by_internet_message_id(internet_message_id)
         return None
+
+    async def newest_received_at(self, mailbox: str) -> datetime | None:
+        """When the most recent message this mailbox has a ledger row for arrived.
+
+        The watermark a poll sweeps back from. Deliberately `max(received_at)`
+        over *every* row rather than only processed ones: a failed row still
+        proves the message was seen, and a message that failed permanently must
+        not hold the watermark still and make every poll re-read the folder from
+        it forever.
+        """
+        statement = select(func.max(MailIntakeMessage.received_at)).where(
+            MailIntakeMessage.mailbox == mailbox
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def count_recorded(
+        self, *, graph_message_ids: Sequence[str], internet_message_ids: Sequence[str]
+    ) -> int:
+        """How many of these messages the ledger now holds a row for.
+
+        The exact form of the reconciliation: a poll knows precisely which
+        messages it listed, and every one of them must have come out of the loop
+        with a row — collected, failed or abandoned. Anything less is a message
+        the sweep saw and dropped, which is the failure mode that leaves no other
+        trace. Counted in one query rather than per message so the check costs a
+        single round trip on top of a poll.
+        """
+        if not graph_message_ids and not internet_message_ids:
+            return 0
+        predicates = []
+        if graph_message_ids:
+            predicates.append(MailIntakeMessage.graph_message_id.in_(graph_message_ids))
+        if internet_message_ids:
+            predicates.append(MailIntakeMessage.internet_message_id.in_(internet_message_ids))
+        statement = select(func.count(MailIntakeMessage.id)).where(or_(*predicates))
+        return int((await self._session.execute(statement)).scalar_one())
+
+    async def count_for_mailbox(self, mailbox: str) -> int:
+        """How many messages of this mailbox the ledger holds, in any state."""
+        statement = select(func.count(MailIntakeMessage.id)).where(
+            MailIntakeMessage.mailbox == mailbox
+        )
+        return int((await self._session.execute(statement)).scalar_one())
 
     async def list_messages(
         self,

@@ -188,6 +188,13 @@ SIGNALS: tuple[SignalDefinition, ...] = (
         binary=True,
     ),
     SignalDefinition(
+        "policy_type",
+        "Policy type",
+        SignalAxis.COVER,
+        1.4,
+        evidence_field_key="policy.policy_type",
+    ),
+    SignalDefinition(
         "risk_location",
         "Loss location",
         SignalAxis.RISK,
@@ -381,6 +388,7 @@ class NoticeSignals:
     contract_number: SignalValue | None = None
     date_of_loss: SignalValue | None = None
     line_of_business: SignalValue | None = None
+    policy_type: SignalValue | None = None
     cause_of_loss: SignalValue | None = None
     policy_period_stated: SignalValue | None = None
     estimated_loss_minor: int | None = None
@@ -690,6 +698,11 @@ class IdentificationResult:
     #: an answer. Never ranked with the others.
     near_misses: list[CandidateMatch] = field(default_factory=list)
     recommended_policy_id: Any | None = None
+    #: Whether a second candidate is close enough to the first that choosing between
+    #: them is an officer's decision. Held on the result rather than recomputed,
+    #: because the service that writes `case.policy_id` has no `config` at hand and
+    #: was answering the question by not asking it.
+    ambiguous: bool = False
     #: What the search was run on, so the officer can see it was reasonable.
     searched_on: list[SignalResult] = field(default_factory=list)
     policies_compared: int = 0
@@ -795,6 +808,7 @@ def identify(
         candidates=viable,
         near_misses=near_misses,
         recommended_policy_id=recommended.policy_id if recommended else None,
+        ambiguous=bool(contenders(viable, config=config)),
         searched_on=list(searched_on(notice)),
         policies_compared=len(policies),
     )
@@ -1648,6 +1662,202 @@ def _compare_policy_period(
     )
 
 
+#: Product families, and the words a notice or a schedule names each one with.
+#:
+#: A line of business is a *class* of business — `liability`, `engineering` — and one
+#: insured routinely holds several policies inside one line. The product is what tells
+#: them apart, and until now it was carried on `PolicyFacts.policy_type` for display
+#: only and compared by nothing.
+#:
+#: The case that needs it: Beacon Mechanical Services holds `GL-8804-27153`
+#: (Commercial General Liability) and `IM-7741-15530` (Contractors Equipment and
+#: Installation Floater). Same insured name, same address, same broker; they differ by
+#: broker reference and by product. With no policy number stated, a notice for either
+#: scored almost identically on both, and the only signal that separated them at all
+#: was `line_of_business` — the lightest weight in the set, at 0.6.
+POLICY_TYPE_FAMILIES: dict[str, tuple[str, ...]] = {
+    "commercial_property": (
+        "commercial property",
+        "commercial buildings",
+        "property owners",
+        "buildings and contents",
+        "material damage",
+        "property",
+    ),
+    "business_owners": ("businessowners", "business owners", "bop"),
+    "builders_risk": (
+        "builders risk",
+        "builder's risk",
+        "course of construction",
+        "contract works",
+        "contractors all risks",
+        "erection all risks",
+        "car policy",
+    ),
+    "general_liability": (
+        "commercial general liability",
+        "general liability",
+        "contractors gl",
+        "contractors general liability",
+        "public liability",
+        "products liability",
+        "cgl",
+    ),
+    "equipment_floater": (
+        "contractors equipment",
+        "installation floater",
+        "equipment floater",
+        "inland marine",
+        "plant and equipment",
+        "tools and equipment",
+    ),
+    "commercial_auto": (
+        "commercial auto",
+        "business auto",
+        "motor fleet",
+        "auto liability",
+        "commercial motor",
+        "fleet",
+    ),
+    "workers_compensation": (
+        "workers compensation",
+        "workers' compensation",
+        "workers comp",
+        "employers liability",
+    ),
+    "umbrella": ("umbrella", "excess liability", "excess casualty"),
+    "cyber": ("cyber", "data breach", "technology risks"),
+    "professional": (
+        "professional indemnity",
+        "professional liability",
+        "errors and omissions",
+        "e&o",
+        "directors and officers",
+        "d&o",
+    ),
+    "marine": ("marine cargo", "marine hull", "goods in transit", "cargo", "hull"),
+    "engineering": ("machinery breakdown", "electronic equipment", "boiler and machinery"),
+    "environmental": ("contractors pollution", "environmental impairment", "pollution legal"),
+}
+
+#: Families whose products overlap enough that naming one and holding the other is
+#: not a contradiction. A contractors-equipment policy and an inland-marine policy
+#: are frequently the same paper under two names, and a notice that says "plant" has
+#: not ruled out either.
+_COMPATIBLE_FAMILIES: tuple[frozenset[str], ...] = (
+    frozenset({"equipment_floater", "engineering"}),
+    frozenset({"equipment_floater", "marine"}),
+    frozenset({"general_liability", "umbrella"}),
+    frozenset({"commercial_property", "business_owners"}),
+    frozenset({"builders_risk", "engineering"}),
+)
+
+
+def policy_type_family(value: str | None) -> str | None:
+    """The product family a stated policy type belongs to, or `None`.
+
+    Longest phrase wins, which is the whole reason this is a table and not a set of
+    `in` checks: "commercial general liability" has to beat "general liability", and
+    "general liability" has to beat "liability" — a wording that names the broader
+    term first classifies half the book as the wrong product.
+    """
+    text = normalise(value)
+    if not text:
+        return None
+    best: tuple[int, str] | None = None
+    for family, terms in POLICY_TYPE_FAMILIES.items():
+        for term in terms:
+            if term in text and (best is None or len(term) > best[0]):
+                best = (len(term), family)
+    return best[1] if best else None
+
+
+def _families_agree(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    pair = frozenset({left, right})
+    return any(pair <= group for group in _COMPATIBLE_FAMILIES)
+
+
+def _compare_policy_type(
+    notice: NoticeSignals, policy: PolicyFacts, definition: SignalDefinition
+) -> SignalResult:
+    """The product, as distinct from the line of business.
+
+    Scored at 1.4 — heavier than `line_of_business` at 0.6 and lighter than
+    `insured_name` at 2.0. That ordering is the claim being made: the product is real
+    evidence about which of an insured's policies this is, and it is never evidence
+    about *whose* policy it is.
+
+    A mismatch here does not reject a candidate, and deliberately: `policy_type` is
+    not a primary identifier, an insured commonly holds the product the notice did
+    not name, and a broker writing "GL" on an equipment claim is a mistake to warn
+    about rather than a reason to hide the right policy.
+    """
+    stated = notice.policy_type
+    if stated is None or not policy.policy_type:
+        return _uncompared(
+            definition,
+            policy_value=policy.policy_type or None,
+            notice_value=stated.value if stated else None,
+        )
+
+    notice_family = policy_type_family(stated.value)
+    policy_family = policy_type_family(policy.policy_type)
+
+    if notice_family and policy_family:
+        if _families_agree(notice_family, policy_family):
+            return _result(
+                definition,
+                stated,
+                policy.policy_type,
+                outcome=SignalOutcome.MATCH,
+                score=1.0,
+                explanation=(
+                    f"The notice names a {_humanise(notice_family)} product and this is "
+                    f"the insured's {policy.policy_type} policy."
+                ),
+            )
+        return _result(
+            definition,
+            stated,
+            policy.policy_type,
+            outcome=SignalOutcome.MISMATCH,
+            score=0.0,
+            explanation=(
+                f"The notice names a {_humanise(notice_family)} product; this is a "
+                f"{policy.policy_type} policy. One insured commonly holds both, so this "
+                "separates two of their policies rather than ruling this one out."
+            ),
+        )
+
+    # Neither side classified, or only one did. Fall back to comparing the words,
+    # which is worth something — two schedules printing the same product name agree
+    # about the product — and is reported as partial rather than as a match, because
+    # an unrecognised product name is exactly where this is least reliable.
+    similarity = entity_similarity(stated.value, policy.policy_type)
+    if similarity >= 0.6:
+        return _result(
+            definition,
+            stated,
+            policy.policy_type,
+            outcome=SignalOutcome.PARTIAL,
+            score=round(similarity, 4),
+            explanation=(
+                f"“{stated.value}” and “{policy.policy_type}” read as the same product, "
+                "though neither is a product name this recognises."
+            ),
+        )
+    return _result(
+        definition,
+        stated,
+        policy.policy_type,
+        outcome=SignalOutcome.MISMATCH,
+        score=0.0,
+        explanation=(f"The notice names “{stated.value}”; this policy is “{policy.policy_type}”."),
+    )
+
+
 def _compare_line_of_business(
     notice: NoticeSignals, policy: PolicyFacts, definition: SignalDefinition
 ) -> SignalResult:
@@ -1693,6 +1903,7 @@ _COMPARATORS: dict[str, Any] = {
     "insured_domain": _compare_insured_domain,
     "broker_domain": _compare_broker_domain,
     "broker_name": _compare_broker_name,
+    "policy_type": _compare_policy_type,
     "line_of_business": _compare_line_of_business,
 }
 
@@ -1812,6 +2023,26 @@ def _ranking_key(candidate: CandidateMatch) -> tuple[float, float, int]:
     return (band, candidate.score, len(candidate.compared_signals))
 
 
+def contenders(candidates: list[CandidateMatch], *, config: FNOLSettings) -> list[CandidateMatch]:
+    """Candidates close enough to the top one that choosing between them is a person's job.
+
+    Factored out of `_recommended` because the service needs the same answer for a
+    different question. `_recommended` asks "may the engine put one forward"; the
+    service asks "may anything be written to `case.policy_id`", and the two were
+    being answered by different rules — the engine declined to recommend and the
+    service then wrote `result.best.policy_id` anyway.
+    """
+    if not candidates:
+        return []
+    best = candidates[0]
+    return [
+        candidate
+        for candidate in candidates[1:]
+        if candidate.confidence in (PolicyConfidence.EXACT, PolicyConfidence.STRONG)
+        or candidate.score >= best.score - config.policy_identification_ambiguity_margin
+    ]
+
+
 def _recommended(
     candidates: list[CandidateMatch], *, config: FNOLSettings
 ) -> CandidateMatch | None:
@@ -1827,13 +2058,7 @@ def _recommended(
     best = candidates[0]
     if best.confidence not in (PolicyConfidence.EXACT, PolicyConfidence.STRONG):
         return None
-    contenders = [
-        candidate
-        for candidate in candidates[1:]
-        if candidate.confidence in (PolicyConfidence.EXACT, PolicyConfidence.STRONG)
-        or candidate.score >= best.score - config.policy_identification_ambiguity_margin
-    ]
-    if contenders:
+    if contenders(candidates, config=config):
         return None
     return best
 
@@ -1922,6 +2147,16 @@ def _warnings(
                 "line_of_business_mismatch",
                 f"This is a {_humanise(policy.line_of_business)} policy and the notice reads "
                 f"as a {_humanise(_line_of(notice))} loss.",
+            )
+        )
+
+    if match.outcome_of("policy_type") is SignalOutcome.MISMATCH:
+        warnings.append(
+            CandidateWarning(
+                "policy_type_mismatch",
+                f"The notice names a different product from this policy's "
+                f"“{policy.policy_type}”. Check which of the insured's policies the "
+                "loss belongs under.",
             )
         )
 
@@ -2233,6 +2468,7 @@ _NOT_STATED: dict[str, str] = {
     "broker_domain": "The notice carries no sender domain to compare.",
     "broker_name": "No broker was named on the notice.",
     "line_of_business": "The notice has not been classified to a line of business.",
+    "policy_type": "The notice does not say which of the insured's policies it is under.",
 }
 
 _NEITHER_STATED: dict[str, str] = {
@@ -2242,6 +2478,7 @@ _NEITHER_STATED: dict[str, str] = {
     "insured_domain": "No insured email domain is held on either side.",
     "broker_domain": "No broker domain is held against this policy.",
     "risk_location": "This policy has no location recorded to compare against.",
+    "policy_type": "No product is recorded against this policy to compare.",
 }
 
 #: The "what we matched on" panel's per-row caption.
@@ -2258,6 +2495,7 @@ _READ_FROM: dict[str, str] = {
     "broker_domain": "Taken from the envelope and compared against the broker on the policy.",
     "broker_name": "Compared against the broker who placed each candidate.",
     "line_of_business": "Narrows the book; never decides on its own.",
+    "policy_type": "Separates two policies the same insured holds in one line.",
 }
 
 
@@ -2267,6 +2505,7 @@ __all__ = [
     "ENGINE_VERSION",
     "GENERIC_EMAIL_DOMAINS",
     "IDENTITY_SIGNALS",
+    "POLICY_TYPE_FAMILIES",
     "PRIMARY_IDENTIFIERS",
     "SIGNALS",
     "SIGNAL_BY_KEY",
@@ -2283,7 +2522,9 @@ __all__ = [
     "SignalResult",
     "SignalValue",
     "compare",
+    "contenders",
     "entity_similarity",
     "identify",
+    "policy_type_family",
     "searched_on",
 ]

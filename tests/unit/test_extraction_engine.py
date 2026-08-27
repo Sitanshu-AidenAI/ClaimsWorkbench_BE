@@ -15,6 +15,7 @@ rest of the feature relies on without re-checking:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,6 +25,8 @@ from app.core.config import ExtractionSettings
 from app.domain.enums import DocumentSource, ExtractionRunStatus, FieldSource
 from app.models.extraction import ExtractedValue, ExtractionRun, ExtractionSchema
 from app.services.ai.base import AIProviderError, AIResponse
+from app.services.extraction import corroborate
+from app.services.extraction.corroborate import CitationDraft
 from app.services.extraction.engine import FieldVectorCache, SchemaExtractionEngine
 from app.services.extraction.prompts import FieldAnswer, FieldAnswerSet
 from app.services.extraction.schema import DatasetSchema, FieldSpec
@@ -57,12 +60,27 @@ class FakeChunk:
 
 
 class FakeDocument:
-    def __init__(self, *, filename: str, source: str = DocumentSource.EMAIL_ATTACHMENT) -> None:
+    def __init__(
+        self,
+        *,
+        filename: str,
+        source: str = DocumentSource.EMAIL_ATTACHMENT,
+        text: str = "",
+        page_offsets: list[list[int]] | None = None,
+        content_type: str = "application/pdf",
+    ) -> None:
         self.id = uuid.uuid4()
         self.filename = filename
         self.source = source
         self.checksum_sha256 = f"sum-{filename}"
         self.index_fingerprint = f"idx-{filename}"
+        # The citation pass reads a document's text, so a document with none is a
+        # document nothing can be corroborated against — which several of these
+        # tests want, and the rest set explicitly.
+        self.extracted_text = text
+        self.page_offsets = page_offsets
+        self.content_type = content_type
+        self.page_count = len(page_offsets) if page_offsets else None
 
 
 class FakeCase:
@@ -79,13 +97,41 @@ class FakeCase:
 
 
 class FakeChunkRepository:
-    def __init__(self, by_document: dict[uuid.UUID, list[FakeChunk]] | None = None) -> None:
+    #: A corpus big enough that retrieval is worth running, which is what most of
+    #: these tests are about. Below `ExtractionSettings.retrieval_min_chunks` the
+    #: engine does not search at all — it sends the whole corpus — so a fake that
+    #: reported its two hand-written passages honestly would take every test in
+    #: this file down the fallback branch and assert nothing about retrieval.
+    #: `TestRetrieval.test_a_corpus_too_small_to_search_is_sent_whole` sets it low
+    #: on purpose.
+    DEFAULT_TOTAL = 32
+
+    def __init__(
+        self,
+        by_document: dict[uuid.UUID, list[FakeChunk]] | None = None,
+        *,
+        total: int | None = None,
+    ) -> None:
         self._by_document = by_document or {}
+        self._total = total
 
     async def list_for_document(
         self, document_id: uuid.UUID, *, offset: int = 0, limit: int | None = None
     ) -> list[FakeChunk]:
         rows = self._by_document.get(document_id, [])[offset:]
+        return rows[:limit] if limit is not None else rows
+
+    async def count_for_case(self, case_id: uuid.UUID) -> int:
+        del case_id
+        if self._total is not None:
+            return self._total
+        return self.DEFAULT_TOTAL
+
+    async def list_for_case(
+        self, case_id: uuid.UUID, *, limit: int | None = None
+    ) -> list[FakeChunk]:
+        del case_id
+        rows = [chunk for chunks in self._by_document.values() for chunk in chunks]
         return rows[:limit] if limit is not None else rows
 
 
@@ -150,9 +196,23 @@ class FakeRunRepository:
         self.runs: list[ExtractionRun] = []
         self.values: list[ExtractedValue] = []
         self.pruned: list[str] = []
+        #: Citations by field key, so a test can assert on what a run recorded
+        #: without a database. Keyed by field key rather than by value id because
+        #: that is what a test knows and what an assertion reads better as.
+        self.citations: dict[str, list[CitationDraft]] = {}
 
     async def flush(self) -> None:
         return None
+
+    async def replace_citations(
+        self, value: ExtractedValue, drafts: Sequence[CitationDraft]
+    ) -> list[Any]:
+        self.citations[value.field_key] = list(drafts)
+        return []
+
+    async def list_citations(self, value_id: uuid.UUID) -> list[Any]:
+        del value_id
+        return []
 
     def add_run(self, run: ExtractionRun) -> ExtractionRun:
         run.id = uuid.uuid4()
@@ -316,6 +376,67 @@ class TestRetrieval:
         assert any(
             "the date the loss or incident happened" in query.lower() for query in retrieval.queries
         )
+
+    async def test_a_corpus_too_small_to_search_is_sent_whole(self) -> None:
+        """The protection the documentation claimed and this path did not have.
+
+        `retrieval_min_chunks` has been checked on the legacy evidence path since it
+        was written; the engine that replaced it called `search_many` directly. That
+        is not a theoretical gap — almost every real claim pack is four documents and
+        about ten passages, against a floor of twelve — so on the notices that
+        actually arrive, a field whose best passage scored under the floor lost its
+        evidence with nothing to fall back to.
+
+        Below the floor: no search runs at all, and every field is given every
+        passage on the case.
+        """
+        document = FakeDocument(filename="slip.pdf")
+        passages = [
+            FakeChunk(ref="c1", content="Policy: CP-4471-88210", document_id=document.id),
+            FakeChunk(ref="c2", content="Date of loss: 10 January 2026", document_id=document.id),
+        ]
+        retrieval = FakeRetrieval(
+            {"policy": [passages[0]]},
+            chunks=FakeChunkRepository({document.id: passages}, total=10),
+        )
+        provider = BatchProvider([])
+        engine, repository = build(provider=provider, retrieval=retrieval)
+
+        await engine.run(
+            FakeCase(),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(POLICY, LOSS_DATE),
+            documents=[document],  # type: ignore[list-item]
+        )
+
+        assert retrieval.queries == []
+        assert repository.runs[-1].retrieval_strategy == "whole-corpus"
+        assert repository.runs[-1].chunks_available == 10
+        # The date passage is the one plain retrieval would have dropped: nothing
+        # mapped it to a query, so under the old path the date-of-loss field was
+        # asked for with the policy passage and the body and nothing else.
+        prompt = provider.prompts[0]
+        assert "CP-4471-88210" in prompt
+        assert "10 January 2026" in prompt
+
+    async def test_a_corpus_large_enough_to_search_still_is(self) -> None:
+        """The other side of the floor, so the fallback cannot quietly become the path."""
+        document = FakeDocument(filename="slip.pdf")
+        retrieval = FakeRetrieval(
+            {"policy": [FakeChunk(ref="c1", content="Policy: X", document_id=document.id)]},
+            chunks=FakeChunkRepository(total=12),
+        )
+        engine, repository = build(provider=BatchProvider([]), retrieval=retrieval)
+
+        await engine.run(
+            FakeCase(),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(POLICY, LOSS_DATE),
+            documents=[document],  # type: ignore[list-item]
+        )
+
+        assert len(retrieval.queries) == 2
+        assert repository.runs[-1].retrieval_strategy == "hybrid-rrf"
 
     async def test_a_query_vector_is_computed_once_and_cached_on_the_field(self) -> None:
         """A field's query is fixed until somebody edits it.
@@ -1068,3 +1189,149 @@ class TestHumanCorrections:
             documents=[],
         )
         assert "a.question.nobody.asks" in runs.pruned
+
+
+class TestSourcesAcrossDocuments:
+    """One value, every document that states it.
+
+    The engine's part of this is small — it prepares the documents once and hands
+    each value to the citation builder — and the property worth pinning here is
+    that it happens at all, in the right order, and never for a value a person has
+    corrected.
+    """
+
+    NOTICE = (
+        "FIRST NOTIFICATION OF LOSS\nPolicy number: CP-4471-88210\nEstimated loss: USD 3,700,000\n"
+    )
+    REPORT = "ENGINEER'S REPORT\nWeld failure under policy CP-4471-88210.\n"
+
+    def _documents(self) -> tuple[Any, Any]:
+        notice = FakeDocument(filename="notice.pdf", text=self.NOTICE)
+        report = FakeDocument(filename="report.pdf", text=self.REPORT)
+        return notice, report
+
+    async def test_a_run_cites_the_passage_read_and_the_documents_that_agree(self) -> None:
+        notice, report = self._documents()
+        chunk = FakeChunk(
+            ref="c1",
+            content="Policy number: CP-4471-88210",
+            document_id=notice.id,
+            page=1,
+            start=self.NOTICE.index("Policy"),
+        )
+        provider = BatchProvider(
+            [
+                FieldAnswer(
+                    field_key="policy.policy_number",
+                    value="CP-4471-88210",
+                    confidence=1.0,
+                    quote="Policy number: CP-4471-88210",
+                    passage="C1",
+                )
+            ]
+        )
+        engine, runs = build(provider=provider, retrieval=FakeRetrieval({"policy": [chunk]}))
+
+        await engine.run(
+            FakeCase(),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(POLICY),
+            documents=[notice, report],  # type: ignore[list-item]
+        )
+
+        drafts = runs.citations["policy.policy_number"]
+        assert [draft.role for draft in drafts] == ["primary", "corroborating"]
+        assert [draft.document_id for draft in drafts] == [notice.id, report.id]
+        assert drafts[1].quote == "CP-4471-88210"
+
+    async def test_a_field_with_no_answer_is_cited_nowhere(self) -> None:
+        notice, report = self._documents()
+        engine, runs = build(provider=BatchProvider([]), retrieval=FakeRetrieval({"policy": []}))
+
+        await engine.run(
+            FakeCase(),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(POLICY),
+            documents=[notice, report],  # type: ignore[list-item]
+        )
+
+        assert runs.citations["policy.policy_number"] == []
+
+    async def test_a_corrected_value_keeps_the_citations_it_had(self) -> None:
+        """A person's answer is not the model's, and neither are its sources.
+
+        The correction endpoint clears them when the value changes. What must not
+        happen is a *run* rewriting them from an answer that was rejected — which
+        would re-attach the sentence the officer disagreed with.
+        """
+        notice, report = self._documents()
+        chunk = FakeChunk(ref="c1", content="Policy: CP-WRONG", document_id=notice.id)
+
+        runs = FakeRunRepository()
+        corrected = ExtractedValue(
+            fnol_case_id=uuid.uuid4(),
+            schema_id=uuid.uuid4(),
+            field_key="policy.policy_number",
+            label="Policy number",
+            value_text="CP-4471-88210",
+            human_modified=True,
+            source=FieldSource.HUMAN,
+        )
+        corrected.id = uuid.uuid4()
+        runs.values.append(corrected)
+
+        provider = BatchProvider(
+            [
+                FieldAnswer(
+                    field_key="policy.policy_number",
+                    value="CP-WRONG",
+                    confidence=1.0,
+                    quote="CP-WRONG",
+                    passage="C1",
+                )
+            ]
+        )
+        engine, _ = build(
+            provider=provider, retrieval=FakeRetrieval({"policy": [chunk]}), runs=runs
+        )
+
+        await engine.run(
+            FakeCase(),  # type: ignore[arg-type]
+            schema=make_schema(),
+            dataset=make_dataset(POLICY),
+            documents=[notice, report],  # type: ignore[list-item]
+        )
+
+        assert "policy.policy_number" not in runs.citations
+
+    async def test_the_documents_are_normalised_once_per_run(self) -> None:
+        """The reason `prepare` exists rather than a search inside the loop.
+
+        Three fields over two documents is two normalisation passes, not six. On a
+        thirty-eight-field dataset with a forty-page schedule attached, the
+        difference is the whole cost of the pass.
+        """
+        notice, report = self._documents()
+        chunk = FakeChunk(ref="c1", content="Policy number: CP-4471-88210", document_id=notice.id)
+        engine, _ = build(provider=BatchProvider([]), retrieval=FakeRetrieval({"policy": [chunk]}))
+
+        calls = 0
+        original = corroborate.DocumentText.of
+
+        def counted(document: Any) -> Any:
+            nonlocal calls
+            calls += 1
+            return original(document)
+
+        corroborate.DocumentText.of = counted  # type: ignore[method-assign]
+        try:
+            await engine.run(
+                FakeCase(),  # type: ignore[arg-type]
+                schema=make_schema(),
+                dataset=make_dataset(POLICY, LOSS_DATE, AMOUNT),
+                documents=[notice, report],  # type: ignore[list-item]
+            )
+        finally:
+            corroborate.DocumentText.of = original  # type: ignore[method-assign]
+
+        assert calls == 2

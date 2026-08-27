@@ -209,12 +209,12 @@ class TestMailClient:
             )
 
     @respx.mock
-    async def test_listing_asks_only_for_unread_and_maps_the_rows(self) -> None:
+    async def test_listing_asks_only_for_unread_where_that_is_switched_on(self) -> None:
         token_route()
         route = respx.get(MESSAGES_URL).mock(
             return_value=httpx.Response(200, json={"value": [MESSAGE_PAYLOAD]})
         )
-        client = GraphMailClient(graph_settings())
+        client = GraphMailClient(graph_settings(unread_only=True))
 
         messages = await client.list_messages()
 
@@ -226,14 +226,156 @@ class TestMailClient:
         await client.aclose()
 
     @respx.mock
-    async def test_listing_everything_omits_the_unread_filter(self) -> None:
+    async def test_the_default_sweep_does_not_filter_on_the_read_flag(self) -> None:
+        """The default, and the point of the default.
+
+        `isRead` is cleared by anyone who opens the shared mailbox in Outlook.
+        A sweep that filtered on it dropped those messages permanently while
+        reporting a successful poll, which is the outage this default prevents.
+        """
         token_route()
         route = respx.get(MESSAGES_URL).mock(return_value=httpx.Response(200, json={"value": []}))
-        client = GraphMailClient(graph_settings(unread_only=False))
+        client = GraphMailClient(graph_settings())
 
         await client.list_messages()
 
         assert "$filter" not in route.calls[0].request.url.params
+        await client.aclose()
+
+    @respx.mock
+    async def test_a_read_message_is_still_collected(self) -> None:
+        token_route()
+        respx.get(MESSAGES_URL).mock(
+            return_value=httpx.Response(200, json={"value": [{**MESSAGE_PAYLOAD, "isRead": True}]})
+        )
+        client = GraphMailClient(graph_settings())
+
+        messages = await client.list_messages()
+
+        assert [message.message_id for message in messages] == ["AAMk-1"]
+        assert messages[0].is_read is True
+        await client.aclose()
+
+    @respx.mock
+    async def test_a_watermark_is_sent_as_a_received_after_filter(self) -> None:
+        token_route()
+        route = respx.get(MESSAGES_URL).mock(return_value=httpx.Response(200, json={"value": []}))
+        client = GraphMailClient(graph_settings())
+
+        await client.list_messages(since=datetime(2026, 8, 20, 9, 30, 0, 500, tzinfo=UTC))
+
+        # To the second, with a literal Z: Graph rejects the microseconds and the
+        # `+00:00` offset that `isoformat` produces by default.
+        assert (
+            route.calls[0].request.url.params["$filter"]
+            == "receivedDateTime ge 2026-08-20T09:30:00Z"
+        )
+        await client.aclose()
+
+    @respx.mock
+    async def test_the_watermark_and_the_unread_filter_combine(self) -> None:
+        token_route()
+        route = respx.get(MESSAGES_URL).mock(return_value=httpx.Response(200, json={"value": []}))
+        client = GraphMailClient(graph_settings(unread_only=True))
+
+        await client.list_messages(since=datetime(2026, 8, 20, 9, 30, tzinfo=UTC))
+
+        assert route.calls[0].request.url.params["$filter"] == (
+            "isRead eq false and receivedDateTime ge 2026-08-20T09:30:00Z"
+        )
+        await client.aclose()
+
+    @respx.mock
+    async def test_a_folder_larger_than_one_page_is_read_to_the_end(self) -> None:
+        """The regression that lost a live claim.
+
+        With `$top` at the batch size, an ascending sort and no paging, a folder
+        holding one more message than a page returned the same oldest page to
+        every poll and the newest message was never in it. Nothing about that is
+        visible from outside: the poll succeeds, on messages already collected.
+        """
+        token_route()
+        next_link = f"{MESSAGES_URL}?%24skiptoken=page-2"
+        respx.get(MESSAGES_URL, params__contains={"$orderby": "receivedDateTime asc"}).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "value": [{**MESSAGE_PAYLOAD, "id": "AAMk-old"}],
+                    "@odata.nextLink": next_link,
+                },
+            )
+        )
+        respx.get(next_link).mock(
+            return_value=httpx.Response(
+                200, json={"value": [{**MESSAGE_PAYLOAD, "id": "AAMk-new"}]}
+            )
+        )
+        client = GraphMailClient(graph_settings(batch_size=1))
+
+        messages = await client.list_messages()
+
+        assert [message.message_id for message in messages] == ["AAMk-old", "AAMk-new"]
+        await client.aclose()
+
+    @respx.mock
+    async def test_paging_stops_at_the_configured_page_ceiling(self) -> None:
+        token_route()
+        # Every page offers another; only `max_pages` of them are followed.
+        respx.get(url__startswith=MESSAGES_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "value": [MESSAGE_PAYLOAD],
+                    "@odata.nextLink": f"{MESSAGES_URL}?%24skiptoken=more",
+                },
+            )
+        )
+        client = GraphMailClient(graph_settings(batch_size=1, max_pages=3))
+
+        messages = await client.list_messages(limit=100)
+
+        assert len(messages) == 3
+        await client.aclose()
+
+    @respx.mock
+    async def test_an_explicit_limit_caps_what_paging_returns(self) -> None:
+        token_route()
+        respx.get(url__startswith=MESSAGES_URL).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "value": [MESSAGE_PAYLOAD, MESSAGE_PAYLOAD],
+                    "@odata.nextLink": f"{MESSAGES_URL}?%24skiptoken=more",
+                },
+            )
+        )
+        client = GraphMailClient(graph_settings(batch_size=2, max_pages=10))
+
+        messages = await client.list_messages(limit=3)
+
+        assert len(messages) == 3
+        await client.aclose()
+
+    @respx.mock
+    async def test_folder_counts_are_read_for_reconciliation(self) -> None:
+        token_route()
+        respx.get(f"{API}/users/claims%40carrier.test/mailFolders/inbox").mock(
+            return_value=httpx.Response(200, json={"totalItemCount": 24, "unreadItemCount": 0})
+        )
+        client = GraphMailClient(graph_settings())
+
+        assert await client.folder_stats() == (24, 0)
+        await client.aclose()
+
+    @respx.mock
+    async def test_a_folder_that_is_gone_reconciles_to_zero(self) -> None:
+        token_route()
+        respx.get(f"{API}/users/claims%40carrier.test/mailFolders/inbox").mock(
+            return_value=httpx.Response(404, json={"error": {"code": "ErrorItemNotFound"}})
+        )
+        client = GraphMailClient(graph_settings())
+
+        assert await client.folder_stats() == (0, 0)
         await client.aclose()
 
     @respx.mock

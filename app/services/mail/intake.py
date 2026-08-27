@@ -2,7 +2,7 @@
 
 This service is the orchestration layer and nothing else. It does not speak
 HTTP — `app.integrations.graph` does — and it does not decide what an FNOL is —
-`app.services.fnol.ingestion` does. What it owns is the sequence, and the four
+`app.services.fnol.ingestion` does. What it owns is the sequence, and the five
 rules that make the sequence safe to run every five minutes forever:
 
 * **One transaction per message.** A batch of twenty in which the eleventh
@@ -20,6 +20,13 @@ rules that make the sequence safe to run every five minutes forever:
 * **An attachment is never allowed to sink a message.** A file that is too
   large, of a type claims documents are not accepted in, or that simply refuses
   to download, becomes a row explaining itself. The notice is still created.
+* **The ledger is the cursor — never the mailbox.** What has been collected is
+  a row in `mail_intake_messages`, and the sweep is bounded by a timestamp read
+  back out of it. `isRead` is the claims team's flag: a handler opening the
+  shared mailbox in Outlook clears it, and a sweep that used it as its cursor
+  would lose that message permanently and report success while doing it. That
+  is not hypothetical — it is what this module was doing, and `_reconcile`
+  exists so the next occurrence is loud instead of invisible.
 
 What it deliberately does *not* do is run the FNOL pipeline. The case is left
 `queued`, which is the seam the document ingestion and extraction phase plugs
@@ -31,7 +38,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,6 +85,23 @@ class MailIntakeSummary:
     attachments_skipped: int = 0
     attachments_failed: int = 0
     references: list[str] = field(default_factory=list)
+    #: The floor this poll swept from. `None` means the whole folder was read.
+    since: datetime | None = None
+    #: What the folder and the ledger each say they hold, for the reconciliation
+    #: check. `None` where the folder could not be read.
+    folder_total: int | None = None
+    ledger_total: int | None = None
+    #: Unread mail the folder reports after this poll. With `mark_as_read` on,
+    #: anything above zero is mail the sweep did not collect.
+    folder_unread: int | None = None
+    #: Messages this poll listed that left no ledger row. Above zero is a silent
+    #: loss: they are neither collected nor queued for retry. Carried as data
+    #: rather than only logged, so a caller can assert on it and the trigger
+    #: endpoint can report it without anyone reading a log.
+    dropped: int = 0
+    #: True when the folder reports unread mail and the sweep returned nothing —
+    #: the signature of a sweep that has gone blind.
+    sweep_blind: bool = False
 
 
 @dataclass(slots=True)
@@ -121,9 +145,19 @@ class MailIntakeService:
 
         Listing is the one step allowed to fail the whole poll: if the mailbox
         cannot be read there is nothing to be partial about.
+
+        The sweep is bounded by *time*, not by a page: `_watermark` asks the
+        ledger when the newest message it knows about arrived and hands Graph a
+        `receivedDateTime ge` floor a configured lookback earlier. Everything in
+        that window is listed — across pages — and every message in it is checked
+        against the ledger, which is what makes re-reading it free. The read flag
+        is not part of this and must not become part of it again; see
+        `GraphSettings.unread_only`.
         """
         summary = MailIntakeSummary(mailbox=self._client.mailbox)
-        messages = await self._client.list_messages(limit=limit)
+        since = await self._watermark()
+        summary.since = since
+        messages = await self._client.list_messages(limit=limit, since=since)
         summary.fetched = len(messages)
 
         for message in messages:
@@ -136,6 +170,7 @@ class MailIntakeService:
         logger.info(
             "mail_intake_poll_completed",
             mailbox=summary.mailbox,
+            since=since.isoformat() if since else None,
             fetched=summary.fetched,
             ingested=summary.ingested,
             duplicates=summary.duplicates,
@@ -144,7 +179,118 @@ class MailIntakeService:
             attachments_stored=summary.attachments_stored,
             attachments_skipped=summary.attachments_skipped,
         )
+        await self._reconcile(summary, messages)
         return summary
+
+    async def _watermark(self) -> datetime | None:
+        """The floor for this poll's sweep, or `None` to read the whole folder.
+
+        `None` on an empty ledger is deliberate: a fresh deployment pointed at a
+        mailbox with history should collect that history, once, rather than
+        silently start from now and leave everything before it uncollectable.
+        """
+        newest = await self._messages.newest_received_at(self._client.mailbox)
+        if newest is None:
+            return None
+        if newest.tzinfo is None:
+            newest = newest.replace(tzinfo=UTC)
+        return newest - timedelta(minutes=self._config.lookback_minutes)
+
+    async def _reconcile(self, summary: MailIntakeSummary, messages: list[GraphMessage]) -> None:
+        """Check that the poll actually did what its counters claim.
+
+        This exists because of how the failure it detects presents. A sweep that
+        cannot see a message logs exactly what a poll of an empty mailbox logs —
+        `fetched=0`, no error, task succeeded — and it keeps logging it for as
+        long as the mailbox is wrong. Nothing downstream notices, because nothing
+        downstream is waiting for a particular claim. Something has to contradict
+        the silence, and it cannot be a counter the same broken sweep produced.
+
+        Three checks, strongest first:
+
+        * **Every listed message has a row.** Exact, and the only one that needs
+          no assumptions: the poll knows which messages it listed, and each must
+          have left the loop recorded. A shortfall is a message seen and dropped.
+        * **Unread mail the sweep returned nothing for.** Where `mark_as_read` is
+          on, collection clears the flag, so a folder reporting unread mail after
+          a poll that fetched nothing is the exact signature of a blind sweep —
+          and unlike the count below, it cannot drift.
+        * **Folder count against ledger count.** A floor, kept for the diagnostic
+          numbers rather than the alarm: rows outlive the messages that made them,
+          so a mailbox anyone deletes from drifts until this stops firing. It can
+          under-report and never falsely accuse, which is the right way round.
+
+        Best-effort: a reconciliation that cannot be read is not a reason to fail
+        a poll that collected its messages.
+        """
+        if messages:
+            recorded = await self._messages.count_recorded(
+                graph_message_ids=[message.message_id for message in messages],
+                internet_message_ids=[
+                    message.internet_message_id
+                    for message in messages
+                    if message.internet_message_id
+                ],
+            )
+            summary.dropped = len(messages) - recorded
+            if summary.dropped:
+                logger.error(
+                    "mail_intake_messages_dropped",
+                    mailbox=summary.mailbox,
+                    listed=len(messages),
+                    recorded=recorded,
+                    dropped=summary.dropped,
+                    detail=(
+                        "Messages were listed from the mailbox and left no ledger row. "
+                        "They are neither collected nor recorded as failed, so nothing "
+                        "will retry them: this is a silent loss and needs a human."
+                    ),
+                )
+
+        try:
+            total, unread = await self._client.folder_stats()
+        except GraphError as exc:
+            logger.warning("mail_intake_reconcile_unavailable", error=exc.message)
+            return
+
+        collected = await self._messages.count_for_mailbox(self._client.mailbox)
+        summary.folder_total = total
+        summary.ledger_total = collected
+        summary.folder_unread = unread
+
+        if self._config.mark_as_read and unread > 0 and summary.fetched == 0:
+            summary.sweep_blind = True
+            logger.error(
+                "mail_intake_sweep_blind",
+                mailbox=summary.mailbox,
+                folder_unread=unread,
+                folder_total=total,
+                since=summary.since.isoformat() if summary.since else None,
+                detail=(
+                    "The folder reports unread mail and the sweep returned nothing at all. "
+                    "Collection marks messages read, so unread mail intake cannot see means "
+                    "the sweep is not reaching it: check unread_only, lookback_minutes and "
+                    "max_pages, and confirm the running process has the config you think."
+                ),
+            )
+            return
+
+        if total > collected:
+            logger.warning(
+                "mail_intake_backlog_detected",
+                mailbox=summary.mailbox,
+                folder_total=total,
+                folder_unread=unread,
+                ledger_total=collected,
+                uncollected=total - collected,
+                fetched=summary.fetched,
+                since=summary.since.isoformat() if summary.since else None,
+                detail=(
+                    "The mailbox folder holds more messages than intake has ledger rows for. "
+                    "If this persists across polls the sweep is not reaching them: check "
+                    "unread_only, lookback_minutes and max_pages against the folder's size."
+                ),
+            )
 
     # -- One message ---------------------------------------------------------
 

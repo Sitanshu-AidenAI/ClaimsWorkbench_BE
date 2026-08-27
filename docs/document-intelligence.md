@@ -73,7 +73,7 @@ what keeps a demo environment, an air-gapped deployment and a provider outage wo
 | No `CWB_DOCINT_QDRANT_URL` | Same. Retrieval runs on Postgres full text alone (`strategy: keyword`). |
 | Qdrant up at boot, down at search | Keyword results still return; `degraded: true` is reported on the response and recorded in the analysis. |
 | Qdrant down at index time | That document alone lands `index_status = failed`; it is retried, then counted as unreadable. |
-| Fewer than `retrieval_min_chunks` passages | Retrieval is skipped and the whole corpus is sent — selecting six passages out of eight is overhead with a downside and no upside. |
+| Fewer than `retrieval_min_chunks` passages | Retrieval is skipped and the whole corpus is sent — selecting six passages out of eight is overhead with a downside and no upside. Both paths check it: `CWB_DOCINT_RETRIEVAL_MIN_CHUNKS` on the legacy evidence gatherer, `CWB_EXTRACT_RETRIEVAL_MIN_CHUNKS` in the schema-driven engine, which records `retrieval_strategy = whole-corpus` on the run. |
 | No `CWB_DOCINT_OCR_URL` | A scan stays `unsupported` with a sentence naming OCR, and raises the existing `document_unreadable` exception. |
 | No `CWB_AI_API_KEY` | The deterministic reader in `app/domain/heuristics.py` runs, exactly as before. |
 | `CWB_DOCINT_ENABLED=false` | No chunking, no indexing, no retrieval. The pipeline behaves as it did before this module existed. |
@@ -410,7 +410,11 @@ the notification body is always sent whole, `retrieval_min_chunks` means small c
 never use retrieval, queries are unioned per field section so recall is per-group rather
 than global, and there is a score floor.
 
-None of that is a measurement. The highest-value next piece of work is five to ten real
-notices with their expected field values, run as an integration test.
+None of that is a measurement of *field values*, and that piece is still outstanding.
+What is now measured is the layer below: `case_data/_ground_truth/` states the expected
+policy for all 24 packs, `make eval-matching` scores the matcher against it, and
+`tests/unit/test_matching_ground_truth.py` fails when the numbers move. The next piece
+is extending the same answer key to per-field expected values, run through a real
+pipeline pass rather than fed in directly.
 `ProcessResult.retrieval_used` and the `retrieval` block in the analysis record exist to
 make a regression *visible* after the fact; they do not prevent one.

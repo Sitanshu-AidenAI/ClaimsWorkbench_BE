@@ -48,6 +48,7 @@ from app.models.extraction import (
 from app.models.fnol import FNOLCase, FNOLDocument, FNOLDocumentChunk
 from app.repositories.extraction import REUSABLE_RUN_STATUSES, ExtractionRunRepository
 from app.services.ai.base import AIProvider
+from app.services.extraction import corroborate
 from app.services.extraction.prompts import (
     SYSTEM_PROMPT,
     FieldAnswer,
@@ -319,7 +320,13 @@ class SchemaExtractionEngine:
 
         labels = {spec.key: batch.by_label() for batch in batches for spec in batch.specs}
         values = await self._persist(
-            case, run=run, schema=schema, dataset=dataset, answers=answers, labels=labels
+            case,
+            run=run,
+            schema=schema,
+            dataset=dataset,
+            answers=answers,
+            labels=labels,
+            documents=documents,
         )
 
         run.fields_extracted = sum(1 for value in values if value.value_text is not None)
@@ -364,8 +371,27 @@ class SchemaExtractionEngine:
     async def _retrieve(
         self, case_id: uuid.UUID, schema: ExtractionSchema, dataset: DatasetSchema
     ) -> dict[str, RetrievalResult]:
-        """One search per field, concurrently, with the query vectors cached."""
+        """One search per field, concurrently, with the query vectors cached.
+
+        Unless the case is too small to search, in which case every field is given
+        the whole corpus. That branch is the one this path was missing: the legacy
+        evidence gatherer has checked `retrieval_min_chunks` since it was written,
+        and the engine that replaced it went straight to `search_many`. Almost every
+        real claim pack is four documents and around ten passages, against a floor
+        of twelve — so on the notices that actually arrive, a field whose best
+        passage scored below `retrieval_min_score` lost its evidence silently and
+        had nowhere to fall back to.
+        """
         specs = list(dataset.fields)
+
+        available = await self._retrieval.chunks.count_for_case(case_id)
+        if 0 < available < self._config.retrieval_min_chunks:
+            whole = await self._whole_corpus(case_id, available)
+            # One result object shared by every field: it is the same passage list,
+            # and copying it per field would only invite one field's hits to be
+            # mutated out from under the rest.
+            return dict.fromkeys((spec.key for spec in specs), whole)
+
         queries = [spec.query for spec in specs]
         vectors = await self._query_vectors(schema, specs)
 
@@ -373,6 +399,30 @@ class SchemaExtractionEngine:
             case_id, queries, limit=self._config.passages_per_field, vectors=vectors
         )
         return {spec.key: result for spec, result in zip(specs, results, strict=True)}
+
+    async def _whole_corpus(self, case_id: uuid.UUID, available: int) -> RetrievalResult:
+        """Every passage on the case, as though one search had returned all of them.
+
+        Scored 1.0 across the board, deliberately: there is no ranking here to
+        express, and a descending score would have `_batch`'s passage cap drop the
+        tail of the corpus in document order — which is a ranking, just an
+        accidental one. The cap still applies, and `max_passages_per_call` is 30
+        against a corpus this branch only runs for when it holds fewer than twelve.
+        """
+        rows = await self._retrieval.chunks.list_for_case(
+            case_id, limit=self._config.max_passages_per_call
+        )
+        logger.info(
+            "extraction_corpus_too_small",
+            case_id=str(case_id),
+            chunks=available,
+            minimum=self._config.retrieval_min_chunks,
+        )
+        return RetrievalResult(
+            hits=[RetrievedChunk(chunk=row, score=1.0) for row in rows],
+            strategy="whole-corpus",
+            chunks_available=available,
+        )
 
     async def _query_vectors(
         self, schema: ExtractionSchema, specs: list[FieldSpec]
@@ -571,11 +621,16 @@ class SchemaExtractionEngine:
         dataset: DatasetSchema,
         answers: dict[str, FieldAnswer],
         labels: dict[str, dict[str, Passage]],
+        documents: list[FNOLDocument],
     ) -> list[ExtractedValue]:
         """Write one row per field, preserving anything a human has corrected."""
         existing = {row.field_key: row for row in await self._runs.list_values(case.id, schema.id)}
         threshold = dataset.review_threshold
         values: list[ExtractedValue] = []
+        #: Rows whose citations are this run's to rewrite, and the passage each
+        #: value was read from. Collected here and written after the flush below,
+        #: because a citation is a child row and a new value has no id until then.
+        rewritable: list[tuple[ExtractedValue, list[FNOLDocumentChunk]]] = []
 
         for spec in dataset.fields:
             row = existing.get(spec.key)
@@ -603,7 +658,7 @@ class SchemaExtractionEngine:
                 values.append(row)
                 continue
 
-            self._apply_answer(
+            cited = self._apply_answer(
                 row,
                 spec=spec,
                 answer=answers.get(spec.key),
@@ -613,12 +668,35 @@ class SchemaExtractionEngine:
                 reference=case.received_at,
             )
             values.append(row)
+            rewritable.append((row, cited))
 
         await self._runs.prune_values(
             case.id, schema.id, keep=[spec.key for spec in dataset.fields]
         )
         await self._runs.flush()
+        await self._cite(rewritable, documents)
         return values
+
+    async def _cite(
+        self,
+        rewritable: list[tuple[ExtractedValue, list[FNOLDocumentChunk]]],
+        documents: list[FNOLDocument],
+    ) -> None:
+        """Record every document that states each value, not only the cited one.
+
+        Deterministic and cheap: the documents' text is already in the database, so
+        this is a normalisation pass per document and a substring search per value.
+        No file is opened and no model is asked — see
+        `app.services.extraction.corroborate` for why the model is not asked.
+        """
+        prepared = corroborate.prepare(documents)
+        builder = corroborate.CitationBuilder(max_citations=self._config.max_citations_per_value)
+
+        for row, cited in rewritable:
+            await self._runs.replace_citations(
+                row, builder.build(row, cited=cited, documents=prepared)
+            )
+        await self._runs.flush()
 
     def _apply_answer(
         self,
@@ -630,8 +708,14 @@ class SchemaExtractionEngine:
         run_id: uuid.UUID,
         threshold: float,
         reference: datetime | None = None,
-    ) -> None:
+    ) -> list[FNOLDocumentChunk]:
         """Write one answer onto its row, or clear the row when there was none.
+
+        Returns the passages the value was actually read from, in the order the
+        model named them, for the citation writer. An empty list is the normal
+        answer for a field nothing was found for and for one whose cited label
+        resolved to nothing — both leave the value uncited rather than pointed at a
+        passage the model never read.
 
         `reference` is when the notification arrived, and it is what the temporal
         types are read against — a notice saying "overnight on Friday" states its
@@ -640,11 +724,6 @@ class SchemaExtractionEngine:
         """
         row.run_id = run_id
         row.source = FieldSource.AI
-        # Rectangles are resolved from the quote against the document's geometry,
-        # so a new quote makes a cached rectangle wrong. Cleared here rather than
-        # at read time, where the staleness would be invisible.
-        row.rects = None
-        row.highlight_note = None
 
         if answer is None or not answer.present:
             row.value_text = None
@@ -660,7 +739,7 @@ class SchemaExtractionEngine:
             row.section_label = None
             row.char_start = None
             row.char_end = None
-            return
+            return []
 
         coerced = spec.coerce(answer.value, reference=reference, hint=answer.normalised)
         passage = passages.get(answer.passage or "")
@@ -692,7 +771,7 @@ class SchemaExtractionEngine:
             row.section_label = None
             row.char_start = None
             row.char_end = None
-            return
+            return []
 
         chunk = passage.chunk
         row.source_document_id = chunk.fnol_document_id
@@ -701,6 +780,7 @@ class SchemaExtractionEngine:
         row.section_label = chunk.section_label
         row.char_start = chunk.char_start
         row.char_end = chunk.char_end
+        return [chunk]
 
     def _confidence(self, reported: float, passage: Passage | None) -> float:
         """Blend what the model claims with how well retrieval scored its source.

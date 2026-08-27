@@ -127,8 +127,16 @@ class StubMailClient:
         self._list_attachments_error = list_attachments_error
         self.marked_read: list[str] = []
 
-    async def list_messages(self, *, limit: int | None = None) -> list[GraphMessage]:
-        return self._messages[:limit] if limit else self._messages
+    async def list_messages(
+        self, *, limit: int | None = None, since: datetime | None = None
+    ) -> list[GraphMessage]:
+        visible = [
+            message for message in self._messages if since is None or message.received_at >= since
+        ]
+        return visible[:limit] if limit else visible
+
+    async def folder_stats(self, folder: str | None = None) -> tuple[int, int]:
+        return len(self._messages), 0
 
     async def list_attachments(self, message_id: str) -> list[GraphAttachmentMetadata]:
         if self._list_attachments_error is not None:

@@ -26,6 +26,8 @@ coverage.xml
 # Celery
 celerybeat-schedule*
 celerybeat.pid
+# Local run state for `make dev` (beat's schedule database).
+.dev/
 
 # Editors / OS
 .idea/

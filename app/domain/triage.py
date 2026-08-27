@@ -21,6 +21,7 @@ from app.domain.enums import (
     Severity,
     TriageCategory,
 )
+from app.domain.money import format_amount, to_base
 from app.domain.rules import ROUTES, SPECIALIST_LINES, RouteDefinition
 
 
@@ -66,6 +67,7 @@ def triage(
     *,
     severity: Severity | None,
     estimated_loss_minor: int | None,
+    currency: str | None = None,
     line_of_business: LineOfBusiness | None,
     fraud_risk: RiskLevel | None,
     cat_matched: bool,
@@ -81,9 +83,18 @@ def triage(
     A claim can carry several categories at once; the route is chosen by the most
     specialised one, because a major loss with a fraud signal goes to SIU first
     and the major-loss desk second, not to both.
+
+    `currency` is what the exposure is denominated in. The major-loss threshold is
+    an amount in `config.base_currency`, so the exposure is converted before it is
+    read against it — and when no rate connects them the money rule does not fire
+    at all, because routing a $1,150,000 trench collapse to the fast track on the
+    strength of an unconverted integer is worse than routing it as complex.
     """
     categories: list[TriageCategory] = []
     factors: list[TriageFactor] = []
+    exposure_currency = currency or config.base_currency
+    exposure = to_base(estimated_loss_minor, exposure_currency, config=config)
+    exposure_not_comparable = estimated_loss_minor is not None and exposure is None
 
     if fraud_risk in (RiskLevel.HIGH, RiskLevel.MEDIUM):
         categories.append(TriageCategory.FRAUD_REVIEW)
@@ -105,13 +116,25 @@ def triage(
             )
         )
 
-    if estimated_loss_minor and estimated_loss_minor >= config.major_loss_threshold_minor:
+    if exposure_not_comparable:
+        factors.append(
+            TriageFactor(
+                "exposure_not_comparable",
+                f"The exposure of {format_amount(estimated_loss_minor, exposure_currency)} was "
+                f"not weighed against the major-loss threshold: no rate converts "
+                f"{exposure_currency} into {config.base_currency}. Route by hand.",
+                0.0,
+            )
+        )
+
+    if exposure and exposure.amount_minor >= config.major_loss_threshold_minor:
         categories.append(TriageCategory.MAJOR_LOSS)
         factors.append(
             TriageFactor(
                 "exposure",
-                f"Estimated exposure of {estimated_loss_minor / 100:,.0f} exceeds the "
-                f"{config.major_loss_threshold_minor / 100:,.0f} major-loss threshold.",
+                f"Estimated exposure of {exposure.describe()} exceeds the "
+                f"{format_amount(config.major_loss_threshold_minor, config.base_currency)} "
+                "major-loss threshold.",
                 0.9,
             )
         )
@@ -147,14 +170,19 @@ def triage(
 
     if not categories:
         complex_signals = bool(
-            business_interruption or (injuries or 0) > 0 or severity in (Severity.HIGH,)
+            business_interruption
+            or (injuries or 0) > 0
+            or severity in (Severity.HIGH,)
+            # An exposure nobody could compare is not evidence of a small claim.
+            or exposure_not_comparable
         )
         if complex_signals:
             categories.append(TriageCategory.COMPLEX)
             factors.append(
                 TriageFactor(
                     "complexity",
-                    "Injuries or business interruption make this more than a fast-track claim.",
+                    "Injuries, business interruption or an exposure that could not be "
+                    "banded make this more than a fast-track claim.",
                     0.5,
                 )
             )

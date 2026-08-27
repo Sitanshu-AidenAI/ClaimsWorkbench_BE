@@ -1,11 +1,19 @@
 """Finding a value in a document, so a viewer can draw a box round it.
 
-Two questions, and they are different enough to be separate entry points.
+Three questions, and they are different enough to be separate entry points.
+
+**"Where is this stored citation?"** — `resolve_citation`. The narrowing has
+already happened: a citation row carries the quote as its own document writes it
+and the offset it sits at, so all that is left is mapping the offset to a page and
+measuring that text on that page. This is the hot path — it is what an officer
+clicking a source chip calls — and it is the cheapest, because nothing has to be
+searched for.
 
 **"Where is the value this field cites?"** — `resolve_evidence`. The passage is
-known, so the answer is grounded: narrow the passage to the model's quote, map
-the offset to a page, and locate that text *on that page*. One answer, and it is
-the right one even when the same words appear four times in the file.
+known but the quote has not been narrowed against it yet, so the answer is
+grounded here: narrow the passage to the model's quote, map the offset to a page,
+and locate that text *on that page*. One answer, and it is the right one even when
+the same words appear four times in the file.
 
 **"Where else does this text appear?"** — `locate_in_document`. No passage, no
 grounding, every occurrence. This is what a reviewer wants after the first
@@ -35,6 +43,7 @@ from typing import Any
 from app.core.logging import get_logger
 from app.models.fnol import FNOLDocument, FNOLDocumentChunk
 from app.services.documents.service import DocumentProcessingService
+from app.services.extraction.matching import NormalisedText, collapse
 from app.services.intelligence.highlight import (
     HighlightRect,
     locate_in_chunk,
@@ -89,6 +98,70 @@ class EvidenceLocator:
 
     def __init__(self, documents: DocumentProcessingService) -> None:
         self._documents = documents
+
+    async def resolve_citation(
+        self,
+        document: FNOLDocument,
+        *,
+        quote: str | None,
+        char_start: int | None,
+        page_number: int | None,
+        section_label: str | None = None,
+        grounded: bool = True,
+    ) -> EvidenceLocation:
+        """Rectangles for a citation whose text and offset are already recorded.
+
+        The citation row is the authority on *what* to mark and *where in the
+        document's text* it sits — both were settled when the value was extracted.
+        This resolves the one thing that cannot be stored: the geometry, which
+        needs the file's bytes.
+
+        `char_start` is preferred over `page_number` for finding the page, because
+        an offset survives a re-read that adds a page and a stored page number does
+        not. The stored number is the fallback for a document with no recorded page
+        spans, which is every non-PDF.
+        """
+        located = (
+            page_for_offset(document.page_offsets, char_start) if char_start is not None else None
+        )
+        page = (located[0] + 1) if located else page_number
+
+        location = EvidenceLocation(
+            page_number=page,
+            section_label=section_label,
+            text=quote,
+            char_start=char_start,
+            char_end=(char_start + len(quote)) if (char_start is not None and quote) else None,
+            strategy="chunk-grounded" if grounded else "document-search",
+        )
+
+        if not quote:
+            location.strategy = "none"
+            location.note = "This citation has no recorded text to mark."
+            return location
+
+        if document.content_type != PDF_CONTENT_TYPE:
+            location.note = "This document has no page layout; highlight the quoted text instead."
+            location.strategy = "text-only"
+            return location
+
+        page_index = located[0] if located else (page - 1 if page else None)
+        if page_index is None or page_index < 0:
+            location.note = "This document's page positions were not recorded."
+            location.strategy = "text-only"
+            return location
+
+        content = await self._fetch(document)
+        if content is None:
+            location.note = "The stored file could not be read to draw the highlight."
+            return location
+
+        rects, note = await asyncio.to_thread(
+            resolve_pdf_rects, content, page_index=page_index, text=quote
+        )
+        location.rects = list(rects)
+        location.note = note
+        return location
 
     async def resolve_evidence(
         self,
@@ -230,26 +303,18 @@ class EvidenceLocator:
 
 
 def _find_all(haystack: str, needle: str, *, limit: int) -> list[tuple[int, int]]:
-    """Locate every occurrence, tolerating whitespace differences.
+    """Locate every occurrence, tolerating whitespace and case differences.
 
     A value stored as the model returned it rarely matches the document byte for
     byte: a reader emits the line breaks the page had, and a model returns the
-    words. Any run of whitespace therefore matches any other, which is the same
-    tolerance `app.services.intelligence.highlight` applies to a quote.
+    words. Delegated to `app.services.extraction.matching`, which is the one
+    definition of "the same text" in this module and in the corroboration pass —
+    two definitions would mean a value the citation writer found and the
+    occurrence search cannot.
     """
-    import re
-
-    trimmed = " ".join(needle.split())
-    if len(trimmed) < 2:
+    if len(collapse(needle)) < 2:
         return []
-
-    pattern = re.compile(r"\s+".join(re.escape(word) for word in trimmed.split()), re.IGNORECASE)
-    spans: list[tuple[int, int]] = []
-    for match in pattern.finditer(haystack):
-        spans.append((match.start(), match.end()))
-        if len(spans) >= limit:
-            break
-    return spans
+    return NormalisedText.of(haystack).find_all(needle, limit=limit)
 
 
 def _snippet(text: str, start: int, end: int) -> str:

@@ -30,6 +30,21 @@ class MailIntakeRunResult(SchemaBase):
     attachments_failed: int
     #: The FNOL references this poll produced or matched, in collection order.
     references: list[str]
+    #: The timestamp this poll swept forward from. `None` means the whole folder
+    #: was read, which is what an empty ledger asks for.
+    since: datetime | None = None
+    #: The reconciliation pair: what the mail folder reports it holds against
+    #: what the ledger holds for that mailbox. `folder_total` greater than
+    #: `ledger_total` across consecutive polls means the sweep is not reaching
+    #: everything — the shape of failure that reads as a healthy quiet mailbox.
+    folder_total: int | None = None
+    ledger_total: int | None = None
+    folder_unread: int | None = None
+    #: Messages this poll listed that left no ledger row. Above zero is a silent
+    #: loss — neither collected nor queued for retry — and needs a human.
+    dropped: int = 0
+    #: The folder reports unread mail and the sweep returned nothing at all.
+    sweep_blind: bool = False
 
 
 class MailIntakeAttachmentSummary(SchemaBase):
@@ -84,6 +99,12 @@ def to_run_result(summary: MailIntakeSummary) -> MailIntakeRunResult:
         attachments_skipped=summary.attachments_skipped,
         attachments_failed=summary.attachments_failed,
         references=list(summary.references),
+        since=summary.since,
+        folder_total=summary.folder_total,
+        ledger_total=summary.ledger_total,
+        folder_unread=summary.folder_unread,
+        dropped=summary.dropped,
+        sweep_blind=summary.sweep_blind,
     )
 
 

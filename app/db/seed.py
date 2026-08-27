@@ -639,6 +639,91 @@ CAT_EVENTS: list[dict[str, Any]] = [
         "longitude": 0.5000,
         "radius_km": 120,
     },
+    # --- United States -----------------------------------------------------
+    #
+    # Absolute dates, unlike the two above. Deliberately: these three exist to be
+    # matched by the `case_data` packs, and those packs state their dates in full in
+    # `scripts/fnol_scenarios.py`. A `TODAY - timedelta(...)` window would drift past
+    # them the day after it was written, which is how the seed came to hold two UK
+    # events and three US fixtures built specifically to exercise catastrophe
+    # attribution that could never match either of them.
+    {
+        "reference": "CAT-2026-011",
+        "name": "Arctic outbreak — Delaware Valley hard freeze",
+        "event_type": "freeze",
+        "perils": ["freeze", "winter_storm"],
+        "severity": "major",
+        "status": "closed",
+        # `harborline-delaware-freeze`: 419 Delaware Terminal Road, New Castle, DE,
+        # 1 February 2026, frozen sprinkler branch line.
+        "start_date": date(2026, 1, 30),
+        "end_date": date(2026, 2, 3),
+        "country": "United States",
+        "region": "Delaware",
+        "affected_areas": [
+            "New Castle County",
+            "New Castle",
+            "Wilmington",
+            "Newark",
+            "Delaware City",
+            "Philadelphia",
+        ],
+        "latitude": 39.6620,
+        "longitude": -75.5660,
+        "radius_km": 120,
+    },
+    {
+        "reference": "CAT-2026-012",
+        "name": "Hail and straight-line wind — northeastern Oklahoma",
+        "event_type": "hail",
+        "perils": ["hail", "storm", "derecho"],
+        "severity": "major",
+        "status": "closed",
+        # `windrow-grove-hail`: 6120 East 91st Street, Tulsa, OK, 19 April 2026.
+        "start_date": date(2026, 4, 18),
+        "end_date": date(2026, 4, 20),
+        "country": "United States",
+        "region": "Oklahoma",
+        "affected_areas": [
+            "Tulsa County",
+            "Tulsa",
+            "Broken Arrow",
+            "Bixby",
+            "Jenks",
+            "Owasso",
+            "Wagoner County",
+        ],
+        "latitude": 36.0760,
+        "longitude": -95.8800,
+        "radius_km": 110,
+    },
+    {
+        "reference": "CAT-2026-013",
+        "name": "Haboob and wet microburst — Phoenix metropolitan area",
+        "event_type": "haboob",
+        "perils": ["haboob", "microburst", "storm"],
+        "severity": "moderate",
+        "status": "open",
+        # `cypress-landing-haboob`: 14900 South Cypress Landing Way, Mesa, AZ,
+        # 7 July 2026, windstorm — haboob followed by a wet microburst.
+        "start_date": date(2026, 7, 6),
+        "end_date": date(2026, 7, 8),
+        "country": "United States",
+        "region": "Arizona",
+        "affected_areas": [
+            "Maricopa County",
+            "Mesa",
+            "Phoenix",
+            "Gilbert",
+            "Chandler",
+            "Tempe",
+            "Queen Creek",
+            "Pinal County",
+        ],
+        "latitude": 33.3060,
+        "longitude": -111.6410,
+        "radius_km": 90,
+    },
 ]
 
 
