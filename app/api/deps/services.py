@@ -311,6 +311,10 @@ def build_context(
     handlers = HandlerRepository(session)
     references = ReferenceRepository(session)
     audit = AuditService(AuditRepository(session))
+    #: The desk's doorbell. Built here so `casework` can ring it when a handler
+    #: refers a claim or sends it for approval — before this, both changed a status
+    #: and told nobody.
+    notifications = NotificationService(NotificationRepository(session))
     documents = DocumentProcessingService()
 
     triage = TriageService(claims)
@@ -361,12 +365,15 @@ def build_context(
         assignment=assignment,
         sections=ClaimSectionsService(claims, cases, policies, handlers, audit, coverage),
         coverage=coverage,
-        casework=ClaimCaseworkService(claims, handlers, audit),
+        #: `cases` for the fraud indicators the decision endpoint blocks on — the
+        #: same read the workbench makes, so the screen and the endpoint agree.
+        casework=ClaimCaseworkService(claims, handlers, audit, cases, notifications),
         inspection=ClaimInspectionService(claims, audit),
         inspection_queue=ClaimInspectionQueueService(claims, audit),
         recoveries=ClaimRecoveryService(claims, audit),
         siu=ClaimSiuService(claims, audit),
-        approvals=ClaimApprovalService(claims, cases, handlers, coverage),
+        #: `audit` for the referral reason, which the trail holds rather than a column.
+        approvals=ClaimApprovalService(claims, cases, handlers, coverage, audit),
         documents=documents,
         chunks=chunks,
         retrieval=retrieval,

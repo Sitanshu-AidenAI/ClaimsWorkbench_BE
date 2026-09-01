@@ -214,6 +214,9 @@ def make_claim(**overrides: Any) -> SimpleNamespace:
         "reference": "CLM-2026-000009",
         "status": "in_review",
         "currency": "USD",
+        #: The handler's conclusion that there is nothing to recover. Null on a claim
+        #: nobody has reached a conclusion on, which is where every claim starts.
+        "no_recovery_reason": None,
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -459,3 +462,119 @@ def test_the_domain_layer_reads_no_clock() -> None:
     source = __import__("pathlib").Path(rules.__file__).read_text(encoding="utf-8")
     assert "datetime.now" not in source
     assert "utcnow" not in source
+
+
+# ---------------------------------------------------------------------------
+# Nothing to recover
+# ---------------------------------------------------------------------------
+
+
+class TestDeclining:
+    """Recording that a claim has nothing worth recovering.
+
+    The gap this fills: an empty register said both *nobody has looked* and
+    *somebody looked and found nothing*, and the tab could only read it as the
+    first — so every claim on the desk displayed "Recovery has not been considered
+    yet" whether or not it had been.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_reason_is_recorded_against_the_claim(self) -> None:
+        service, _, audit = build()
+        claim = make_claim()
+
+        await service.decline(
+            claim,
+            reason="Insured was at fault; there is no third party to pursue.",
+            actor="R. Achebe",
+        )
+
+        assert (
+            claim.no_recovery_reason == "Insured was at fault; there is no third party to pursue."
+        )
+        assert audit.types()[-1] == str(AuditEventType.RECOVERY_DECLINED)
+        #: The reason travels into the summary, because that is the line a supervisor
+        #: reads on the log without opening the claim.
+        assert "no third party" in audit.summaries()[-1]
+
+    @pytest.mark.asyncio
+    async def test_an_empty_reason_is_refused(self) -> None:
+        """ "No" without a because is not a conclusion anybody can review."""
+        service, _, _ = build()
+
+        with pytest.raises(ValidationError):
+            await service.decline(make_claim(), reason="   ", actor="R. Achebe")
+
+    @pytest.mark.asyncio
+    async def test_it_is_refused_while_a_route_is_still_open(self) -> None:
+        """A claim cannot both pursue salvage and hold that there is nothing to recover."""
+        service, claims, _ = build()
+        claim = make_claim()
+        await service.open(
+            claim, kind=RecoveryKind.SALVAGE, label="Damaged stock", actor="R. Achebe"
+        )
+
+        with pytest.raises(ConflictError) as raised:
+            await service.decline(claim, reason="Nothing here.", actor="R. Achebe")
+
+        assert "still open" in str(raised.value)
+        assert claim.no_recovery_reason is None
+        del claims
+
+    @pytest.mark.asyncio
+    async def test_a_written_off_route_does_not_block_it(self) -> None:
+        """The register is the authority on what is *live*, and a written-off route is not.
+
+        This is the ordinary path to the conclusion: a handler pursues two routes,
+        gives up on both, and then records that nothing remains.
+        """
+        service, claims, _ = build()
+        claim = make_claim()
+        recovery = await service.open(
+            claim, kind=RecoveryKind.SUBROGATION, label="Contractor", actor="R. Achebe"
+        )
+        await service.progress(
+            claim,
+            recovery_id=recovery.id,
+            actor="R. Achebe",
+            status=RecoveryStatus.WRITTEN_OFF,
+            note="Contractor is insolvent.",
+        )
+
+        await service.decline(claim, reason="Both routes written off.", actor="R. Achebe")
+
+        assert claim.no_recovery_reason == "Both routes written off."
+        del claims
+
+    @pytest.mark.asyncio
+    async def test_opening_a_recovery_withdraws_the_conclusion(self) -> None:
+        """Opening a route *is* the reversal.
+
+        Cleared rather than refused: making the handler retract it first would leave a
+        register that both pursues a recovery and says there is none, every time
+        somebody forgot the first step.
+        """
+        service, _, audit = build()
+        claim = make_claim(no_recovery_reason="Nothing to pursue.")
+
+        await service.open(
+            claim, kind=RecoveryKind.SALVAGE, label="Salvage on the stock", actor="D. Osei"
+        )
+
+        assert claim.no_recovery_reason is None
+        kinds = audit.types()
+        #: Both statements in the trail, not just the one standing now.
+        assert str(AuditEventType.RECOVERY_RECONSIDERED) in kinds
+        assert str(AuditEventType.RECOVERY_OPENED) in kinds
+
+    @pytest.mark.asyncio
+    async def test_opening_on_a_claim_with_no_conclusion_writes_no_withdrawal(self) -> None:
+        """The common case must not leave a puzzling line on the log."""
+        service, _, audit = build()
+
+        await service.open(
+            make_claim(), kind=RecoveryKind.SALVAGE, label="Salvage", actor="D. Osei"
+        )
+
+        kinds = audit.types()
+        assert str(AuditEventType.RECOVERY_RECONSIDERED) not in kinds

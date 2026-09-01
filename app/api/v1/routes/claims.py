@@ -49,6 +49,7 @@ from app.schemas.fnol import (
     to_note,
     to_triage,
 )
+from app.services.claims.fraud_gate import fraud_gate
 
 logger = get_logger(__name__)
 
@@ -251,12 +252,15 @@ async def get_workbench(
         else None
     )
     movements = await context.claims.list_movements(claim.id)
+    gate = await fraud_gate(claim, claims=context.claims, cases=context.cases)
     blocks = claim_lifecycle.approval_blocks(
         claim,
         assignment=assignment_row,
         authority_limit_minor=handler.authority_limit_minor if handler else None,
         authority_currency=handler.currency if handler else None,
         incurred_minor=claim_lifecycle.incurred_minor(movements) if movements else None,
+        outstanding_indicators=gate.outstanding_indicators,
+        siu_open=gate.siu_open,
     )
 
     return api.ClaimWorkbench(
@@ -278,7 +282,11 @@ async def get_workbench(
         severity=claim.severity,
         stage=_STAGE_FOR_STATUS.get(claim.status, "in_review"),
         stage_note=_stage_note(claim, assignment_row),
-        siu_referral_open=bool(claim.fraud_flag),
+        #: The SIU case, not `claims.fraud_flag`. Derived from the flag, this pill
+        #: read "SIU referral open" on a claim whose own SIU panel said *Not
+        #: referred* — visible together on one screen — because the panel was moved
+        #: onto the record when `claim_siu_cases` arrived and this was left behind.
+        siu_referral_open=gate.siu_open,
         approval_blocks=[
             api.ApprovalBlockOut(code=str(block.code), reason=block.reason) for block in blocks
         ],
@@ -919,6 +927,37 @@ async def open_recovery(
         party_carrier_reference=payload.party_carrier_reference,
         party_contact=payload.party_contact,
     )
+    await context.commit()
+    return (await context.sections.build(claim)).recoveries
+
+
+@router.patch(
+    "/{reference}/recoveries/no-recovery",
+    response_model=sections_api.ClaimRecoveriesOut,
+    summary="Record that there is nothing to recover",
+)
+async def decline_recovery(
+    reference: str,
+    payload: api.RecoveryDeclineRequest,
+    context: FNOLContextDep,
+    principal: WorkAccess,
+) -> sections_api.ClaimRecoveriesOut:
+    """Close recovery off on this claim, with the reason.
+
+    The answer to a question the register could only ask. An empty register said
+    both "nobody has looked" and "somebody looked and found nothing", and the tab had
+    to read it as the first — so every claim on the desk carried *"Recovery has not
+    been considered yet"*, whether or not it had been.
+
+    Refused while a route is still open, and refused without a reason. Opening a
+    recovery afterwards withdraws this and says so in the trail — see
+    `ClaimRecoveryService.decline`.
+
+    Declared **above** `/{recovery_id}` on purpose: `no-recovery` would otherwise be
+    matched as a recovery id and fail as a malformed UUID.
+    """
+    claim = await _load(context, reference)
+    await context.recoveries.decline(claim, reason=payload.reason, actor=_actor(principal))
     await context.commit()
     return (await context.sections.build(claim)).recoveries
 

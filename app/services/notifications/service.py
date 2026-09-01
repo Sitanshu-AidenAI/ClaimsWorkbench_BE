@@ -173,6 +173,58 @@ class NotificationService:
             },
         )
 
+    async def claim_referred(
+        self,
+        *,
+        claim_id: uuid.UUID,
+        reference: str,
+        decision: str,
+        actor: str,
+        reason: str | None,
+        occurred_at: datetime,
+    ) -> Notification | None:
+        """Tell the desk that a claim has been put in front of a manager.
+
+        **Desk-wide, not addressed to a manager**, and that is a limitation rather
+        than a design: `notifications` has no addressee, because the table was built
+        for mailbox intake where there is nobody to address a row to. Routing an
+        escalation to *the* manager needs a manager relationship the handler
+        directory does not hold, and inventing one here would be inventing a rule the
+        business has not stated. Every manager sees it, which is strictly better than
+        the status quo, where nobody was told anything.
+
+        **The reason travels in the body.** It is the sentence the handler wrote
+        explaining what they need decided, and it is the whole content of a referral
+        — a notification that said only "a claim was referred" would send a manager
+        to the claim to find out what for.
+
+        `dedupe_key` is the claim, the verb and the instant. Two referrals of one
+        claim are two events a manager needs to see; the same referral re-emitted by
+        a retry is not.
+        """
+        stated = (reason or "").strip()
+        verb = "referred to a manager" if decision == "refer_to_manager" else "sent for approval"
+
+        return await self.record(
+            kind=NotificationKind.CLAIM_REFERRED,
+            #: `WARNING` rather than `INFO`: somebody has to pick this up. The FNOL
+            #: kinds report what the pipeline did; this is a request, and the panel
+            #: should not draw it in the same weight as "processing started".
+            tone=NotificationTone.WARNING,
+            title=f"{reference} {verb}",
+            body=(
+                f"{actor} {verb}. {stated}"
+                if stated
+                else (
+                    f"{actor} {verb} and gave no reason. Open the claim to see what is blocking it."
+                )
+            ),
+            dedupe_key=f"claim-referred:{claim_id}:{decision}:{occurred_at.isoformat()}",
+            occurred_at=occurred_at,
+            reference=reference,
+            context={"decision": decision, "actor": actor, "reason": stated or None},
+        )
+
     async def fnol_processing_started(
         self,
         *,

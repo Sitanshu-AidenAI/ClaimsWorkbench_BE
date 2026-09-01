@@ -31,8 +31,11 @@ from app.domain.enums import (
 )
 from app.models.claim import Claim, ClaimNote, ClaimReserveMovement
 from app.repositories.claim import ClaimRepository
+from app.repositories.fnol import FNOLRepository
 from app.repositories.handler import HandlerRepository
+from app.services.claims.fraud_gate import fraud_gate
 from app.services.fnol.audit import AuditService
+from app.services.notifications.service import NotificationService
 
 #: Which audit event a movement announces itself as. A recovery and a reserve
 #: raise are both rows in the same table and they are not the same event to a
@@ -53,10 +56,25 @@ class ClaimCaseworkService:
         claims: ClaimRepository,
         handlers: HandlerRepository,
         audit: AuditService,
+        cases: FNOLRepository | None = None,
+        notifications: NotificationService | None = None,
     ) -> None:
         self._claims = claims
         self._handlers = handlers
         self._audit = audit
+        #: The desk's doorbell, for the two verbs that ask a manager for something.
+        #: Optional so that an existing construction of this service keeps working;
+        #: absent, a referral still moves the status and still writes its audit line,
+        #: and nobody is interrupted — which is exactly the behaviour this replaces,
+        #: so a caller that has not been wired up degrades to it rather than failing.
+        #: The notice, for the fraud indicators the engine raised against it.
+        #:
+        #: Optional so that every existing construction of this service keeps
+        #: working. Absent, `fraud_gate` sees no analysis and reports nothing
+        #: outstanding — which is the same answer it gives for a claim raised by hand,
+        #: and errs towards not inventing a block rather than towards inventing one.
+        self._cases = cases
+        self._notifications = notifications
 
     # -- Notes ---------------------------------------------------------------
 
@@ -209,6 +227,9 @@ class ClaimCaseworkService:
             )
 
         assignment = await self._claims.get_assignment(claim.id)
+        #: The same read the screen made, so the endpoint and the block list above
+        #: the decision bar cannot disagree about whether fraud review is finished.
+        gate = await fraud_gate(claim, claims=self._claims, cases=self._cases)
         blocks = claim_lifecycle.blocks_for_decision(
             decision,
             claim,
@@ -216,6 +237,8 @@ class ClaimCaseworkService:
             authority_limit_minor=await self._authority_limit(assignment),
             authority_currency=await self._authority_currency(assignment),
             incurred_minor=await self._incurred(claim),
+            outstanding_indicators=gate.outstanding_indicators,
+            siu_open=gate.siu_open,
         )
         if blocks:
             self._audit.claim(
@@ -264,6 +287,26 @@ class ClaimCaseworkService:
                 else {"decision": str(decision)}
             ),
         )
+
+        #: After the audit line, not instead of it. The trail is the record and this
+        #: is the doorbell — `app.models.notification` draws that line, and a
+        #: notification that replaced an audit event would lose the claim's history
+        #: the first time somebody dismissed it.
+        #:
+        #: Only the two verbs that put the claim in front of somebody else. Approving
+        #: and declining end the claim, and asking for information leaves it with the
+        #: handler who asked, so none of the three is a moment a manager needs to be
+        #: interrupted for.
+        if self._notifications is not None and decision in claim_lifecycle.ESCALATING_DECISIONS:
+            await self._notifications.claim_referred(
+                claim_id=claim.id,
+                reference=claim.reference,
+                decision=str(decision),
+                actor=actor,
+                reason=reason,
+                occurred_at=datetime.now(UTC),
+            )
+
         return claim
 
     # -- Shared reads --------------------------------------------------------

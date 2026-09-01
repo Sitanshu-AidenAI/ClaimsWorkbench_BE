@@ -695,6 +695,18 @@ class RecoveryOpenRequest(SchemaBase):
         return self
 
 
+class RecoveryDeclineRequest(SchemaBase):
+    """Record that there is nothing worth recovering on this claim.
+
+    One required field, and the requirement is the point. This is the sentence a
+    supervisor reads when a limitation date has passed and nothing was pursued, so a
+    conclusion without a reason is not one anybody can review — and an optional
+    reason is one that arrives empty.
+    """
+
+    reason: str = Field(min_length=3, max_length=2000)
+
+
 class RecoveryProgressRequest(SchemaBase):
     """Move a recovery on, bank what came back, or revise the expectation.
 

@@ -118,6 +118,18 @@ class FakeClaimRepo:
         del claim_id
         return list(self._recoveries)
 
+    #: The two reads `app.services.claims.fraud_gate` makes. Empty on this fake:
+    #: nothing here is testing the fraud review, and returning nothing is the state
+    #: a claim with no indicators and no SIU case is in — so these specs go on
+    #: measuring the authority and coverage rules they were written for.
+    async def list_fraud_dispositions(self, claim_id: Any) -> list[Any]:
+        del claim_id
+        return []
+
+    async def get_siu_case(self, claim_id: Any) -> Any | None:
+        del claim_id
+        return None
+
 
 class FakeCaseRepo:
     def __init__(self, analysis: Any = None) -> None:

@@ -788,6 +788,17 @@ class NotificationKind(StrEnum):
     FNOL_PROCESSING_STARTED = "fnol.processing_started"
     FNOL_PROCESSING_SUCCEEDED = "fnol.processing_succeeded"
     FNOL_PROCESSING_FAILED = "fnol.processing_failed"
+    #: A handler put a claim in front of a manager — referred it, or sent it for
+    #: approval. One kind for both verbs, with the verb in `context`, which is the
+    #: same arrangement `AuditEventType.CLAIM_DECIDED` uses and for the same reason:
+    #: a reader filtering for escalations wants both, and the two are told apart by
+    #: the field that actually differs.
+    #:
+    #: It earns a place here on the enum's own test — a manager needs to know
+    #: *without having asked*. Before this, referring changed a status and wrote an
+    #: audit line, and the claim's arrival on the approval queue was the only signal
+    #: that anything had happened. Nobody was told.
+    CLAIM_REFERRED = "claim.referred"
 
 
 class NotificationTone(StrEnum):
@@ -897,6 +908,13 @@ class AuditEventType(StrEnum):
     RECOVERY_OPENED = "claim.recovery_opened"
     RECOVERY_PROGRESSED = "claim.recovery_progressed"
     RECOVERY_TASK_SET = "claim.recovery_task_set"
+    #: A handler concluded there is nothing to recover, and the reason they gave.
+    #: Its own event rather than a note, because it is the fact a supervisor looks
+    #: for when a limitation date has passed and nothing was pursued.
+    RECOVERY_DECLINED = "claim.recovery_declined"
+    #: And the reversal: opening a route withdraws that conclusion. Recorded so the
+    #: trail shows both statements rather than only the one standing now.
+    RECOVERY_RECONSIDERED = "claim.recovery_reconsidered"
     SIU_REFERRED = "claim.siu_referred"
     SIU_STATUS_CHANGED = "claim.siu_status_changed"
     FRAUD_INDICATOR_DISPOSED = "claim.fraud_indicator_disposed"

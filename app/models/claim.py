@@ -105,6 +105,23 @@ class Claim(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     fraud_flag: Mapped[bool] = mapped_column(Boolean, default=False)
     over_authority: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    #: A handler's conclusion that there is nothing to recover here, in their words.
+    #:
+    #: The one thing the recovery register could not express. An empty register meant
+    #: two different things — nobody has looked yet, and somebody looked and found
+    #: nothing — and the section had to assume the first, so every claim on the desk
+    #: carried *"Recovery has not been considered yet"* whether or not it had been.
+    #: A marker that is true of every claim tells a handler nothing.
+    #:
+    #: Held on the claim rather than as a `claim_recoveries` row because it is the
+    #: absence of one: a row saying "no row" would be counted by every sum, every
+    #: total and every open-pursuit tile in the section.
+    #:
+    #: Cleared by opening a recovery, which is the act that contradicts it — see
+    #: `ClaimRecoveryService.decline`. Who concluded it and when are in the audit
+    #: trail rather than in two more columns here.
+    no_recovery_reason: Mapped[str | None] = mapped_column(Text)
+
     created_by: Mapped[str | None] = mapped_column(String(255))
     handler_name: Mapped[str | None] = mapped_column(String(255))
 

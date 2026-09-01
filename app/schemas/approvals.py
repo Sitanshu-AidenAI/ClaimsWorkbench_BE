@@ -141,6 +141,23 @@ class ApprovalCoverageOut(SchemaBase):
     summary: str
 
 
+class ApprovalReferralOut(SchemaBase):
+    """Why this claim is in front of a manager, from the handler who put it there.
+
+    `decision` because the two escalating verbs mean different things and land on
+    the same status: `refer_to_manager` is "I cannot finish this" and
+    `send_to_approval` is "I have finished and this needs signing". A manager
+    reading the queue wants to know which they are being asked for.
+    """
+
+    decision: str
+    actor: str
+    initials: str
+    referred_at: datetime
+    #: The handler's sentence. Null where they gave none — the verb is still a fact.
+    reason: str | None
+
+
 class ApprovalNoteOut(SchemaBase):
     """The handler's reasoning, shown verbatim — a person wrote it for a person."""
 
@@ -167,6 +184,18 @@ class ApprovalDetailOut(SchemaBase):
     conditions: list[ApprovalConditionOut]
     coverage: ApprovalCoverageOut | None
     handler_note: ApprovalNoteOut | None
+    #: What the handler asked for when they escalated, in their own words.
+    #:
+    #: Read from the audit trail rather than from a column, because the referral
+    #: reason is already recorded there — `CLAIM_DECIDED` carries it in `context`.
+    #: Surfaced because it was otherwise unreadable from this screen: a manager saw a
+    #: claim arrive on the queue with no statement of what they were being asked to
+    #: decide, and the sentence the handler wrote sat in a log nobody opens to
+    #: approve a settlement.
+    #:
+    #: Null where the claim was never escalated, or was escalated with no reason —
+    #: neither is a gap to be filled with a placeholder.
+    referral: ApprovalReferralOut | None
 
 
 __all__ = [

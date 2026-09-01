@@ -142,6 +142,17 @@ COMMITTING_DECISIONS = frozenset(
     {ClaimDecisionAction.APPROVE_SETTLEMENT, ClaimDecisionAction.DECLINE}
 )
 
+#: Decisions that hand the claim to somebody else, and so are worth interrupting a
+#: manager for.
+#:
+#: The two that land on `ESCALATED`. Asking for information is not here: it leaves
+#: the claim with the handler who asked, and the person who needs to act on it is
+#: outside this system entirely. Approving and declining end the claim — there is
+#: nobody left to tell.
+ESCALATING_DECISIONS = frozenset(
+    {ClaimDecisionAction.REFER_TO_MANAGER, ClaimDecisionAction.SEND_TO_APPROVAL}
+)
+
 #: How each verb reads in the trail. Present tense, third person, because that is
 #: how the rest of the audit summaries are written.
 _DECISION_PHRASE: dict[ClaimDecisionAction, str] = {
@@ -181,7 +192,13 @@ class BlockCode(StrEnum):
     is why every other refusal in this codebase carries a code.
     """
 
+    #: Fraud indicators nobody has decided about. Keeps its old key so a client
+    #: matching on the string keeps working; what changed is what raises it.
     FRAUD_FLAG = "fraud_flag"
+    #: An SIU case still running. Distinct from the indicators: a claim can have
+    #: every flag disposed and an investigation still open, and settling underneath
+    #: an open investigation is the thing this stops.
+    SIU_OPEN = "siu_open"
     OVER_AUTHORITY = "over_authority"
     UNASSIGNED = "unassigned"
     #: The claim is already decided. Unlike the other three this is not something
@@ -206,6 +223,8 @@ def approval_blocks(
     authority_limit_minor: int | None = None,
     authority_currency: str | None = None,
     incurred_minor: int | None = None,
+    outstanding_indicators: int = 0,
+    siu_open: bool = False,
 ) -> list[ApprovalBlock]:
     """What stands between this claim and a settlement, in the handler's words.
 
@@ -229,6 +248,26 @@ def approval_blocks(
     claim's held reserve is used. The distinction matters as soon as payments exist:
     a claim reserved at £40,000 that has already paid out £45,000 is over a £50,000
     authority on what it has *incurred*, even though its reserve says otherwise.
+
+    **The fraud block reads the review, not the flag.** `outstanding_indicators` is
+    how many fraud indicators nobody has decided about and `siu_open` is whether an
+    SIU case is still running; the block is on those. It used to be on
+    `claims.fraud_flag`, and that was a dead end rather than a stricter rule:
+    `fraud_flag` is written in exactly one place — triage, from
+    `TriageCategory.FRAUD_REVIEW` — and **nothing in the product ever cleared it**.
+    A handler who accepted every red flag on the claim wrote rows to
+    `claim_fraud_dispositions`, which the block did not read, and was told to "clear
+    the fraud review flag" by a screen offering no way to clear it. The claim could
+    not be approved by anybody, ever.
+
+    The flag keeps its job as the machine's signal — it drives the fraud queue
+    filter and the score. What it stops being is a gate with no key. This is the
+    same move `siu_status` already made when it stopped being derived from the flag
+    and became a record.
+
+    Both default to "nothing outstanding" so a caller that does not know about fraud
+    at all — the approval sheet's authority preview, a test constructing one claim —
+    is not silently blocked by a figure it never passed.
 
     **`authority_currency` is not optional information.** The two figures being
     compared are money, and comparing minor units across currencies is comparing
@@ -255,8 +294,23 @@ def approval_blocks(
 
     blocks: list[ApprovalBlock] = []
 
-    if getattr(claim, "fraud_flag", False):
-        blocks.append(ApprovalBlock(BlockCode.FRAUD_FLAG, "clear the fraud review flag"))
+    #: Outstanding *work*, not a standing flag. Phrased with the count because "two
+    #: fraud indicators" is a to-do a handler can finish, where "the fraud review
+    #: flag" named a thing no screen could act on.
+    if outstanding_indicators > 0:
+        blocks.append(
+            ApprovalBlock(
+                BlockCode.FRAUD_FLAG,
+                "decide the open fraud indicator"
+                if outstanding_indicators == 1
+                else f"decide the {outstanding_indicators} open fraud indicators",
+            )
+        )
+
+    if siu_open:
+        blocks.append(
+            ApprovalBlock(BlockCode.SIU_OPEN, "close the SIU investigation, or record its outcome")
+        )
 
     assigned = (
         assignment is not None and getattr(assignment, "status", None) == AssignmentStatus.ASSIGNED
@@ -303,6 +357,8 @@ def blocks_for_decision(
     authority_limit_minor: int | None = None,
     authority_currency: str | None = None,
     incurred_minor: int | None = None,
+    outstanding_indicators: int = 0,
+    siu_open: bool = False,
 ) -> list[ApprovalBlock]:
     """The blocks that actually apply to this verb.
 
@@ -321,6 +377,8 @@ def blocks_for_decision(
             authority_limit_minor=authority_limit_minor,
             authority_currency=authority_currency,
             incurred_minor=incurred_minor,
+            outstanding_indicators=outstanding_indicators,
+            siu_open=siu_open,
         )
     if decision not in COMMITTING_DECISIONS:
         return []
@@ -330,6 +388,8 @@ def blocks_for_decision(
         authority_limit_minor=authority_limit_minor,
         authority_currency=authority_currency,
         incurred_minor=incurred_minor,
+        outstanding_indicators=outstanding_indicators,
+        siu_open=siu_open,
     )
 
 
@@ -390,6 +450,8 @@ _CATEGORY_FOR_EVENT: dict[str, ActivityCategory] = {
     AuditEventType.RECOVERY_OPENED: ActivityCategory.RECOVERY,
     AuditEventType.RECOVERY_PROGRESSED: ActivityCategory.RECOVERY,
     AuditEventType.RECOVERY_TASK_SET: ActivityCategory.RECOVERY,
+    AuditEventType.RECOVERY_DECLINED: ActivityCategory.RECOVERY,
+    AuditEventType.RECOVERY_RECONSIDERED: ActivityCategory.RECOVERY,
     AuditEventType.SIU_REFERRED: ActivityCategory.FRAUD,
     AuditEventType.SIU_STATUS_CHANGED: ActivityCategory.FRAUD,
     AuditEventType.FRAUD_INDICATOR_DISPOSED: ActivityCategory.FRAUD,
