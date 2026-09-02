@@ -11,8 +11,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage
+from app.domain.enums import MailIntakeHealth
+from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage, MailIntakeRun
 from app.schemas.common import SchemaBase
+from app.services.mail.health import MailIntakeHealthReport
 from app.services.mail.intake import MailIntakeSummary
 
 
@@ -140,4 +142,128 @@ def to_message_summary(row: MailIntakeMessage) -> MailIntakeMessageSummary:
         fnol_case_id=row.fnol_case_id,
         attachment_count=row.attachment_count,
         attachments=[to_attachment_summary(item) for item in row.attachments],
+    )
+
+
+class MailIntakeRunSummary(SchemaBase):
+    """One recorded poll. The evidence behind a health verdict."""
+
+    id: uuid.UUID
+    mailbox: str
+    #: `schedule`, `manual` or `cli` — see `MailIntakeTrigger`. A ledger of runs
+    #: that are all `manual` is the signature this table was added to expose.
+    trigger: str
+    started_at: datetime
+    finished_at: datetime | None
+    swept_since: datetime | None
+    fetched: int
+    ingested: int
+    duplicates: int
+    failed: int
+    abandoned: int
+    dropped: int
+    folder_total: int | None
+    folder_unread: int | None
+    ledger_total: int | None
+    sweep_blind: bool
+    ok: bool
+    error: str | None
+
+
+class MailIntakeStatusResult(SchemaBase):
+    """Whether mail is being collected, and if not, what to do about it.
+
+    The endpoint behind this exists because "why has nothing arrived since
+    Tuesday" had no answer that did not involve reading a worker's log — and when
+    the poller is dead there is no log to read, because nothing is writing one.
+    """
+
+    #: The single worst thing true of intake right now.
+    state: MailIntakeHealth
+    healthy: bool
+    #: A sentence for a person: what is true, what it means, what to do.
+    detail: str
+
+    mailbox: str | None
+    configured: bool
+    poll_enabled: bool
+    poll_interval_seconds: int
+    #: Silence longer than this counts as stopped.
+    stale_after_seconds: int
+
+    last_run_at: datetime | None
+    last_run_age_seconds: float | None
+    last_run_trigger: str | None
+    last_run_ok: bool | None
+    last_run_error: str | None
+    last_success_at: datetime | None
+    last_success_age_seconds: float | None
+    #: True only when the scheduler itself has polled recently. False means mail
+    #: is moving because a human is pressing the button.
+    scheduled_run_seen: bool
+
+    fetched: int | None
+    ingested: int | None
+    dropped: int | None
+    folder_total: int | None
+    folder_unread: int | None
+    ledger_total: int | None
+    sweep_blind: bool | None
+
+    #: The last few polls, newest first, so a caller can see a pattern rather
+    #: than one sample.
+    recent_runs: list[MailIntakeRunSummary]
+
+
+def to_run_summary(row: MailIntakeRun) -> MailIntakeRunSummary:
+    return MailIntakeRunSummary(
+        id=row.id,
+        mailbox=row.mailbox,
+        trigger=row.trigger,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        swept_since=row.swept_since,
+        fetched=row.fetched,
+        ingested=row.ingested,
+        duplicates=row.duplicates,
+        failed=row.failed,
+        abandoned=row.abandoned,
+        dropped=row.dropped,
+        folder_total=row.folder_total,
+        folder_unread=row.folder_unread,
+        ledger_total=row.ledger_total,
+        sweep_blind=row.sweep_blind,
+        ok=row.ok,
+        error=row.error,
+    )
+
+
+def to_status_result(
+    report: MailIntakeHealthReport, runs: list[MailIntakeRun]
+) -> MailIntakeStatusResult:
+    return MailIntakeStatusResult(
+        state=MailIntakeHealth(report.state),
+        healthy=report.healthy,
+        detail=report.detail,
+        mailbox=report.mailbox,
+        configured=report.configured,
+        poll_enabled=report.poll_enabled,
+        poll_interval_seconds=report.poll_interval_seconds,
+        stale_after_seconds=report.stale_after_seconds,
+        last_run_at=report.last_run_at,
+        last_run_age_seconds=report.last_run_age_seconds,
+        last_run_trigger=report.last_run_trigger,
+        last_run_ok=report.last_run_ok,
+        last_run_error=report.last_run_error,
+        last_success_at=report.last_success_at,
+        last_success_age_seconds=report.last_success_age_seconds,
+        scheduled_run_seen=report.scheduled_run_seen,
+        fetched=report.fetched,
+        ingested=report.ingested,
+        dropped=report.dropped,
+        folder_total=report.folder_total,
+        folder_unread=report.folder_unread,
+        ledger_total=report.ledger_total,
+        sweep_blind=report.sweep_blind,
+        recent_runs=[to_run_summary(row) for row in runs],
     )

@@ -68,6 +68,7 @@ from app.services.intelligence.embedding import EmbeddingProvider, get_embedding
 from app.services.intelligence.indexing import DocumentIndexService
 from app.services.intelligence.retrieval import RetrievalService
 from app.services.intelligence.vectors import VectorStore, get_vector_store
+from app.services.mail.health import MailIntakeHealthService
 from app.services.mail.intake import MailIntakeService
 from app.services.mail.runner import build_mail_intake_service
 from app.services.notifications.service import NotificationService
@@ -538,3 +539,33 @@ def build_mail_intake_context(client: MailClientDep, session: SessionDep) -> Mai
 
 
 MailIntakeContextDep = Annotated[MailIntakeContext, Depends(build_mail_intake_context)]
+
+
+@dataclass(slots=True)
+class MailIntakeHealthContext:
+    """What the intake health endpoint needs, which is deliberately not a mailbox.
+
+    No `MailClientDep`. Building a Graph client raises `GraphNotConfiguredError`
+    when credentials are absent, so a health route that took one could not report
+    "not configured" — and, worse, a tenant outage would take down the endpoint
+    whose job is to say there is a tenant outage. The verdict is read out of
+    `mail_intake_runs`, which is a local table.
+    """
+
+    session: SessionDep
+    messages: MailIntakeRepository
+    health: MailIntakeHealthService
+
+
+def build_mail_intake_health_context(session: SessionDep) -> MailIntakeHealthContext:
+    repository = MailIntakeRepository(session)
+    return MailIntakeHealthContext(
+        session=session,
+        messages=repository,
+        health=MailIntakeHealthService(repository),
+    )
+
+
+MailIntakeHealthContextDep = Annotated[
+    MailIntakeHealthContext, Depends(build_mail_intake_health_context)
+]

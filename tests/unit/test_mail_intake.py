@@ -31,6 +31,7 @@ from app.domain.enums import (
     FNOLChannel,
     MailAttachmentStatus,
     MailIntakeStatus,
+    MailIntakeTrigger,
     ProcessingState,
 )
 from app.integrations.graph.client import GraphNotConfiguredError
@@ -42,7 +43,7 @@ from app.integrations.graph.messages import (
     GraphRecipient,
 )
 from app.models.fnol import FNOLCase, FNOLDocument
-from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage
+from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage, MailIntakeRun
 from app.services.documents.validation import validate_upload
 from app.services.fnol.ingestion import FNOLIngestionService
 from app.services.mail.intake import INTAKE_ACTOR, MailIntakeService
@@ -170,6 +171,9 @@ class FakeMailRepository:
     def __init__(self) -> None:
         self.committed: list[MailIntakeMessage] = []
         self.pending: list[MailIntakeMessage] = []
+        #: Poll records, in the order they were written. The health check reads
+        #: these; the intake service writes one per poll including the failures.
+        self.runs: list[MailIntakeRun] = []
 
     @property
     def rows(self) -> list[MailIntakeMessage]:
@@ -208,6 +212,26 @@ class FakeMailRepository:
             if row.graph_message_id in graph
             or (row.internet_message_id is not None and row.internet_message_id in internet)
         )
+
+    def add_run(self, run: MailIntakeRun) -> MailIntakeRun:
+        if run.id is None:
+            run.id = uuid.uuid4()
+        self.runs.append(run)
+        return run
+
+    async def latest_run(self, mailbox: str | None = None) -> MailIntakeRun | None:
+        rows = [row for row in self.runs if mailbox is None or row.mailbox == mailbox]
+        return max(rows, key=lambda row: row.started_at) if rows else None
+
+    async def latest_successful_run(self, mailbox: str | None = None) -> MailIntakeRun | None:
+        rows = [row for row in self.runs if row.ok and (mailbox is None or row.mailbox == mailbox)]
+        return max(rows, key=lambda row: row.started_at) if rows else None
+
+    async def list_runs(
+        self, *, mailbox: str | None = None, limit: int = 20
+    ) -> list[MailIntakeRun]:
+        rows = [row for row in self.runs if mailbox is None or row.mailbox == mailbox]
+        return sorted(rows, key=lambda row: row.started_at, reverse=True)[:limit]
 
     def add_attachment(self, attachment: MailIntakeAttachment) -> MailIntakeAttachment:
         record = next(row for row in self.rows if row.id == attachment.mail_intake_message_id)
@@ -890,3 +914,128 @@ class TestTriggerEndpoint:
         assert body["ingested"] == 1
         assert body["references"] == ["FNOL-2026-000001"]
         assert body["mailbox"] == MAILBOX
+
+
+class TestThePollLeavesAHealthRecord:
+    """Every poll must leave a `mail_intake_runs` row, or nothing can see it stopped.
+
+    This is the counterpart to the reconciliation tests above. Those check that a
+    poll notices what *it* lost; these check that a poll which never happens is
+    noticeable at all — which requires the polls that do happen to say so.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_successful_poll_records_a_run(self) -> None:
+        harness = build(messages=[a_message()])
+        summary = await harness.service.poll()
+
+        assert len(harness.repository.runs) == 1
+        run = harness.repository.runs[0]
+        assert run.ok
+        assert run.mailbox == MAILBOX
+        assert run.fetched == 1
+        assert run.ingested == 1
+        assert run.finished_at is not None
+        assert summary.run_id == run.id
+
+    @pytest.mark.asyncio
+    async def test_a_poll_of_an_empty_mailbox_still_records_a_run(self) -> None:
+        """The case the whole feature turns on.
+
+        A quiet mailbox and a dead scheduler are the same from the outside unless
+        the quiet polls leave evidence. If this row is missing, an idle weekend
+        reads as an outage and the alarm gets muted.
+        """
+        harness = build(messages=[])
+        await harness.service.poll()
+
+        assert len(harness.repository.runs) == 1
+        assert harness.repository.runs[0].ok
+        assert harness.repository.runs[0].fetched == 0
+
+    @pytest.mark.asyncio
+    async def test_a_mailbox_that_cannot_be_listed_still_records_a_failed_run(self) -> None:
+        """A poll that raises must not vanish — that is a poller alive and failing."""
+        harness = build(messages=[a_message()])
+        harness.client.list_messages = _raising(GraphError("Graph returned 401"))  # type: ignore[assignment]
+
+        with pytest.raises(GraphError):
+            await harness.service.poll()
+
+        assert len(harness.repository.runs) == 1
+        run = harness.repository.runs[0]
+        assert not run.ok
+        assert run.error is not None
+        assert "401" in run.error
+
+    @pytest.mark.asyncio
+    async def test_the_trigger_is_recorded_so_a_human_poll_is_distinguishable(self) -> None:
+        """The signature that has hidden this fault every previous time."""
+        harness = build(messages=[a_message()])
+        await harness.service.poll(trigger=MailIntakeTrigger.MANUAL)
+
+        assert harness.repository.runs[0].trigger == MailIntakeTrigger.MANUAL
+
+    @pytest.mark.asyncio
+    async def test_a_scheduled_poll_is_the_default(self) -> None:
+        harness = build(messages=[])
+        await harness.service.poll()
+
+        assert harness.repository.runs[0].trigger == MailIntakeTrigger.SCHEDULE
+
+    @pytest.mark.asyncio
+    async def test_the_run_carries_the_watermark_and_the_reconciliation_numbers(self) -> None:
+        """So the row explains a verdict without anyone re-deriving it."""
+        harness = build(messages=[a_message()])
+        harness.client.folder_total = 9
+        harness.client.folder_unread = 0
+        await harness.service.poll()
+
+        run = harness.repository.runs[0]
+        assert run.swept_since is None  # empty ledger reads the whole folder
+        assert run.folder_total == 9
+        assert run.ledger_total == 1
+        assert run.dropped == 0
+        assert run.sweep_blind is False
+
+    @pytest.mark.asyncio
+    async def test_a_dropped_message_reaches_the_run_row(self) -> None:
+        """The silent loss has to survive into the record the health check reads."""
+        harness = build(messages=[a_message(message_id="AAMk-1")])
+        harness.repository.count_recorded = _counting(0)  # type: ignore[assignment]
+        await harness.service.poll()
+
+        assert harness.repository.runs[0].dropped == 1
+
+    @pytest.mark.asyncio
+    async def test_a_failure_to_write_the_run_does_not_lose_the_batch(self) -> None:
+        """Health bookkeeping must never cost a collected claim.
+
+        The notice and its documents are committed message by message, well
+        before this row is written. Losing the row degrades monitoring; taking the
+        batch with it would be a worse bug than the one being monitored for.
+        """
+        harness = build(messages=[a_message()])
+
+        def explode(run: MailIntakeRun) -> MailIntakeRun:
+            raise RuntimeError("mail_intake_runs does not exist")
+
+        harness.repository.add_run = explode  # type: ignore[assignment]
+        summary = await harness.service.poll()
+
+        assert summary.ingested == 1
+        assert summary.run_id is None
+
+
+def _raising(error: Exception):
+    async def _fail(*_args: object, **_kwargs: object) -> list[GraphMessage]:
+        raise error
+
+    return _fail
+
+
+def _counting(value: int):
+    async def _count(**_kwargs: object) -> int:
+        return value
+
+    return _count

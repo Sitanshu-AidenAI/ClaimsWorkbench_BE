@@ -30,6 +30,7 @@ from app.integrations.graph.client import close_mail_client
 from app.services.cache import close_redis, init_redis
 from app.services.intelligence.embedding import close_embedding_provider
 from app.services.intelligence.vectors import close_vector_store
+from app.services.mail.watchdog import start_watchdog, stop_watchdog
 from app.services.policies.vectors import close_policy_vector_store
 
 logger = get_logger(__name__)
@@ -105,10 +106,15 @@ def create_app(
         await init_redis(config)
         await _seed_extraction_schemas(config)
         await _seed_access_matrix(config)
+        # Started last, and in this process on purpose: the thing it watches is the
+        # Celery beat/worker pair, and a watchdog living inside them cannot report
+        # them being gone. See `app.services.mail.watchdog`.
+        await start_watchdog(config)
         logger.info("application_started")
         try:
             yield
         finally:
+            await stop_watchdog()
             await close_redis()
             await close_pool()
             await close_mail_client()

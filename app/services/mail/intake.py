@@ -45,13 +45,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import FNOLSettings, GraphSettings, settings
 from app.core.errors import ValidationError
 from app.core.logging import get_logger
-from app.domain.enums import MailAttachmentStatus, MailIntakeStatus
+from app.domain.enums import MailAttachmentStatus, MailIntakeStatus, MailIntakeTrigger
 from app.domain.normalisation import clip
 from app.integrations.graph.client import GraphMailClient
 from app.integrations.graph.errors import GraphError
 from app.integrations.graph.messages import GraphAttachmentMetadata, GraphMessage
 from app.models.fnol import FNOLCase
-from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage
+from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage, MailIntakeRun
 from app.repositories.mail_intake import MailIntakeRepository
 from app.services.fnol.ingestion import FNOLIngestionService, IncomingAttachment, IncomingEmail
 from app.services.fnol.service import FNOLService
@@ -102,6 +102,11 @@ class MailIntakeSummary:
     #: True when the folder reports unread mail and the sweep returned nothing —
     #: the signature of a sweep that has gone blind.
     sweep_blind: bool = False
+    #: Who asked for this poll: see `MailIntakeTrigger`.
+    trigger: str = MailIntakeTrigger.SCHEDULE
+    #: The `mail_intake_runs` row this poll wrote. `None` only where writing it
+    #: failed, which is logged loudly.
+    run_id: uuid.UUID | None = None
 
 
 @dataclass(slots=True)
@@ -140,7 +145,9 @@ class MailIntakeService:
         # broker's email is held to.
         self._fnol_config = fnol_config or settings.fnol
 
-    async def poll(self, *, limit: int | None = None) -> MailIntakeSummary:
+    async def poll(
+        self, *, limit: int | None = None, trigger: str = MailIntakeTrigger.SCHEDULE
+    ) -> MailIntakeSummary:
         """Collect one batch from the shared mailbox.
 
         Listing is the one step allowed to fail the whole poll: if the mailbox
@@ -153,11 +160,30 @@ class MailIntakeService:
         against the ledger, which is what makes re-reading it free. The read flag
         is not part of this and must not become part of it again; see
         `GraphSettings.unread_only`.
+
+        Every attempt leaves a `mail_intake_runs` row, the failures included, and
+        that row is written before this method returns or raises. It is the only
+        evidence that distinguishes a quiet mailbox from a scheduler that has
+        stopped — see `MailIntakeRun` — and `trigger` is on it because a mailbox
+        which only ever moves when a human presses the button is precisely the
+        condition being made visible.
         """
+        started_at = datetime.now(UTC)
         summary = MailIntakeSummary(mailbox=self._client.mailbox)
+        summary.trigger = trigger
         since = await self._watermark()
         summary.since = since
-        messages = await self._client.list_messages(limit=limit, since=since)
+
+        try:
+            messages = await self._client.list_messages(limit=limit, since=since)
+        except Exception as exc:
+            # The mailbox could not be read. Recorded rather than only raised: a
+            # scheduler that is alive and failing every poll must not look the
+            # same as one that has stopped, and the caller that logs this
+            # exception is not the caller that answers "is intake healthy".
+            await self._record_run(summary, started_at=started_at, error=exc)
+            raise
+
         summary.fetched = len(messages)
 
         for message in messages:
@@ -180,7 +206,65 @@ class MailIntakeService:
             attachments_skipped=summary.attachments_skipped,
         )
         await self._reconcile(summary, messages)
+        await self._record_run(summary, started_at=started_at, error=None)
         return summary
+
+    async def _record_run(
+        self,
+        summary: MailIntakeSummary,
+        *,
+        started_at: datetime,
+        error: BaseException | None,
+    ) -> None:
+        """Write this poll's row, and never let doing so fail the poll.
+
+        Best-effort in the same sense `_reconcile` is: the messages are already
+        committed, and losing the health record is a worse outcome than losing
+        the batch only if it takes the batch with it.
+
+        The rollback on the error path is not optional. `poll` reaches here with
+        a session that may hold a half-finished statement from the failed list
+        call, and an INSERT issued on it would fail on the aborted transaction
+        rather than on anything to do with this row.
+        """
+        try:
+            if error is not None:
+                await self._session.rollback()
+
+            run = MailIntakeRun(
+                mailbox=summary.mailbox,
+                trigger=summary.trigger,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                swept_since=summary.since,
+                fetched=summary.fetched,
+                ingested=summary.ingested,
+                duplicates=summary.duplicates,
+                failed=summary.failed,
+                abandoned=summary.abandoned,
+                dropped=summary.dropped,
+                folder_total=summary.folder_total,
+                folder_unread=summary.folder_unread,
+                ledger_total=summary.ledger_total,
+                sweep_blind=summary.sweep_blind,
+                ok=error is None,
+                error=clip(str(error), MAX_ERROR_CHARACTERS) if error is not None else None,
+            )
+            self._messages.add_run(run)
+            await self._session.commit()
+            summary.run_id = run.id
+        except Exception as exc:
+            logger.error(
+                "mail_intake_run_not_recorded",
+                mailbox=summary.mailbox,
+                error=str(exc),
+                exc_info=exc,
+                detail=(
+                    "The poll ran but its health row could not be written. Intake will "
+                    "look stale to anything reading `mail_intake_runs` even though it is "
+                    "collecting: check the migration is applied before trusting the alarm."
+                ),
+            )
 
     async def _watermark(self) -> datetime | None:
         """The floor for this poll's sweep, or `None` to read the whole folder.

@@ -12,18 +12,22 @@ needed a tenant would not run.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from sqlalchemy import delete, select
 
-from app.core.config import settings
+from app.core.config import GraphSettings, settings
 from app.db.session import dispose_engine, get_session_factory, init_engine
 from app.domain.enums import (
     FNOLChannel,
     MailAttachmentStatus,
+    MailIntakeHealth,
     MailIntakeStatus,
+    MailIntakeTrigger,
+    NotificationKind,
+    NotificationTone,
     ProcessingState,
 )
 from app.integrations.graph.messages import (
@@ -34,9 +38,13 @@ from app.integrations.graph.messages import (
 )
 from app.models.audit import AuditEvent
 from app.models.fnol import FNOLCase, FNOLDocument
-from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage
+from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage, MailIntakeRun
+from app.models.notification import Notification
+from app.repositories.mail_intake import MailIntakeRepository
 from app.services.documents.store import FilesystemDocumentStore, set_document_store
+from app.services.mail.health import MailIntakeHealthService
 from app.services.mail.runner import build_mail_intake_service
+from app.services.mail.watchdog import MailIntakeWatchdog
 
 pytestmark = pytest.mark.integration
 
@@ -148,6 +156,7 @@ async def _cleanup(db: object) -> None:
     )
     case_ids = [case_id for case_id in case_ids if case_id is not None]
 
+    await db.execute(delete(MailIntakeRun).where(MailIntakeRun.mailbox == MAILBOX))
     await db.execute(delete(MailIntakeMessage).where(MailIntakeMessage.mailbox == MAILBOX))
     if case_ids:
         await db.execute(delete(AuditEvent).where(AuditEvent.entity_id.in_(case_ids)))
@@ -266,3 +275,264 @@ class TestMailboxIntakeAgainstPostgres:
             )
         ).scalars()
         assert len(total.all()) == 1
+
+
+class TestTheRunLedgerAgainstPostgres:
+    """The record that makes a *missing* poll visible, proven where it has to work.
+
+    The unit tests establish that `poll` writes a run row and that `evaluate`
+    grades it. Neither can establish what this does: that the row survives a real
+    insert, that the health service reads it back through a real query, and that
+    the verdict flips on nothing but the passage of time.
+    """
+
+    async def test_a_poll_writes_a_run_row_that_the_health_check_reads_back(
+        self, session: object
+    ) -> None:
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+
+        summary = await service.poll(trigger=MailIntakeTrigger.SCHEDULE)
+        assert summary.run_id is not None
+
+        run = (
+            (await session.execute(select(MailIntakeRun).where(MailIntakeRun.mailbox == MAILBOX)))
+            .scalars()
+            .one()
+        )
+        assert run.ok
+        assert run.trigger == MailIntakeTrigger.SCHEDULE
+        assert run.fetched == 1
+        assert run.ingested == 1
+        assert run.finished_at is not None
+
+        graph = GraphSettings(
+            tenant_id="t",
+            client_id="c",
+            client_secret="s",
+            shared_mailbox=MAILBOX,
+            poll_enabled=True,
+            poll_interval_seconds=300,
+        )
+        report = await MailIntakeHealthService(
+            MailIntakeRepository(session),  # type: ignore[arg-type]
+            config=graph,
+        ).report()
+        assert report.state == MailIntakeHealth.OK
+        assert report.healthy
+
+    async def test_the_same_ledger_reports_stale_once_the_run_is_old_enough(
+        self, session: object
+    ) -> None:
+        """The outage, reproduced by moving one timestamp.
+
+        Nothing about the mailbox, the credentials or the code changes between
+        this test and the one above — only how long ago the last poll was. That is
+        precisely the distinction that was previously invisible, and the reason
+        the age of a row is the signal rather than anything a poll reports.
+        """
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+        await service.poll(trigger=MailIntakeTrigger.SCHEDULE)
+
+        run = (
+            (await session.execute(select(MailIntakeRun).where(MailIntakeRun.mailbox == MAILBOX)))
+            .scalars()
+            .one()
+        )
+        run.started_at = datetime.now(UTC) - timedelta(days=6)
+        await session.commit()
+
+        graph = GraphSettings(
+            tenant_id="t",
+            client_id="c",
+            client_secret="s",
+            shared_mailbox=MAILBOX,
+            poll_enabled=True,
+            poll_interval_seconds=300,
+        )
+        report = await MailIntakeHealthService(
+            MailIntakeRepository(session),  # type: ignore[arg-type]
+            config=graph,
+        ).report()
+
+        assert report.state == MailIntakeHealth.STALE
+        assert not report.healthy
+        assert "6 days" in report.detail
+
+    async def test_a_manual_poll_is_recorded_as_manual_and_does_not_read_as_healthy(
+        self, session: object
+    ) -> None:
+        """Pressing the button must not paper over a dead scheduler."""
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+        await service.poll(trigger=MailIntakeTrigger.MANUAL)
+
+        graph = GraphSettings(
+            tenant_id="t",
+            client_id="c",
+            client_secret="s",
+            shared_mailbox=MAILBOX,
+            poll_enabled=True,
+            poll_interval_seconds=300,
+        )
+        report = await MailIntakeHealthService(
+            MailIntakeRepository(session),  # type: ignore[arg-type]
+            config=graph,
+        ).report()
+
+        assert report.last_run_trigger == MailIntakeTrigger.MANUAL
+        assert report.state == MailIntakeHealth.STALE
+        assert not report.scheduled_run_seen
+
+    async def test_run_records_past_their_retention_are_pruned(self, session: object) -> None:
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+        await service.poll()
+
+        repository = MailIntakeRepository(session)  # type: ignore[arg-type]
+        run = (
+            (await session.execute(select(MailIntakeRun).where(MailIntakeRun.mailbox == MAILBOX)))
+            .scalars()
+            .one()
+        )
+        run.started_at = datetime.now(UTC) - timedelta(days=30)
+        await session.commit()
+
+        removed = await repository.prune_runs(before=datetime.now(UTC) - timedelta(days=14))
+        await session.commit()
+
+        assert removed >= 1
+        assert await repository.latest_run(MAILBOX) is None
+
+
+async def _unhealthy_notifications(session: object) -> list[Notification]:
+    """Intake alarms raised about *this test's* mailbox only.
+
+    Scoped on the mailbox in `context`, not on `kind` alone. The development
+    database is shared with a live poller watching the real inbox, so a global
+    query counts that mailbox's genuine alarms and a global delete would remove
+    them — a test that quietly erases the very evidence this feature exists to
+    produce.
+    """
+    rows = (
+        (
+            await session.execute(  # type: ignore[attr-defined]
+                select(Notification).where(
+                    Notification.kind == NotificationKind.MAIL_INTAKE_UNHEALTHY.value,
+                    Notification.context["mailbox"].astext == MAILBOX,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)
+
+
+async def _clear_unhealthy_notifications(session: object) -> None:
+    for row in await _unhealthy_notifications(session):
+        await session.delete(row)  # type: ignore[attr-defined]
+    await session.commit()  # type: ignore[attr-defined]
+
+
+class TestTheWatchdogAgainstPostgres:
+    """The alarm that fires without being asked.
+
+    `MailIntakeHealthService` answers the question; the watchdog is what asks it
+    on a timer from the API process. These tests drive one tick directly rather
+    than waiting for the loop — the loop is `asyncio.sleep` and a try/except, and
+    what matters is what one tick does.
+    """
+
+    async def test_a_stale_ledger_puts_a_critical_notification_on_the_desk(
+        self, session: object
+    ) -> None:
+        """The sentence that ends the six-day silence.
+
+        A log line only reaches somebody who already suspects a problem. Nobody
+        suspected one for six days, which is exactly why this has to land on the
+        panel a handler is already looking at.
+        """
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+        await service.poll(trigger=MailIntakeTrigger.SCHEDULE)
+
+        run = (
+            (await session.execute(select(MailIntakeRun).where(MailIntakeRun.mailbox == MAILBOX)))
+            .scalars()
+            .one()
+        )
+        run.started_at = datetime.now(UTC) - timedelta(days=6)
+        await session.commit()
+
+        watchdog = MailIntakeWatchdog(_stale_settings())
+        report = await watchdog.check_once()
+
+        assert report.state == MailIntakeHealth.STALE
+        assert not report.healthy
+
+        announced = await _unhealthy_notifications(session)
+        assert len(announced) == 1
+        assert announced[0].tone == NotificationTone.CRITICAL
+        assert "6 days" in announced[0].body
+        await _clear_unhealthy_notifications(session)
+
+    async def test_a_continuing_outage_does_not_flood_the_panel(self, session: object) -> None:
+        """One row per state per hour.
+
+        A mailbox down since Tuesday must be visible every time the panel is
+        opened, without having written thousands of rows to say the same thing.
+        The hourly dedupe key is what buys both, and a panel that floods is a
+        panel that gets ignored — which is how the alarm would end up as useless
+        as the silence it replaced.
+        """
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+        await service.poll(trigger=MailIntakeTrigger.SCHEDULE)
+
+        run = (
+            (await session.execute(select(MailIntakeRun).where(MailIntakeRun.mailbox == MAILBOX)))
+            .scalars()
+            .one()
+        )
+        run.started_at = datetime.now(UTC) - timedelta(days=6)
+        await session.commit()
+
+        watchdog = MailIntakeWatchdog(_stale_settings())
+        for _ in range(5):
+            await watchdog.check_once()
+
+        announced = await _unhealthy_notifications(session)
+        assert len(announced) == 1
+        await _clear_unhealthy_notifications(session)
+
+    async def test_a_healthy_poller_announces_nothing(self, session: object) -> None:
+        """Silence is the correct output of a working system."""
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+        await service.poll(trigger=MailIntakeTrigger.SCHEDULE)
+
+        watchdog = MailIntakeWatchdog(_stale_settings())
+        report = await watchdog.check_once()
+
+        assert report.state == MailIntakeHealth.OK
+        announced = await _unhealthy_notifications(session)
+        assert announced == []
+
+
+def _stale_settings() -> object:
+    """A copy of the real settings pointed at the test mailbox.
+
+    The watchdog reads `settings.graph`, and the health verdict is computed
+    against whatever mailbox that names. Overriding it here keeps the test's rows
+    the only ones in scope.
+    """
+    config = settings.model_copy(deep=True)
+    config.graph.tenant_id = "t"
+    config.graph.client_id = "c"
+    config.graph.client_secret = "s"
+    config.graph.shared_mailbox = MAILBOX
+    config.graph.poll_enabled = True
+    config.graph.poll_interval_seconds = 300
+    return config
