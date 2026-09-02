@@ -176,6 +176,7 @@ SCHEDULE_ENV_NAMES: dict[str, str] = {
     "reap-stale-policy-ingest": "CWB_POLICY_REAP_INTERVAL_SECONDS",
     "poll-mail-intake": "CWB_GRAPH_POLL_INTERVAL_SECONDS",
     "prune-mail-intake-runs": "CWB_GRAPH_RUN_PRUNE_INTERVAL_SECONDS",
+    "renew-mail-subscription": "CWB_GRAPH_RENEWAL_INTERVAL_SECONDS",
 }
 
 

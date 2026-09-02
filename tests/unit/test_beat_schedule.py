@@ -18,8 +18,6 @@ import ast
 import re
 from pathlib import Path
 
-import pytest
-
 from app.core.config import Settings
 from app.workers.celery_app import SCHEDULE_ENV_NAMES, celery_app
 
@@ -91,24 +89,55 @@ class TestTheRule:
 
 
 class TestTheIntervalsThemselves:
-    @pytest.mark.parametrize(
-        ("entry", "expected"),
-        [
-            ("heartbeat", 300.0),
-            ("poll-mail-intake", 8.0),
-            ("prune-mail-intake-runs", 86400.0),
-        ],
-    )
-    def test_the_effective_schedule_matches_the_settings(self, entry: str, expected: float) -> None:
-        """Reads the live schedule, so a rewiring mistake shows up as a wrong number.
+    def test_every_registered_entry_matches_the_field_its_env_name_points_at(self) -> None:
+        """The live schedule equals the setting it claims to read.
 
-        `poll-mail-intake` at 8s is this deployment's `.env` value, not the 300s
-        default — which is exactly the distinction that matters: the default in
-        `config.py` is not what the process is running.
+        This used to assert literals — `("poll-mail-intake", 8.0)` — with a
+        docstring explaining that 8s was "this deployment's `.env` value". Two
+        things were wrong with that. It made a test out of one laptop's
+        configuration, so tuning the interval to 600s broke it while nothing was
+        actually wrong. And the file whose entire purpose is to forbid literal
+        intervals in `celery_app.py` was asserting literals of its own.
+
+        Deriving the expected value from settings tests the thing that can really
+        be wrong — an entry wired to the wrong field, which is exactly the
+        "rewiring mistake" the old docstring claimed to catch and could not — and
+        it stays true whatever the intervals are set to. It also covers every
+        registered entry rather than three chosen ones, so a new schedule is
+        checked the moment it is added.
         """
-        if entry not in celery_app.conf.beat_schedule:
-            pytest.skip(f"{entry} is not registered in this environment")
-        assert float(celery_app.conf.beat_schedule[entry]["schedule"]) == expected
+        settings = Settings()
+        blocks = {
+            "CWB_CELERY_": settings.celery,
+            "CWB_DOCINT_": settings.docint,
+            "CWB_POLICY_": settings.policy_library,
+            "CWB_GRAPH_": settings.graph,
+        }
+
+        checked = 0
+        for entry, definition in celery_app.conf.beat_schedule.items():
+            schedule = definition.get("schedule")
+            if not isinstance(schedule, (int, float)):
+                continue
+            env_name = SCHEDULE_ENV_NAMES.get(entry)
+            if env_name is None:
+                # Owned by `test_every_registered_entry_has_a_documented_env_name`.
+                # One rule, one test: failing here too would report the same gap
+                # twice and hide this one behind it.
+                continue
+
+            prefix = next(p for p in blocks if env_name.startswith(p))
+            field = env_name[len(prefix) :].lower()
+            expected = float(getattr(blocks[prefix], field))
+            assert float(schedule) == expected, (
+                f"{entry!r} is scheduled every {float(schedule)}s but {env_name} is "
+                f"{expected}s — the entry is reading a different settings field from "
+                "the one its environment name advertises, so changing that variable "
+                "would appear to do nothing."
+            )
+            checked += 1
+
+        assert checked, "no numeric beat entries were checked — the schedule is empty"
 
     def test_the_heartbeat_entry_is_not_named_after_its_interval(self) -> None:
         """It was `heartbeat-every-5-minutes`, which a settings change made a lie.
