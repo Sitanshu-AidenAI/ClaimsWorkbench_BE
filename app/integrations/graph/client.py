@@ -293,6 +293,121 @@ class GraphMailClient:
 
     # -- Plumbing ------------------------------------------------------------
 
+    # -- Change notifications ------------------------------------------------
+
+    def messages_resource(self, folder: str | None = None) -> str:
+        """The resource path a subscription watches.
+
+        Graph wants this *without* the API version prefix and with the folder
+        quoted the way its own documentation writes it — `mailFolders('inbox')`,
+        single quotes and all. Built here rather than at the call site so the
+        subscription and the stored record cannot disagree about what is watched.
+        """
+        name = folder or self._config.mail_folder
+        return f"users/{quote(self.mailbox, safe='')}/mailFolders('{name}')/messages"
+
+    async def create_subscription(
+        self,
+        *,
+        notification_url: str,
+        lifecycle_url: str | None,
+        client_state: str,
+        expires_at: datetime,
+        folder: str | None = None,
+    ) -> dict[str, Any]:
+        """Ask Graph to start notifying us, and return the subscription it made.
+
+        **Graph validates the URL before it answers.** It posts a
+        `validationToken` to `notification_url` and expects it echoed back as
+        `text/plain` within ten seconds; if that fails, this call fails with a
+        message about the endpoint rather than about the subscription. So the
+        receiving endpoint has to be live and publicly reachable *before* this
+        runs — which is why a tunnel has to be up first, and why `localhost` can
+        never work.
+
+        `changeType` is `created` alone. Updates and deletes on a message are the
+        claims team reading their own mailbox, and a notification per read flag
+        would be a poll with extra steps.
+        """
+        body: dict[str, Any] = {
+            "changeType": "created",
+            "resource": self.messages_resource(folder),
+            "notificationUrl": notification_url,
+            "clientState": client_state,
+            #: Graph wants a Zulu instant. `isoformat()` on an aware datetime
+            #: gives `+00:00`, which it accepts, but normalising here keeps the
+            #: request identical to the documented form.
+            "expirationDateTime": expires_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+        }
+        if lifecycle_url:
+            body["lifecycleNotificationUrl"] = lifecycle_url
+
+        response = await self._request("POST", "/subscriptions", json=body)
+        payload = _json(response)
+        logger.info(
+            "graph_subscription_created",
+            subscription_id=payload.get("id"),
+            resource=body["resource"],
+            expires=payload.get("expirationDateTime"),
+        )
+        return payload
+
+    async def renew_subscription(
+        self, subscription_id: str, *, expires_at: datetime
+    ) -> dict[str, Any] | None:
+        """Extend a subscription, or `None` if Graph no longer has it.
+
+        `None` rather than an exception on 404, because a lapsed or
+        externally-deleted subscription is a *recreate*, not a failure — and the
+        caller already knows how to do that. Raising here would put the renewal
+        sweep into a loop reporting errors while the mailbox went uncollected.
+        """
+        response = await self._request(
+            "PATCH",
+            f"/subscriptions/{quote(subscription_id, safe='')}",
+            allow_missing=True,
+            json={
+                "expirationDateTime": (
+                    expires_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+                )
+            },
+        )
+        if response.status_code == 404:
+            logger.warning("graph_subscription_gone", subscription_id=subscription_id)
+            return None
+
+        payload = _json(response)
+        logger.info(
+            "graph_subscription_renewed",
+            subscription_id=subscription_id,
+            expires=payload.get("expirationDateTime"),
+        )
+        return payload
+
+    async def delete_subscription(self, subscription_id: str) -> bool:
+        """Remove a subscription. True if it was there, False if it already was not.
+
+        Idempotent on purpose: tearing down is something a deployment does on the
+        way out and something a developer does after a tunnel changes, and neither
+        should fail because the thing is already gone.
+        """
+        response = await self._request(
+            "DELETE",
+            f"/subscriptions/{quote(subscription_id, safe='')}",
+            allow_missing=True,
+        )
+        return response.status_code != 404
+
+    async def list_subscriptions(self) -> list[dict[str, Any]]:
+        """Every subscription this app registration holds, across all resources.
+
+        For reconciling what we think we have against what Graph thinks we have —
+        the two drift when a deployment is replaced without tearing down, and the
+        symptom is a mailbox notified twice.
+        """
+        response = await self._request("GET", "/subscriptions")
+        return list(_json(response).get("value", []))
+
     def _mailbox_path(self) -> str:
         return f"/users/{quote(self.mailbox, safe='')}"
 

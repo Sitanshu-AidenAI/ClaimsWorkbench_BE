@@ -71,6 +71,7 @@ from app.services.intelligence.vectors import VectorStore, get_vector_store
 from app.services.mail.health import MailIntakeHealthService
 from app.services.mail.intake import MailIntakeService
 from app.services.mail.runner import build_mail_intake_service
+from app.services.mail.subscription import MailSubscriptionService
 from app.services.notifications.service import NotificationService
 from app.services.policies.ingestion import PolicyIngestionService
 from app.services.policies.library import PolicyLibraryService
@@ -502,6 +503,8 @@ class MailIntakeContext:
     session: SessionDep
     messages: MailIntakeRepository
     intake: MailIntakeService
+    #: The Graph subscription's life, and the door on the notification endpoint.
+    subscription: MailSubscriptionService
 
 
 @dataclass(slots=True)
@@ -535,6 +538,7 @@ def build_mail_intake_context(client: MailClientDep, session: SessionDep) -> Mai
         # The same builder the worker uses: a manual poll and a scheduled one
         # must not be able to behave differently.
         intake=build_mail_intake_service(session, client=client),
+        subscription=MailSubscriptionService(MailIntakeRepository(session), client),
     )
 
 

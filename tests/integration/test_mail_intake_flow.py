@@ -38,7 +38,12 @@ from app.integrations.graph.messages import (
 )
 from app.models.audit import AuditEvent
 from app.models.fnol import FNOLCase, FNOLDocument
-from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage, MailIntakeRun
+from app.models.mail_intake import (
+    MailIntakeAttachment,
+    MailIntakeMessage,
+    MailIntakeRun,
+    MailSubscription,
+)
 from app.models.notification import Notification
 from app.repositories.mail_intake import MailIntakeRepository
 from app.services.documents.store import FilesystemDocumentStore, set_document_store
@@ -158,6 +163,11 @@ async def _cleanup(db: object) -> None:
 
     await db.execute(delete(MailIntakeRun).where(MailIntakeRun.mailbox == MAILBOX))
     await db.execute(delete(MailIntakeMessage).where(MailIntakeMessage.mailbox == MAILBOX))
+    #: Subscriptions too, and not only for tidiness: `mail_subscriptions` is
+    #: unique on (mailbox, resource), so one row left behind makes the *next*
+    #: test's insert fail rather than the test that created it — a failure that
+    #: points at innocent code.
+    await db.execute(delete(MailSubscription).where(MailSubscription.mailbox == MAILBOX))
     if case_ids:
         await db.execute(delete(AuditEvent).where(AuditEvent.entity_id.in_(case_ids)))
         await db.execute(delete(FNOLCase).where(FNOLCase.id.in_(case_ids)))
@@ -306,14 +316,7 @@ class TestTheRunLedgerAgainstPostgres:
         assert run.ingested == 1
         assert run.finished_at is not None
 
-        graph = GraphSettings(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-            shared_mailbox=MAILBOX,
-            poll_enabled=True,
-            poll_interval_seconds=300,
-        )
+        graph = _sweep_only_graph()
         report = await MailIntakeHealthService(
             MailIntakeRepository(session),  # type: ignore[arg-type]
             config=graph,
@@ -343,14 +346,7 @@ class TestTheRunLedgerAgainstPostgres:
         run.started_at = datetime.now(UTC) - timedelta(days=6)
         await session.commit()
 
-        graph = GraphSettings(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-            shared_mailbox=MAILBOX,
-            poll_enabled=True,
-            poll_interval_seconds=300,
-        )
+        graph = _sweep_only_graph()
         report = await MailIntakeHealthService(
             MailIntakeRepository(session),  # type: ignore[arg-type]
             config=graph,
@@ -368,14 +364,7 @@ class TestTheRunLedgerAgainstPostgres:
         service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
         await service.poll(trigger=MailIntakeTrigger.MANUAL)
 
-        graph = GraphSettings(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-            shared_mailbox=MAILBOX,
-            poll_enabled=True,
-            poll_interval_seconds=300,
-        )
+        graph = _sweep_only_graph()
         report = await MailIntakeHealthService(
             MailIntakeRepository(session),  # type: ignore[arg-type]
             config=graph,
@@ -436,6 +425,83 @@ async def _clear_unhealthy_notifications(session: object) -> None:
     await session.commit()  # type: ignore[attr-defined]
 
 
+class TestTheSubscriptionLimbAgainstPostgres:
+    """The webhook half of the verdict, against the real table and the real query.
+
+    The unit tests prove the *rule*; these prove the two things a rule cannot:
+    that `newest_subscription` selects what it claims to from Postgres, and that
+    a lapsed subscription is still found while the sweep is happily collecting.
+    That last combination is the one that has no symptom — mail keeps arriving,
+    just slowly, and the only evidence is a timestamp in this table.
+    """
+
+    async def test_a_lapsed_subscription_is_degraded_while_the_sweep_still_collects(
+        self, session: object
+    ) -> None:
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+        await service.poll(trigger=MailIntakeTrigger.SCHEDULE)
+
+        session.add(  # type: ignore[attr-defined]
+            MailSubscription(
+                subscription_id="sub-integration-lapsed",
+                mailbox=MAILBOX,
+                resource=f"users/{MAILBOX}/mailFolders('inbox')/messages",
+                notification_url="https://tunnel.test/api/v1/mail-intake/notifications",
+                expires_at=datetime.now(UTC) - timedelta(hours=3),
+                renewed_at=None,
+                renewal_count=0,
+            )
+        )
+        await session.commit()  # type: ignore[attr-defined]
+
+        report = await MailIntakeHealthService(
+            MailIntakeRepository(session),  # type: ignore[arg-type]
+            config=_webhook_graph(),
+        ).report()
+
+        assert report.state == MailIntakeHealth.DEGRADED
+        assert report.sweep_collecting
+        assert not report.webhook_collecting
+        assert report.subscription_id == "sub-integration-lapsed"
+        # Signed, so the panel can say how long it has been dead rather than "0".
+        assert report.subscription_expires_in_seconds is not None
+        assert report.subscription_expires_in_seconds < 0
+
+    async def test_a_live_subscription_and_a_running_sweep_are_healthy(
+        self, session: object
+    ) -> None:
+        """Both ways in working is the only state that should read as ok."""
+        client = StubMailClient(broker_message(), [estimate_attachment()])
+        service = build_mail_intake_service(session, client=client)  # type: ignore[arg-type]
+        await service.poll(trigger=MailIntakeTrigger.SCHEDULE)
+
+        session.add(  # type: ignore[attr-defined]
+            MailSubscription(
+                subscription_id="sub-integration-live",
+                mailbox=MAILBOX,
+                resource=f"users/{MAILBOX}/mailFolders('inbox')/messages",
+                notification_url="https://tunnel.test/api/v1/mail-intake/notifications",
+                #: Graph's ceiling for a mail resource, which is what the renewal
+                #: task asks for — so this is the real shape of a fresh row.
+                expires_at=datetime.now(UTC) + timedelta(minutes=4230),
+                renewed_at=None,
+                renewal_count=0,
+            )
+        )
+        await session.commit()  # type: ignore[attr-defined]
+
+        report = await MailIntakeHealthService(
+            MailIntakeRepository(session),  # type: ignore[arg-type]
+            config=_webhook_graph(),
+        ).report()
+
+        assert report.state == MailIntakeHealth.OK
+        assert report.healthy
+        assert report.sweep_collecting
+        assert report.webhook_collecting
+
+
 class TestTheWatchdogAgainstPostgres:
     """The alarm that fires without being asked.
 
@@ -444,6 +510,22 @@ class TestTheWatchdogAgainstPostgres:
     than waiting for the loop — the loop is `asyncio.sleep` and a try/except, and
     what matters is what one tick does.
     """
+
+    @pytest.fixture(autouse=True)
+    async def _empty_panel(self, session: object) -> AsyncIterator[None]:
+        """Begin and end with no alarms on the panel.
+
+        Clearing *before* as well as after is not belt-and-braces. The dedupe key
+        is `mail_intake.unhealthy:{state}:{hour}` and it is global to the
+        database, so a real alarm raised by the developer's own running API in
+        this same clock hour claims the key first and the watchdog under test
+        then records nothing at all. That reads as "the watchdog did not fire"
+        and fails a test about code that is working perfectly — which is how this
+        suite spent an afternoon on 2 September.
+        """
+        await _clear_unhealthy_notifications(session)
+        yield
+        await _clear_unhealthy_notifications(session)
 
     async def test_a_stale_ledger_puts_a_critical_notification_on_the_desk(
         self, session: object
@@ -521,12 +603,58 @@ class TestTheWatchdogAgainstPostgres:
         assert announced == []
 
 
+def _sweep_only_graph(**overrides: object) -> GraphSettings:
+    """Settings for a mailbox collected by the sweep alone, with **no webhook**.
+
+    Every webhook field is pinned off rather than left to default, and that is
+    not tidiness. `GraphSettings` fills anything unset from the developer's own
+    `.env`, so on a machine with a dev tunnel configured these tests inherited a
+    live `notification_url` and graded themselves as a webhook deployment with no
+    subscription — `degraded`, not `ok`, and passing or failing according to
+    whose laptop ran them. The unit suite learned the same lesson about
+    `tenant_id`; see `unconfigured` in `tests/unit/test_mail_intake_health.py`.
+    """
+    values: dict[str, object] = {
+        "tenant_id": "t",
+        "client_id": "c",
+        "client_secret": "s",
+        "shared_mailbox": MAILBOX,
+        "poll_enabled": True,
+        "poll_interval_seconds": 300,
+        "webhook_enabled": False,
+        "notification_url": None,
+        "lifecycle_url": None,
+        "webhook_client_state": None,
+    }
+    values.update(overrides)
+    return GraphSettings(**values)  # type: ignore[arg-type]
+
+
+def _webhook_graph(**overrides: object) -> GraphSettings:
+    """Sweep-only settings with change notifications switched on.
+
+    A fixed URL and secret rather than the developer's: the point of pinning in
+    `_sweep_only_graph` is defeated by reintroducing the real tunnel here.
+    """
+    return _sweep_only_graph(
+        webhook_enabled=True,
+        notification_url="https://tunnel.test/api/v1/mail-intake/notifications",
+        webhook_client_state="a-secret-only-graph-was-told",
+        **overrides,
+    )
+
+
 def _stale_settings() -> object:
-    """A copy of the real settings pointed at the test mailbox.
+    """A copy of the real settings pointed at the test mailbox, sweep-only.
 
     The watchdog reads `settings.graph`, and the health verdict is computed
     against whatever mailbox that names. Overriding it here keeps the test's rows
     the only ones in scope.
+
+    The webhook fields are cleared for the reason `_sweep_only_graph` gives: this
+    starts from the *real* settings, so on a machine with a tunnel configured it
+    would otherwise inherit a live notification URL and grade a subscription-less
+    test database as `degraded`.
     """
     config = settings.model_copy(deep=True)
     config.graph.tenant_id = "t"
@@ -535,4 +663,8 @@ def _stale_settings() -> object:
     config.graph.shared_mailbox = MAILBOX
     config.graph.poll_enabled = True
     config.graph.poll_interval_seconds = 300
+    config.graph.webhook_enabled = False
+    config.graph.notification_url = None
+    config.graph.lifecycle_url = None
+    config.graph.webhook_client_state = None
     return config

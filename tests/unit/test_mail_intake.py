@@ -905,6 +905,11 @@ class TestTriggerEndpoint:
             session=harness.session,  # type: ignore[arg-type]
             messages=harness.repository,  # type: ignore[arg-type]
             intake=harness.service,
+            #: The poll route does not touch it. Present because the context is a
+            #: dataclass and every field is required — and `None` rather than a
+            #: stub, because a stub would invite a spec to assert on a
+            #: subscription this endpoint has nothing to do with.
+            subscription=None,  # type: ignore[arg-type]
         )
 
         response = await auth_client.post("/api/v1/mail-intake/poll")

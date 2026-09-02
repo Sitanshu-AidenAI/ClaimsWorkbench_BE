@@ -787,13 +787,27 @@ class MailIntakeTrigger(StrEnum):
     MANUAL = "manual"
     #: `python -m app.services.mail`, for setting a mailbox up.
     CLI = "cli"
+    #: A Graph change notification — the mailbox told us, rather than us asking.
+    #: Distinct from `SCHEDULE` because it is the *health* distinction that
+    #: matters once notifications are on: a desk whose only runs are `schedule`
+    #: has a working sweep and a dead subscription, which collects mail slowly
+    #: and looks entirely well.
+    WEBHOOK = "webhook"
 
 
 class MailIntakeHealth(StrEnum):
-    """What the mailbox poller looks like from outside itself.
+    """What mailbox intake looks like from outside itself.
 
     Ordered worst-last is deliberate: `WORST_FIRST` below reads this as a
     severity ranking, so a caller never has to hand-order the states.
+
+    **Intake has two ways in and these states grade both.** A change
+    notification is the mailbox telling us; a scheduled sweep is us asking. They
+    fail independently and they hide each other's failures: a live subscription
+    keeps mail flowing while beat is dead, and a running sweep keeps mail flowing
+    while the subscription has lapsed. Either way mail still arrives, so no
+    single "is mail arriving" question can find it — which is what `DEGRADED` is
+    for.
     """
 
     #: Collecting, on time.
@@ -801,8 +815,15 @@ class MailIntakeHealth(StrEnum):
     #: No Graph credentials. Not a fault — intake is simply not part of this
     #: deployment — and reported separately so nobody hunts a dead scheduler.
     NOT_CONFIGURED = "not_configured"
-    #: Configured, but `poll_enabled` is off. A deliberate choice, said out loud.
+    #: Configured, but every way in is switched off. A deliberate choice, said
+    #: out loud.
     DISABLED = "disabled"
+    #: One way in has stopped and the other is still collecting. Mail is arriving,
+    #: so nothing looks wrong from the desk — and that is exactly the reason this
+    #: state exists rather than being folded into `OK`. It is the redundancy
+    #: reporting that it has been spent: whatever survives is now a single point
+    #: of failure, and the next fault is silent.
+    DEGRADED = "degraded"
     #: Enabled and configured, and no poll has ever been recorded. Either the
     #: worker and beat have never been started, or the migration adding
     #: `mail_intake_runs` has not been applied.
@@ -812,8 +833,10 @@ class MailIntakeHealth(StrEnum):
     #: The last poll reported a silent loss: messages listed that left no ledger
     #: row, or a folder holding unread mail a sweep returned nothing for.
     LOSING_MAIL = "losing_mail"
-    #: No poll for materially longer than the configured interval. The scheduler
-    #: is gone: this is the state that used to be invisible.
+    #: **Nothing is collecting.** No sweep for materially longer than the
+    #: configured interval *and* no live subscription — so neither way in is
+    #: working and mail is accumulating unread. This is the state that used to be
+    #: invisible.
     STALE = "stale"
 
 
@@ -824,6 +847,9 @@ MAIL_INTAKE_HEALTH_SEVERITY: tuple[MailIntakeHealth, ...] = (
     MailIntakeHealth.OK,
     MailIntakeHealth.NOT_CONFIGURED,
     MailIntakeHealth.DISABLED,
+    #: Below the rest because mail is still being collected. Above `OK` because
+    #: the deployment has no fallback left.
+    MailIntakeHealth.DEGRADED,
     MailIntakeHealth.LOSING_MAIL,
     MailIntakeHealth.FAILING,
     MailIntakeHealth.NEVER_RUN,

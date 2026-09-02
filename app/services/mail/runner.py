@@ -30,6 +30,7 @@ from app.services.fnol.audit import AuditService
 from app.services.fnol.ingestion import FNOLIngestionService
 from app.services.fnol.service import FNOLService
 from app.services.mail.intake import MailIntakeService, MailIntakeSummary
+from app.services.mail.subscription import MailSubscriptionService
 from app.services.notifications.service import NotificationService
 
 logger = get_logger(__name__)
@@ -56,6 +57,60 @@ def build_mail_intake_service(
         config=config.graph,
         fnol_config=config.fnol,
     )
+
+
+async def run_notified_message(
+    graph_message_id: str,
+    *,
+    client: GraphMailClient | None = None,
+    config: Settings | None = None,
+) -> MailIntakeSummary:
+    """Collect the one message a change notification named.
+
+    The webhook's counterpart to `run_mail_intake`, and the same session
+    arrangement: opened directly rather than through `session_scope`, because
+    intake commits once per message and a scope that committed again at the end
+    would blur the boundary that makes a partial batch safe.
+    """
+    factory = get_session_factory()
+    async with factory() as session:
+        service = build_mail_intake_service(session, client=client, config=config)
+        try:
+            return await service.collect_one(graph_message_id)
+        except Exception:
+            await session.rollback()
+            raise
+
+
+async def run_subscription_renewal(
+    *,
+    client: GraphMailClient | None = None,
+    config: Settings | None = None,
+) -> str | None:
+    """Create or renew the Graph subscription. Returns its id, or `None`.
+
+    `None` means the webhook is not configured — no public URL, no client state —
+    which is the ordinary state of a machine that runs on the poll alone and is
+    not a failure to report.
+
+    This commits, unlike the rest of this module, because there is no request to
+    own the transaction: the caller is a beat tick or a lifecycle notification.
+    """
+    resolved = config or settings
+    factory = get_session_factory()
+    async with factory() as session:
+        service = MailSubscriptionService(
+            MailIntakeRepository(session),
+            client or get_mail_client(resolved.graph),
+            config=resolved.graph,
+        )
+        try:
+            subscription = await service.ensure()
+        except Exception:
+            await session.rollback()
+            raise
+        await session.commit()
+        return subscription.subscription_id if subscription else None
 
 
 async def run_mail_intake(

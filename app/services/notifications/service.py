@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.core.logging import get_logger
-from app.domain.enums import NotificationKind, NotificationTone
+from app.domain.enums import MailIntakeHealth, NotificationKind, NotificationTone
 from app.models.notification import Notification
 from app.repositories.notification import NotificationRepository
 
@@ -332,7 +332,7 @@ class NotificationService:
         last_run_age_seconds: float | None,
         dedupe_key: str,
     ) -> Notification | None:
-        """Announce that mail is not being collected.
+        """Announce that something is wrong with mailbox intake.
 
         The only producer here that is not about a notice, and the reason it
         belongs on the same panel is the reader: a handler waiting on a broker's
@@ -340,10 +340,14 @@ class NotificationService:
         other row on the panel announces mail that arrived; this one announces
         mail that cannot.
 
-        `critical` rather than `warning`. Nothing else in the product silently
-        drops inbound claims, and the tone is what decides whether somebody looks
-        today or on Monday.
+        **The title and tone follow the state, and `degraded` is the reason why.**
+        Intake has two independent ways in, so one of them dying leaves mail
+        arriving normally — announcing that as "not collecting", in critical red,
+        is a false alarm, and false alarms are how the true ones get ignored. It
+        gets a warning and a title that says what it is: the fallback is gone, and
+        the next fault will be silent.
         """
+        degraded = str(state) == MailIntakeHealth.DEGRADED.value
         age = (
             f"{round(last_run_age_seconds / 3600, 1)} hours"
             if last_run_age_seconds and last_run_age_seconds >= 3600
@@ -351,8 +355,12 @@ class NotificationService:
         )
         return await self.record(
             kind=NotificationKind.MAIL_INTAKE_UNHEALTHY,
-            tone=NotificationTone.CRITICAL,
-            title="Mailbox intake is not collecting",
+            tone=NotificationTone.WARNING if degraded else NotificationTone.CRITICAL,
+            title=(
+                "Mailbox intake has lost its fallback"
+                if degraded
+                else "Mailbox intake is not collecting"
+            ),
             body=detail,
             dedupe_key=dedupe_key,
             occurred_at=last_run_at,

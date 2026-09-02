@@ -209,6 +209,53 @@ class MailIntakeService:
         await self._record_run(summary, started_at=started_at, error=None)
         return summary
 
+    async def collect_one(self, graph_message_id: str) -> MailIntakeSummary:
+        """Collect a single message, named by a change notification.
+
+        The webhook's counterpart to `poll`. A notification carries the message's
+        id and no content, so the message still has to be fetched — Graph's rich
+        notifications would carry it, at the cost of managing an encryption
+        certificate for data we can simply ask for.
+
+        **Deliberately narrow.** No watermark, no paging, no reconciliation: one
+        id in, one message collected, and the same `_collect` the sweep uses so
+        the two paths cannot diverge on what collecting *means*. Everything that
+        makes this safe to race against the poll is already in `_collect` — the
+        ledger's unique keys on both ids, and the attempt counter.
+        """
+        summary = MailIntakeSummary(mailbox=self._client.mailbox)
+        #: On the summary rather than passed to `_record_run`, because that is
+        #: where `poll` puts it and the run row reads it from one place.
+        summary.trigger = MailIntakeTrigger.WEBHOOK
+        started_at = datetime.now(UTC)
+
+        message = await self._client.get_message(graph_message_id)
+        if message is None:
+            #: Gone between the notification and this fetch. Ordinary rather than
+            #: exceptional: a handler can move or delete a message in the seconds
+            #: it takes us to be told about it, and there is nothing to collect.
+            summary.dropped += 1
+            logger.info("mail_intake_notified_message_gone", graph_message_id=graph_message_id)
+        else:
+            summary.fetched = 1
+            try:
+                await self._collect(message, summary)
+            except Exception as exc:
+                summary.failed += 1
+                await self._record_failure(message, exc)
+
+        logger.info(
+            "mail_intake_notification_collected",
+            mailbox=summary.mailbox,
+            fetched=summary.fetched,
+            ingested=summary.ingested,
+            duplicates=summary.duplicates,
+            failed=summary.failed,
+            dropped=summary.dropped,
+        )
+        await self._record_run(summary, started_at=started_at, error=None)
+        return summary
+
     async def _record_run(
         self,
         summary: MailIntakeSummary,

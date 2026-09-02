@@ -176,6 +176,11 @@ class MailIntakeStatusResult(SchemaBase):
     The endpoint behind this exists because "why has nothing arrived since
     Tuesday" had no answer that did not involve reading a worker's log — and when
     the poller is dead there is no log to read, because nothing is writing one.
+
+    **Read the two limbs, not the aggregate.** `sweep_collecting` and
+    `webhook_collecting` are the fields that matter: intake has two independent
+    ways in and either alone keeps mail arriving, so `healthy` going false is a
+    late signal and `last_run_at` cannot tell you which path stopped.
     """
 
     #: The single worst thing true of intake right now.
@@ -188,8 +193,38 @@ class MailIntakeStatusResult(SchemaBase):
     configured: bool
     poll_enabled: bool
     poll_interval_seconds: int
-    #: Silence longer than this counts as stopped.
+    #: Sweep silence longer than this counts as stopped.
     stale_after_seconds: int
+    #: Whether change notifications are configured here at all. False is ordinary
+    #: on a machine with no public URL, and is not a fault.
+    webhook_ready: bool
+
+    # -- The scheduled sweep -------------------------------------------------
+    #: Whether beat is sweeping on time. Graded on the sweep's own ledger rows,
+    #: never on `last_run_at`: a webhook run refreshes that and would hide a
+    #: dead scheduler behind it.
+    sweep_collecting: bool
+    last_sweep_at: datetime | None
+    last_sweep_age_seconds: float | None
+
+    # -- Change notifications ------------------------------------------------
+    #: Whether a live Graph subscription exists, so the mailbox can push to us.
+    webhook_collecting: bool
+    subscription_id: str | None
+    subscription_expires_at: datetime | None
+    #: Signed: negative once lapsed, so a dead subscription still reports how
+    #: long it has been dead rather than bottoming out at zero.
+    subscription_expires_in_seconds: float | None
+    #: Renewals so far. The figure that shows at a glance whether the renewal
+    #: task is actually running.
+    subscription_renewal_count: int | None
+    last_webhook_at: datetime | None
+    last_webhook_age_seconds: float | None
+
+    #: Set when `.env` was edited after the API loaded its settings. Non-null
+    #: means every threshold here is the superseded one and the verdict may be an
+    #: artefact — the API needs restarting before any of this is believable.
+    config_stale_seconds: float | None
 
     last_run_at: datetime | None
     last_run_age_seconds: float | None
@@ -198,8 +233,8 @@ class MailIntakeStatusResult(SchemaBase):
     last_run_error: str | None
     last_success_at: datetime | None
     last_success_age_seconds: float | None
-    #: True only when the scheduler itself has polled recently. False means mail
-    #: is moving because a human is pressing the button.
+    #: Whether beat has ever recorded a sweep at all. False with mail arriving
+    #: means it is arriving by notification or by hand.
     scheduled_run_seen: bool
 
     fetched: int | None
@@ -250,6 +285,18 @@ def to_status_result(
         poll_enabled=report.poll_enabled,
         poll_interval_seconds=report.poll_interval_seconds,
         stale_after_seconds=report.stale_after_seconds,
+        webhook_ready=report.webhook_ready,
+        sweep_collecting=report.sweep_collecting,
+        last_sweep_at=report.last_sweep_at,
+        last_sweep_age_seconds=report.last_sweep_age_seconds,
+        webhook_collecting=report.webhook_collecting,
+        subscription_id=report.subscription_id,
+        subscription_expires_at=report.subscription_expires_at,
+        subscription_expires_in_seconds=report.subscription_expires_in_seconds,
+        subscription_renewal_count=report.subscription_renewal_count,
+        last_webhook_at=report.last_webhook_at,
+        last_webhook_age_seconds=report.last_webhook_age_seconds,
+        config_stale_seconds=report.config_stale_seconds,
         last_run_at=report.last_run_at,
         last_run_age_seconds=report.last_run_age_seconds,
         last_run_trigger=report.last_run_trigger,

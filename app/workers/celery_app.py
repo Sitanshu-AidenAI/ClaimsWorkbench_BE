@@ -125,6 +125,26 @@ if settings.policy_library.enabled:
         reap_interval_seconds=settings.policy_library.reap_interval_seconds,
     )
 
+#: The subscription's renewal, scheduled only where the webhook is configured.
+#:
+#: Registered separately from the poll because the two are independent: a
+#: deployment can run on notifications with a slow reconciling sweep, on the sweep
+#: alone with no public URL, or on both. What it must not do is run on
+#: notifications with no renewal — Graph's ceiling for a mail subscription is 4230
+#: minutes, so that arrangement collects mail for three days and then stops
+#: without saying so.
+if settings.graph.webhook_ready:
+    celery_app.conf.beat_schedule["renew-mail-subscription"] = {
+        "task": "app.workers.tasks.renew_mail_subscription",
+        "schedule": float(settings.graph.renewal_interval_seconds),
+    }
+    logger.info(
+        "mail_subscription_schedule_registered",
+        interval_seconds=settings.graph.renewal_interval_seconds,
+        renew_before_minutes=settings.graph.renew_before_minutes,
+        lifetime_minutes=settings.graph.subscription_lifetime_minutes,
+    )
+
 if settings.graph.poll_enabled and settings.graph.configured:
     celery_app.conf.beat_schedule["poll-mail-intake"] = {
         "task": "app.workers.tasks.poll_mail_intake",

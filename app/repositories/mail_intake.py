@@ -15,8 +15,13 @@ from datetime import datetime
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.enums import MailIntakeStatus
-from app.models.mail_intake import MailIntakeAttachment, MailIntakeMessage, MailIntakeRun
+from app.domain.enums import MailIntakeStatus, MailIntakeTrigger
+from app.models.mail_intake import (
+    MailIntakeAttachment,
+    MailIntakeMessage,
+    MailIntakeRun,
+    MailSubscription,
+)
 
 
 class MailIntakeRepository:
@@ -155,6 +160,56 @@ class MailIntakeRepository:
     # process from the one that writes it, which is the whole point: see
     # `MailIntakeRun`.
 
+    # -- The Graph subscription ----------------------------------------------
+
+    async def get_subscription(self, *, mailbox: str, resource: str) -> MailSubscription | None:
+        """The subscription we hold for this mailbox and resource, if any.
+
+        Keyed on both because the resource carries the folder: pointing intake at
+        a different folder is a different subscription, not a renewal of the one
+        watching the old one.
+        """
+        statement = select(MailSubscription).where(
+            MailSubscription.mailbox == mailbox,
+            MailSubscription.resource == resource,
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def list_subscription_ids(self) -> frozenset[str]:
+        """Every Graph subscription id we believe is ours.
+
+        Read on every notification, to refuse one that names a subscription we
+        did not create — see `app.domain.mail_subscription.authentic`. A frozenset
+        because the caller only ever asks whether one is in it.
+        """
+        statement = select(MailSubscription.subscription_id)
+        return frozenset((await self._session.execute(statement)).scalars().all())
+
+    async def newest_subscription(self, mailbox: str | None = None) -> MailSubscription | None:
+        """The longest-lived subscription on this mailbox, whatever it watches.
+
+        Resource-agnostic, unlike `get_subscription`, and deliberately: the health
+        question is "is anything set up to notify us", which a subscription on an
+        unexpected folder answers *yes* to. A subscription watching the wrong
+        folder is a real fault but it is a different one, and `ensure` already
+        replaces it — reporting it as "no subscription" here would send an
+        operator hunting a renewal problem that does not exist.
+
+        Ordered by expiry so that a mailbox somehow holding two rows is graded on
+        the one that will keep delivering, which is the one Graph will honour.
+        """
+        statement = select(MailSubscription).order_by(MailSubscription.expires_at.desc()).limit(1)
+        if mailbox:
+            statement = statement.where(MailSubscription.mailbox == mailbox)
+        return (await self._session.execute(statement)).scalars().first()
+
+    def add_subscription(self, subscription: MailSubscription) -> MailSubscription:
+        self._session.add(subscription)
+        return subscription
+
+    async def delete_subscription(self, subscription: MailSubscription) -> None:
+        await self._session.delete(subscription)
+
     def add_run(self, run: MailIntakeRun) -> MailIntakeRun:
         self._session.add(run)
         return run
@@ -169,6 +224,27 @@ class MailIntakeRepository:
         `never_run` is the honest answer for an address nothing has polled.
         """
         statement = select(MailIntakeRun).order_by(MailIntakeRun.started_at.desc()).limit(1)
+        if mailbox:
+            statement = statement.where(MailIntakeRun.mailbox == mailbox)
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def latest_run_by_trigger(
+        self, trigger: MailIntakeTrigger, mailbox: str | None = None
+    ) -> MailIntakeRun | None:
+        """The most recent run of one particular kind.
+
+        Health needs this because `latest_run` cannot answer the question that
+        matters once notifications are on. Both ways in write to the same ledger,
+        so a webhook run refreshes "the last run" and a dead scheduler stops
+        being visible in it — and vice versa. Grading a path means looking only
+        at that path's own rows.
+        """
+        statement = (
+            select(MailIntakeRun)
+            .where(MailIntakeRun.trigger == trigger)
+            .order_by(MailIntakeRun.started_at.desc())
+            .limit(1)
+        )
         if mailbox:
             statement = statement.where(MailIntakeRun.mailbox == mailbox)
         return (await self._session.execute(statement)).scalars().first()

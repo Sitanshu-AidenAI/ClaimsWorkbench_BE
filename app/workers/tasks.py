@@ -28,7 +28,12 @@ from app.services.intelligence.runner import (
     run_case_pipeline,
     run_document_index,
 )
-from app.services.mail.runner import prune_mail_intake_run_records, run_mail_intake
+from app.services.mail.runner import (
+    prune_mail_intake_run_records,
+    run_mail_intake,
+    run_notified_message,
+    run_subscription_renewal,
+)
 from app.services.policies.ingestion import TransientIngestError
 from app.services.policies.runner import (
     release_stale_ingest,
@@ -145,6 +150,79 @@ def ping_dependencies(self: Any) -> dict[str, bool]:
     except Exception as exc:
         logger.error("celery_ping_failed", error=str(exc))
         raise self.retry(exc=exc) from exc
+
+
+@celery_app.task(
+    name="app.workers.tasks.ingest_notified_message",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    max_retries=3,
+    retry_jitter=True,
+)
+def ingest_notified_message(graph_message_id: str) -> dict[str, int | str]:
+    """Collect one message, named by a Graph change notification.
+
+    **Retried, unlike the poll.** The poll's own docstring explains why it is not:
+    the next scheduled sweep is its retry. A notification has no next sweep — Graph
+    said this message exists and said it once — so a transient failure here is a
+    message that never arrives. The ledger's attempt counter still bounds it, and
+    the unique keys still make a retry that succeeds after a partial write safe.
+
+    Kept small on purpose. The endpoint that queues this has about three seconds
+    before Graph gives up on it, so the fetch, the attachments and the pipeline all
+    happen here rather than there.
+    """
+    if not settings.graph.configured:
+        logger.warning("mail_notification_skipped_unconfigured")
+        return {"status": "not_configured"}
+
+    summary = run_async(run_notified_message(graph_message_id))
+
+    #: Hand it straight on, the same as the poll does. A notice that has just
+    #: landed should not wait out a `process_queued_cases` interval.
+    if summary.ingested:
+        process_queued_cases.delay()
+
+    return {
+        "status": "ok",
+        "graph_message_id": graph_message_id,
+        "ingested": summary.ingested,
+        "duplicates": summary.duplicates,
+        "failed": summary.failed,
+        "dropped": summary.dropped,
+    }
+
+
+@celery_app.task(name="app.workers.tasks.renew_mail_subscription")
+def renew_mail_subscription() -> dict[str, str | None]:
+    """Create the Graph subscription, or extend the one we hold.
+
+    **The task that stops intake going quiet.** Graph caps a mail subscription at
+    4230 minutes — 70½ hours — so a subscription created once and left alone dies
+    inside three days, and the failure is silent: the mailbox simply stops
+    notifying and the sweep goes on reporting healthy polls of nothing new.
+
+    Safe to call from anywhere and often. `MailSubscriptionService.ensure` decides
+    between leaving it alone, renewing it and recreating it, so beat's tick, a
+    `reauthorizationRequired` lifecycle event and a manual nudge are all the same
+    call.
+    """
+    if not settings.graph.webhook_ready:
+        logger.debug("mail_subscription_skipped_unconfigured")
+        return {"status": "not_configured", "subscription_id": None}
+
+    try:
+        subscription_id = run_async(run_subscription_renewal())
+    except Exception as exc:
+        #: Logged and swallowed rather than raised. A failed renewal is recoverable
+        #: — the next tick tries again, and there are four before the margin runs
+        #: out — and a task that raised would retry against a Graph that is very
+        #: likely still down.
+        logger.error("mail_subscription_renewal_failed", error=str(exc), exc_info=exc)
+        return {"status": "failed", "subscription_id": None}
+
+    return {"status": "ok", "subscription_id": subscription_id}
 
 
 @celery_app.task(name="app.workers.tasks.poll_mail_intake")

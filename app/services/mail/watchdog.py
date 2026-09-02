@@ -16,6 +16,13 @@ Two decisions define this module:
   process it watches reports nothing when that process is gone — which is the
   only case anyone cares about. The API is the process that is always up, and
   the process whose log the developer is already reading.
+* **It watches two ways in, not one.** Change notifications and the scheduled
+  sweep fail independently, and either alone keeps mail arriving — so a check
+  that only asked "has mail arrived recently" would go on saying yes with half
+  the intake path dead. `app.services.mail.health` grades them separately; this
+  announces whichever went. The cost of getting that wrong is not hypothetical:
+  the first version of this watchdog called a live webhook run "triggered by
+  hand" and demanded someone start a worker that was already running.
 * **It writes a notification, not just a log line.** A log line is only read by
   someone who already suspects a problem. The desk panel is read by handlers who
   do not, and "no mail has been collected for six hours" is exactly the sentence
@@ -50,6 +57,15 @@ logger = get_logger(__name__)
 #: threshold is minutes wide, so checking every minute detects it just as fast.
 MINIMUM_CHECK_INTERVAL_SECONDS = 60
 
+#: Ceiling, and it exists because the interval is no longer only about the sweep.
+#: Deriving the check period from `poll_interval_seconds` made sense when the
+#: sweep was the only thing watched — there is nothing to learn between two
+#: sweeps. It is now also watching a Graph subscription, whose expiry has nothing
+#: to do with the sweep cadence, and a deployment running notifications with a
+#: slow reconciling sweep would otherwise check for a lapsed subscription once an
+#: hour. Five minutes costs one query and keeps detection bounded either way.
+MAXIMUM_CHECK_INTERVAL_SECONDS = 300
+
 #: How long the first check waits, so a cold start has time to boot a worker
 #: before being accused of not having one. Without it, every `make dev` would
 #: announce `never_run` for its first few seconds.
@@ -58,7 +74,10 @@ STARTUP_GRACE_SECONDS = 90
 
 def check_interval_seconds(config: Settings | None = None) -> int:
     config = config or settings
-    return max(MINIMUM_CHECK_INTERVAL_SECONDS, config.graph.poll_interval_seconds)
+    return min(
+        MAXIMUM_CHECK_INTERVAL_SECONDS,
+        max(MINIMUM_CHECK_INTERVAL_SECONDS, config.graph.poll_interval_seconds),
+    )
 
 
 class MailIntakeWatchdog:
@@ -133,6 +152,28 @@ class MailIntakeWatchdog:
             messages = MailIntakeRepository(session)
             report = await MailIntakeHealthService(messages, config=self._config.graph).report()
 
+            if report.config_stale_seconds is not None:
+                # Every tick, and ahead of the verdict, because this invalidates
+                # it. The staleness threshold is derived from
+                # `poll_interval_seconds`, so an API holding a superseded `.env`
+                # grades a working scheduler against the wrong number and
+                # announces a fault that exists only in its own arithmetic —
+                # which is precisely what happened on 2 September, once an hour,
+                # for as long as the process stayed up. The worker has said this
+                # about itself since `_warn_if_configuration_is_stale`; the API
+                # was the process that could not.
+                logger.warning(
+                    "api_configuration_stale",
+                    poll_interval_seconds=report.poll_interval_seconds,
+                    stale_after_seconds=report.stale_after_seconds,
+                    detail=(
+                        "`.env` has been edited since this API loaded its settings. Its "
+                        "thresholds are the old ones and every intake verdict it "
+                        "produces — including a healthy one — is graded against "
+                        "superseded configuration. Restart the API."
+                    ),
+                )
+
             changed = report.state != self._last_state
             if report.healthy:
                 if changed and self._last_state is not None:
@@ -151,10 +192,18 @@ class MailIntakeWatchdog:
                     "mail_intake_unhealthy",
                     state=report.state.value,
                     mailbox=report.mailbox,
+                    #: Both limbs, because "the last run" is the field that
+                    #: cannot answer which path stopped — they share the ledger.
+                    sweep_collecting=report.sweep_collecting,
+                    last_sweep_age_seconds=report.last_sweep_age_seconds,
+                    webhook_collecting=report.webhook_collecting,
+                    subscription_id=report.subscription_id,
+                    subscription_expires_in_seconds=report.subscription_expires_in_seconds,
                     last_run_at=(report.last_run_at.isoformat() if report.last_run_at else None),
                     last_run_age_seconds=report.last_run_age_seconds,
                     last_run_trigger=report.last_run_trigger,
                     stale_after_seconds=report.stale_after_seconds,
+                    config_stale_seconds=report.config_stale_seconds,
                     detail=report.detail,
                 )
                 await self._announce(session, report)
@@ -174,11 +223,20 @@ class MailIntakeWatchdog:
         logged above but not announced: a handler cannot act on a deployment
         decision, and a panel that cries about deliberate settings gets ignored,
         taking the real alarms with it.
+
+        **The mailbox is part of the key.** `find_by_dedupe_key` is global, so a
+        key of state-and-hour alone means an alarm about one mailbox silences
+        every other mailbox's alarm for the rest of that hour — one address goes
+        quiet and the panel says nothing, which is the precise failure this
+        module was written to end. It surfaced as a test that could not raise its
+        own alarm because the developer's real inbox had already claimed the
+        hour.
         """
         if report.state == MailIntakeHealth.DISABLED:
             return
 
         hour = datetime.now(UTC).strftime("%Y-%m-%dT%H")
+        scope = report.mailbox or "unknown"
         notifications = NotificationService(NotificationRepository(session))
         recorded = await notifications.mail_intake_unhealthy(
             state=report.state,
@@ -186,7 +244,7 @@ class MailIntakeWatchdog:
             mailbox=report.mailbox,
             last_run_at=report.last_run_at,
             last_run_age_seconds=report.last_run_age_seconds,
-            dedupe_key=f"mail_intake.unhealthy:{report.state.value}:{hour}",
+            dedupe_key=f"mail_intake.unhealthy:{scope}:{report.state.value}:{hour}",
         )
         if recorded is not None:
             await session.commit()
