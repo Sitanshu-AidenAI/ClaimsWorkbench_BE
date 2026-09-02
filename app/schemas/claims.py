@@ -477,6 +477,12 @@ class InspectionCommissionRequest(SchemaBase):
 
     adjuster_name: str | None = Field(default=None, max_length=255)
     adjuster_firm: str | None = Field(default=None, max_length=255)
+    #: The adjuster's own address, and the one field here that changes who may do
+    #: what. Given it, the visit appears on that adjuster's board and they record
+    #: their own findings against it; left out, the visit belongs to nobody and the
+    #: handler records them. Optional like the rest, because a firm is instructed
+    #: before a person is named — see `ClaimInspection.adjuster_subject`.
+    adjuster_email: str | None = Field(default=None, max_length=320)
     scheduled_at: datetime | None = None
     report_due_at: datetime | None = None
 
@@ -687,6 +693,18 @@ class RecoveryOpenRequest(SchemaBase):
     def _normalise(self) -> RecoveryOpenRequest:
         object.__setattr__(self, "limitation_at", _as_utc(self.limitation_at))
         return self
+
+
+class RecoveryDeclineRequest(SchemaBase):
+    """Record that there is nothing worth recovering on this claim.
+
+    One required field, and the requirement is the point. This is the sentence a
+    supervisor reads when a limitation date has passed and nothing was pursued, so a
+    conclusion without a reason is not one anybody can review — and an optional
+    reason is one that arrives empty.
+    """
+
+    reason: str = Field(min_length=3, max_length=2000)
 
 
 class RecoveryProgressRequest(SchemaBase):

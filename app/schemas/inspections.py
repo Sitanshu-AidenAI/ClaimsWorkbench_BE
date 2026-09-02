@@ -178,6 +178,23 @@ class ReportOut(SchemaBase):
     id: uuid.UUID
     reference: str
     claimant: str
+    #: The notice's own account of the loss, in full.
+    #:
+    #: Carried here as well as on the queue row because the row cannot hold it: a
+    #: loss narrative runs to a paragraph, the row clamps it to two lines, and an
+    #: adjuster who opened the report to read the rest used to find it was the one
+    #: fact the pane did not have. The clamp is a layout decision; this is what
+    #: makes it a safe one.
+    loss_description: str
+    #: When the loss happened. Null where the notice never said, which is ordinary
+    #: on a fresh notification and is not the same as a date of zero.
+    date_of_loss: datetime | None
+    #: The claim's booking currency, and the only money an observation on it may be
+    #: priced in — `ClaimInspectionService.add_observation` refuses any other.
+    #: Carried here because the adjuster's pane is where findings are priced, and a
+    #: form that had to guess the currency would be the arithmetic bug this schema
+    #: has already been fixed for twice.
+    currency: str
     status: str
     #: Where the visit may go next, from `app.domain.inspection`. Sent rather than
     #: reimplemented, for the reason the workbench tab's copy explains.

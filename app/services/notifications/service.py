@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.core.logging import get_logger
-from app.domain.enums import NotificationKind, NotificationTone
+from app.domain.enums import MailIntakeHealth, NotificationKind, NotificationTone
 from app.models.notification import Notification
 from app.repositories.notification import NotificationRepository
 
@@ -173,6 +173,58 @@ class NotificationService:
             },
         )
 
+    async def claim_referred(
+        self,
+        *,
+        claim_id: uuid.UUID,
+        reference: str,
+        decision: str,
+        actor: str,
+        reason: str | None,
+        occurred_at: datetime,
+    ) -> Notification | None:
+        """Tell the desk that a claim has been put in front of a manager.
+
+        **Desk-wide, not addressed to a manager**, and that is a limitation rather
+        than a design: `notifications` has no addressee, because the table was built
+        for mailbox intake where there is nobody to address a row to. Routing an
+        escalation to *the* manager needs a manager relationship the handler
+        directory does not hold, and inventing one here would be inventing a rule the
+        business has not stated. Every manager sees it, which is strictly better than
+        the status quo, where nobody was told anything.
+
+        **The reason travels in the body.** It is the sentence the handler wrote
+        explaining what they need decided, and it is the whole content of a referral
+        — a notification that said only "a claim was referred" would send a manager
+        to the claim to find out what for.
+
+        `dedupe_key` is the claim, the verb and the instant. Two referrals of one
+        claim are two events a manager needs to see; the same referral re-emitted by
+        a retry is not.
+        """
+        stated = (reason or "").strip()
+        verb = "referred to a manager" if decision == "refer_to_manager" else "sent for approval"
+
+        return await self.record(
+            kind=NotificationKind.CLAIM_REFERRED,
+            #: `WARNING` rather than `INFO`: somebody has to pick this up. The FNOL
+            #: kinds report what the pipeline did; this is a request, and the panel
+            #: should not draw it in the same weight as "processing started".
+            tone=NotificationTone.WARNING,
+            title=f"{reference} {verb}",
+            body=(
+                f"{actor} {verb}. {stated}"
+                if stated
+                else (
+                    f"{actor} {verb} and gave no reason. Open the claim to see what is blocking it."
+                )
+            ),
+            dedupe_key=f"claim-referred:{claim_id}:{decision}:{occurred_at.isoformat()}",
+            occurred_at=occurred_at,
+            reference=reference,
+            context={"decision": decision, "actor": actor, "reason": stated or None},
+        )
+
     async def fnol_processing_started(
         self,
         *,
@@ -280,7 +332,7 @@ class NotificationService:
         last_run_age_seconds: float | None,
         dedupe_key: str,
     ) -> Notification | None:
-        """Announce that mail is not being collected.
+        """Announce that something is wrong with mailbox intake.
 
         The only producer here that is not about a notice, and the reason it
         belongs on the same panel is the reader: a handler waiting on a broker's
@@ -288,10 +340,14 @@ class NotificationService:
         other row on the panel announces mail that arrived; this one announces
         mail that cannot.
 
-        `critical` rather than `warning`. Nothing else in the product silently
-        drops inbound claims, and the tone is what decides whether somebody looks
-        today or on Monday.
+        **The title and tone follow the state, and `degraded` is the reason why.**
+        Intake has two independent ways in, so one of them dying leaves mail
+        arriving normally — announcing that as "not collecting", in critical red,
+        is a false alarm, and false alarms are how the true ones get ignored. It
+        gets a warning and a title that says what it is: the fallback is gone, and
+        the next fault will be silent.
         """
+        degraded = str(state) == MailIntakeHealth.DEGRADED.value
         age = (
             f"{round(last_run_age_seconds / 3600, 1)} hours"
             if last_run_age_seconds and last_run_age_seconds >= 3600
@@ -299,8 +355,12 @@ class NotificationService:
         )
         return await self.record(
             kind=NotificationKind.MAIL_INTAKE_UNHEALTHY,
-            tone=NotificationTone.CRITICAL,
-            title="Mailbox intake is not collecting",
+            tone=NotificationTone.WARNING if degraded else NotificationTone.CRITICAL,
+            title=(
+                "Mailbox intake has lost its fallback"
+                if degraded
+                else "Mailbox intake is not collecting"
+            ),
             body=detail,
             dedupe_key=dedupe_key,
             occurred_at=last_run_at,

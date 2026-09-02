@@ -222,3 +222,57 @@ class MailIntakeRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
 
 __all__ = ["MailIntakeAttachment", "MailIntakeMessage", "MailIntakeRun"]
+
+
+class MailSubscription(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """A live Microsoft Graph change-notification subscription on a mailbox.
+
+    **Stored because it has to survive a restart.** A subscription lives on
+    Graph's side and is addressed by an opaque id; lose the id and you can
+    neither renew it nor delete it, and the next boot creates a second one
+    alongside the first. Two subscriptions on one folder means every message
+    notified twice — harmless, because `mail_intake_messages` dedupes on both
+    ids, but it doubles the traffic and there is no way to clean up what you
+    cannot name.
+
+    **`notification_url` is stored, not assumed.** Graph posts to the address it
+    was *given*, which is not necessarily the address configured now: a dev
+    tunnel hands out a new hostname on restart, and a subscription pointing at
+    yesterday's tunnel renews perfectly happily while collecting nothing. Keeping
+    the URL is what lets `app.domain.mail_subscription.decide` tell a subscription
+    that needs renewing from one that needs replacing.
+
+    **One row per mailbox and resource.** The unique constraint is the guard
+    against the double-subscription above; a renewal updates this row rather than
+    adding one.
+
+    The `client_state` secret is deliberately **not** here. It is configuration,
+    it is the same for every subscription this service creates, and a credential
+    duplicated into a table is a credential in one more place than it needs to
+    be — see `GraphSettings.webhook_client_state`.
+    """
+
+    __tablename__ = "mail_subscriptions"
+
+    #: Graph's own id for the subscription. What renewal and deletion address.
+    subscription_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    #: The mailbox, as configured when the subscription was made.
+    mailbox: Mapped[str] = mapped_column(String(320), index=True)
+    #: The Graph resource path, e.g. `/users/{id}/mailFolders('inbox')/messages`.
+    #: Stored so a change of watched folder is visible as a different row.
+    resource: Mapped[str] = mapped_column(String(512))
+    #: Where Graph was told to post. See the class docstring.
+    notification_url: Mapped[str] = mapped_column(String(1024))
+    #: When Graph will stop delivering unless renewed. Never null: a subscription
+    #: with no known expiry is one nobody can renew in time.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    #: When this service last successfully renewed it, for the health panel and
+    #: for answering "why did this lapse".
+    renewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: How many times it has been renewed. Cheap, and it is the figure that shows
+    #: at a glance whether the renewal sweep is actually running.
+    renewal_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("mailbox", "resource", name="uq_mail_subscription_resource"),
+    )

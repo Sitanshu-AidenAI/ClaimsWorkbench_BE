@@ -22,7 +22,12 @@ from typing import Any
 
 import pytest
 
-from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationError,
+)
 from app.domain import inspection as rules
 from app.domain.enums import (
     AuditEventType,
@@ -796,3 +801,162 @@ def test_the_domain_layer_reads_no_clock() -> None:
     source = __import__("pathlib").Path(rules.__file__).read_text(encoding="utf-8")
     assert "datetime.now" not in source
     assert "utcnow" not in source
+
+
+# ---------------------------------------------------------------------------
+# Whose visit it is
+# ---------------------------------------------------------------------------
+
+
+class TestWhoMayRecord:
+    """Who is allowed to write findings, and whose findings they are.
+
+    The gap this closes: `INSPECTION_WORK_ROLES` named the loss adjuster and
+    explained at length why their report is their own work product — and every route
+    that *recorded* anything was gated on `CLAIM_WORK_ROLES`, which excludes them.
+    The one route they could reach was refused until attendance and an observation
+    existed, both of which only a handler could record, so an adjuster could never
+    clear a blocker they were not permitted to satisfy.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_handler_may_record_on_any_visit(self) -> None:
+        """Not laxity. They commission it, they chase it, and on a small loss they
+        write down what the adjuster told them on the telephone."""
+        service, claims, _, claim = await commissioned()
+
+        inspection = await service.authorise_recording(
+            claim,
+            roles=["claims-handler"],
+            subject="handler-1",
+            email="r.achebe@carrier.example",
+            actor="R. Achebe",
+        )
+
+        assert inspection is claims.inspection
+        #: Nothing claimed. A handler recording on somebody else's visit must not
+        #: quietly become its adjuster.
+        assert claims.inspection.adjuster_subject is None
+
+    @pytest.mark.asyncio
+    async def test_an_adjuster_may_record_on_the_visit_instructed_to_them(self) -> None:
+        service, claims, _ = build()
+        claim = make_claim()
+        await service.commission(
+            claim,
+            actor="R. Achebe",
+            adjuster_firm="Crawford & Co",
+            adjuster_email="H.Okonjo@Crawford.Example",
+        )
+
+        await service.authorise_recording(
+            claim,
+            roles=["loss-adjuster"],
+            subject="kc-9f1",
+            email="h.okonjo@crawford.example",
+            actor="H. Okonjo",
+        )
+
+        #: Adopted: from here the link is by account and survives the address
+        #: changing, which is why it is written on the first write rather than never.
+        assert claims.inspection.adjuster_subject == "kc-9f1"
+        #: The name too, because the row carried none — a firm was instructed and no
+        #: person was named.
+        assert claims.inspection.adjuster_name == "H. Okonjo"
+
+    @pytest.mark.asyncio
+    async def test_an_adjuster_is_refused_on_somebody_elses_visit(self) -> None:
+        """The reason the role gate alone was not enough to widen.
+
+        Admitting adjusters without this would let any adjuster record findings onto
+        any inspection on the desk, which is worse than the read-only board it
+        replaces.
+        """
+        service, claims, _ = build()
+        claim = make_claim()
+        await service.commission(
+            claim,
+            actor="R. Achebe",
+            adjuster_email="someone.else@crawford.example",
+        )
+
+        with pytest.raises(PermissionDeniedError) as raised:
+            await service.authorise_recording(
+                claim,
+                roles=["loss-adjuster"],
+                subject="kc-9f1",
+                email="h.okonjo@crawford.example",
+                actor="H. Okonjo",
+            )
+
+        assert "not assigned to you" in str(raised.value)
+        assert claims.inspection.adjuster_subject is None
+
+    @pytest.mark.asyncio
+    async def test_an_adjuster_is_refused_on_a_visit_instructed_to_nobody(self) -> None:
+        """A firm instructed with no named contact belongs to nobody.
+
+        Not a gap to be filled in by whoever asks first: it is the ordinary state of
+        a visit, and it means the handler records the findings — which is what
+        happened for every inspection before these columns existed.
+        """
+        service, _, _, claim = await commissioned()
+
+        with pytest.raises(PermissionDeniedError):
+            await service.authorise_recording(
+                claim,
+                roles=["loss-adjuster"],
+                subject="kc-9f1",
+                email="h.okonjo@crawford.example",
+                actor="H. Okonjo",
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_claimed_visit_stops_answering_to_the_address(self) -> None:
+        """Once an account is on the row it is the answer.
+
+        Otherwise a stale address would re-open the visit to whoever holds that
+        mailbox next, which is the failure mode of identifying people by email.
+        """
+        service, claims, _ = build()
+        claim = make_claim()
+        await service.commission(
+            claim, actor="R. Achebe", adjuster_email="h.okonjo@crawford.example"
+        )
+        claims.inspection.adjuster_subject = "kc-first"
+
+        with pytest.raises(PermissionDeniedError):
+            await service.authorise_recording(
+                claim,
+                roles=["loss-adjuster"],
+                subject="kc-second",
+                email="h.okonjo@crawford.example",
+                actor="Somebody Else",
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_handler_who_is_also_an_adjuster_keeps_the_handler_answer(self) -> None:
+        """Holding both personas is a union, not a narrowing."""
+        service, _, _, claim = await commissioned()
+
+        await service.authorise_recording(
+            claim,
+            roles=["loss-adjuster", "claims-handler"],
+            subject="both-1",
+            email="both@carrier.example",
+            actor="Both Hats",
+        )
+
+    @pytest.mark.asyncio
+    async def test_recording_is_refused_before_a_visit_is_commissioned(self) -> None:
+        """The 404 comes first: there is nothing to be authorised against."""
+        service, _, _ = build()
+
+        with pytest.raises(NotFoundError):
+            await service.authorise_recording(
+                make_claim(),
+                roles=["claims-handler"],
+                subject="handler-1",
+                email="r.achebe@carrier.example",
+                actor="R. Achebe",
+            )

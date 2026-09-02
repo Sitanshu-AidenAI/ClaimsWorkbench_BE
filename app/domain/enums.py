@@ -787,13 +787,27 @@ class MailIntakeTrigger(StrEnum):
     MANUAL = "manual"
     #: `python -m app.services.mail`, for setting a mailbox up.
     CLI = "cli"
+    #: A Graph change notification — the mailbox told us, rather than us asking.
+    #: Distinct from `SCHEDULE` because it is the *health* distinction that
+    #: matters once notifications are on: a desk whose only runs are `schedule`
+    #: has a working sweep and a dead subscription, which collects mail slowly
+    #: and looks entirely well.
+    WEBHOOK = "webhook"
 
 
 class MailIntakeHealth(StrEnum):
-    """What the mailbox poller looks like from outside itself.
+    """What mailbox intake looks like from outside itself.
 
     Ordered worst-last is deliberate: `WORST_FIRST` below reads this as a
     severity ranking, so a caller never has to hand-order the states.
+
+    **Intake has two ways in and these states grade both.** A change
+    notification is the mailbox telling us; a scheduled sweep is us asking. They
+    fail independently and they hide each other's failures: a live subscription
+    keeps mail flowing while beat is dead, and a running sweep keeps mail flowing
+    while the subscription has lapsed. Either way mail still arrives, so no
+    single "is mail arriving" question can find it — which is what `DEGRADED` is
+    for.
     """
 
     #: Collecting, on time.
@@ -801,8 +815,15 @@ class MailIntakeHealth(StrEnum):
     #: No Graph credentials. Not a fault — intake is simply not part of this
     #: deployment — and reported separately so nobody hunts a dead scheduler.
     NOT_CONFIGURED = "not_configured"
-    #: Configured, but `poll_enabled` is off. A deliberate choice, said out loud.
+    #: Configured, but every way in is switched off. A deliberate choice, said
+    #: out loud.
     DISABLED = "disabled"
+    #: One way in has stopped and the other is still collecting. Mail is arriving,
+    #: so nothing looks wrong from the desk — and that is exactly the reason this
+    #: state exists rather than being folded into `OK`. It is the redundancy
+    #: reporting that it has been spent: whatever survives is now a single point
+    #: of failure, and the next fault is silent.
+    DEGRADED = "degraded"
     #: Enabled and configured, and no poll has ever been recorded. Either the
     #: worker and beat have never been started, or the migration adding
     #: `mail_intake_runs` has not been applied.
@@ -812,8 +833,10 @@ class MailIntakeHealth(StrEnum):
     #: The last poll reported a silent loss: messages listed that left no ledger
     #: row, or a folder holding unread mail a sweep returned nothing for.
     LOSING_MAIL = "losing_mail"
-    #: No poll for materially longer than the configured interval. The scheduler
-    #: is gone: this is the state that used to be invisible.
+    #: **Nothing is collecting.** No sweep for materially longer than the
+    #: configured interval *and* no live subscription — so neither way in is
+    #: working and mail is accumulating unread. This is the state that used to be
+    #: invisible.
     STALE = "stale"
 
 
@@ -824,6 +847,9 @@ MAIL_INTAKE_HEALTH_SEVERITY: tuple[MailIntakeHealth, ...] = (
     MailIntakeHealth.OK,
     MailIntakeHealth.NOT_CONFIGURED,
     MailIntakeHealth.DISABLED,
+    #: Below the rest because mail is still being collected. Above `OK` because
+    #: the deployment has no fallback left.
+    MailIntakeHealth.DEGRADED,
     MailIntakeHealth.LOSING_MAIL,
     MailIntakeHealth.FAILING,
     MailIntakeHealth.NEVER_RUN,
@@ -848,6 +874,17 @@ class NotificationKind(StrEnum):
     FNOL_PROCESSING_STARTED = "fnol.processing_started"
     FNOL_PROCESSING_SUCCEEDED = "fnol.processing_succeeded"
     FNOL_PROCESSING_FAILED = "fnol.processing_failed"
+    #: A handler put a claim in front of a manager — referred it, or sent it for
+    #: approval. One kind for both verbs, with the verb in `context`, which is the
+    #: same arrangement `AuditEventType.CLAIM_DECIDED` uses and for the same reason:
+    #: a reader filtering for escalations wants both, and the two are told apart by
+    #: the field that actually differs.
+    #:
+    #: It earns a place here on the enum's own test — a manager needs to know
+    #: *without having asked*. Before this, referring changed a status and wrote an
+    #: audit line, and the claim's arrival on the approval queue was the only signal
+    #: that anything had happened. Nobody was told.
+    CLAIM_REFERRED = "claim.referred"
 
     #: Mailbox collection has stopped, or has started losing mail. The one kind
     #: here that is not about a notice, and it belongs on the panel for the same
@@ -964,6 +1001,13 @@ class AuditEventType(StrEnum):
     RECOVERY_OPENED = "claim.recovery_opened"
     RECOVERY_PROGRESSED = "claim.recovery_progressed"
     RECOVERY_TASK_SET = "claim.recovery_task_set"
+    #: A handler concluded there is nothing to recover, and the reason they gave.
+    #: Its own event rather than a note, because it is the fact a supervisor looks
+    #: for when a limitation date has passed and nothing was pursued.
+    RECOVERY_DECLINED = "claim.recovery_declined"
+    #: And the reversal: opening a route withdraws that conclusion. Recorded so the
+    #: trail shows both statements rather than only the one standing now.
+    RECOVERY_RECONSIDERED = "claim.recovery_reconsidered"
     SIU_REFERRED = "claim.siu_referred"
     SIU_STATUS_CHANGED = "claim.siu_status_changed"
     FRAUD_INDICATOR_DISPOSED = "claim.fraud_indicator_disposed"

@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -625,7 +625,10 @@ class ClaimRepository:
         return (await self._session.execute(statement)).scalars().all()
 
     async def inspection_queue(
-        self, *, adjuster_name: str | None = None
+        self,
+        *,
+        adjuster_subject: str | None = None,
+        adjuster_email: str | None = None,
     ) -> Sequence[tuple[ClaimInspection, Claim, int, str | None, int]]:
         """Every commissioned inspection, with its claim and its three totals.
 
@@ -702,8 +705,25 @@ class ClaimRepository:
                 ClaimInspection.commissioned_at.desc(),
             )
         )
-        if adjuster_name:
-            statement = statement.where(ClaimInspection.adjuster_name == adjuster_name)
+        #: Narrowing to one adjuster's own work, and matched on identity rather than
+        #: on `adjuster_name`. The name was free text a handler typed, so the filter
+        #: it supported was a string comparison against a display name — which is
+        #: why the board could only ever offer the whole desk and say so. Either
+        #: column identifies the person: the subject once they have recorded
+        #: something, the address before that. See `domain.inspection.owns_inspection`
+        #: for why the address is only trusted while no subject has been claimed.
+        clauses = []
+        if adjuster_subject:
+            clauses.append(ClaimInspection.adjuster_subject == adjuster_subject)
+        if adjuster_email:
+            clauses.append(
+                and_(
+                    ClaimInspection.adjuster_subject.is_(None),
+                    func.lower(ClaimInspection.adjuster_email) == adjuster_email.strip().lower(),
+                )
+            )
+        if clauses:
+            statement = statement.where(or_(*clauses))
 
         rows = (await self._session.execute(statement)).all()
         return [(row[0], row[1], int(row[2]), row[3], int(row[4])) for row in rows]

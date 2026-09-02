@@ -613,8 +613,14 @@ class ClaimRecoveriesOut(SchemaBase):
     loss-assessment lanes — the only capability common to every one — and
     reinsurance attachment is a criterion-4 requirement at CLAWS update. What exists
     now is the register a handler works; **detecting** an opportunity automatically
-    is still ahead, and `no_recovery_reason` stays null rather than asserting that a
-    claim has nothing worth pursuing.
+    is still ahead.
+
+    `no_recovery_reason` is a handler's own conclusion, held on the claim. It used to
+    be hardcoded null here because there was nowhere to record one, which meant an
+    empty register was read as *not looked at yet* on every claim — including the
+    ones where somebody had looked and closed it. `consideration_overdue` is the
+    other half: an empty register is only worth flagging once the claim has been
+    decided, and before that it is the ordinary state of a new claim.
     """
 
     available: bool
@@ -623,6 +629,15 @@ class ClaimRecoveriesOut(SchemaBase):
     events: list[RecoveryEventOut]
     tasks: list[RecoveryTaskOut]
     no_recovery_reason: str | None
+    #: Nothing is recorded either way *and* the claim has been decided.
+    #:
+    #: Computed here rather than by the client, because deciding when an empty
+    #: register becomes a problem is a fact about the claim's lifecycle and the
+    #: client should not hold a second copy of that. The tab drew a warning on every
+    #: claim while this did not exist, which is a marker that says nothing: recovery
+    #: is reviewed once liability and quantum are settled, so a notice still in
+    #: review has not missed anything.
+    consideration_overdue: bool
     #: What is still expected back across the register, and what has arrived. Both
     #: null when the register is empty or its rows disagree on a currency — a total
     #: labelled with money it is not in is worse than no total.

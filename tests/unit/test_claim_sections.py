@@ -225,6 +225,10 @@ def make_claim(**overrides: Any) -> SimpleNamespace:
         "paid_minor": 0,
         "fraud_flag": False,
         "over_authority": False,
+        #: The handler's conclusion that there is nothing to recover. Null on a claim
+        #: nobody has reached one on — which is where the recoveries section's three
+        #: empty states are told apart.
+        "no_recovery_reason": None,
         "closed_at": None,
         "handler_name": "R. Marsh",
         "loss_type": "fire",

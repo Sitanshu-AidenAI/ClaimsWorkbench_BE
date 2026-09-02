@@ -125,6 +125,24 @@ class ClaimRecoveryService:
         )
         await self._claims.flush()
 
+        #: Opening a route contradicts a standing conclusion that there is nothing to
+        #: recover, so the conclusion goes. Cleared here rather than refused: the act
+        #: of opening one *is* the reversal, and making the handler retract it first
+        #: would leave a register that both pursues a recovery and says there is none
+        #: every time somebody forgot. The trail keeps both statements.
+        if claim.no_recovery_reason is not None:
+            withdrawn = claim.no_recovery_reason
+            claim.no_recovery_reason = None
+            await self._claims.flush()
+            self._audit.claim(
+                claim,
+                event_type=AuditEventType.RECOVERY_RECONSIDERED,
+                summary=(f"{actor} reopened recovery on this claim, withdrawing: {withdrawn}"),
+                actor=actor,
+                before={"no_recovery_reason": withdrawn},
+                after={"no_recovery_reason": None},
+            )
+
         self._audit.claim(
             claim,
             event_type=AuditEventType.RECOVERY_OPENED,
@@ -141,6 +159,61 @@ class ClaimRecoveryService:
             },
         )
         return recovery
+
+    async def decline(self, claim: Claim, *, reason: str, actor: str) -> Claim:
+        """Record that there is nothing worth recovering on this claim.
+
+        The answer to a question the register could only ask. An empty register meant
+        both "nobody has looked" and "somebody looked and found nothing", and the
+        section had to read it as the first — so a claim whose recovery had been
+        considered and closed still displayed *"Recovery has not been considered
+        yet"*, on every claim, forever.
+
+        **A reason is required and is not a formality.** It is the sentence a
+        supervisor reads six months later when a limitation date has passed and
+        somebody asks why nothing was pursued. "No" without a because is not a
+        conclusion anybody can review.
+
+        **Refused while a live recovery exists.** A claim cannot both be pursuing
+        salvage and hold that there is nothing to recover, and the register — not
+        this column — is the authority on what is being pursued. A handler who has
+        given up on the routes they opened writes them off first, which is what
+        `progress` is for.
+
+        Allowed on a decided claim, for the same reason `open` is: recovery outlives
+        the settlement, and so does the decision not to pursue one.
+        """
+        cleaned = reason.strip()
+        if not cleaned:
+            raise ValidationError(
+                "Say why there is nothing to recover. The reason is what a supervisor "
+                "reads when a limitation date has passed and nothing was pursued."
+            )
+
+        live = [
+            recovery
+            for recovery in await self._claims.list_recoveries(claim.id)
+            if not rules.is_closed(recovery.status)
+        ]
+        if live:
+            raise ConflictError(
+                f"{claim.reference} has {len(live)} recovery route(s) still open. Write "
+                "them off or bank them before recording that there is nothing to recover."
+            )
+
+        before = claim.no_recovery_reason
+        claim.no_recovery_reason = cleaned
+        await self._claims.flush()
+
+        self._audit.claim(
+            claim,
+            event_type=AuditEventType.RECOVERY_DECLINED,
+            summary=f"{actor} recorded that there is nothing to recover: {cleaned}",
+            actor=actor,
+            before={"no_recovery_reason": before},
+            after={"no_recovery_reason": cleaned},
+        )
+        return claim
 
     # -- Moving one ----------------------------------------------------------
 

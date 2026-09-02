@@ -216,11 +216,48 @@ class TestApprovalBlocks:
             )
         )
 
-    def test_a_fraud_flag_blocks(self) -> None:
+    def test_an_undecided_fraud_indicator_blocks(self) -> None:
+        """The fraud block reads the review, not `claims.fraud_flag`.
+
+        This test used to assert the opposite — that the flag alone blocked — and
+        that rule was a dead end rather than a strict one: `fraud_flag` is written
+        only by triage and **nothing in the product ever cleared it**, so a handler
+        who accepted every red flag was told to "clear the fraud review flag" by a
+        screen offering no way to clear it. The claim could not be approved by
+        anybody, ever.
+        """
         blocks = lifecycle.approval_blocks(
-            make_claim(fraud_flag=True), assignment=assigned(), authority_limit_minor=None
+            make_claim(fraud_flag=True),
+            assignment=assigned(),
+            authority_limit_minor=None,
+            outstanding_indicators=1,
         )
         assert BlockCode.FRAUD_FLAG in codes(blocks)
+
+    def test_the_flag_alone_no_longer_blocks(self) -> None:
+        """The reported bug, pinned. Every indicator decided means the claim can move.
+
+        `fraud_flag` stays true — it is the machine's signal, and it still drives the
+        fraud queue and the score. What it stops being is a gate with no key.
+        """
+        blocks = lifecycle.approval_blocks(
+            make_claim(fraud_flag=True),
+            assignment=assigned(),
+            authority_limit_minor=None,
+            outstanding_indicators=0,
+        )
+        assert BlockCode.FRAUD_FLAG not in codes(blocks)
+
+    def test_an_open_investigation_blocks_on_its_own(self) -> None:
+        """Distinct from the indicators: a claim can have every flag decided and an
+        SIU case still running, and settling underneath one is what this stops."""
+        blocks = lifecycle.approval_blocks(
+            make_claim(),
+            assignment=assigned(),
+            authority_limit_minor=None,
+            siu_open=True,
+        )
+        assert BlockCode.SIU_OPEN in codes(blocks)
 
     def test_a_reserve_over_the_limit_blocks(self) -> None:
         blocks = lifecycle.approval_blocks(

@@ -27,21 +27,36 @@ from app.domain.enums import (
     ClaimStatus,
     MovementType,
     NoteSection,
+    SiuStatus,
 )
 from app.services.claims.casework import ClaimCaseworkService
 
 
 class FakeClaimRepository:
-    """Notes, movements and the assignment, held in lists.
+    """Notes, movements, the assignment and the fraud review, held in lists.
 
     `list_movements` returns newest-first, matching the real query's ordering —
     which the ledger arithmetic depends on, so a double that returned insertion
     order would make `previous_held` pass here and fail in production.
+
+    `fraud_dispositions` and `siu_case` are here because **every** decision reads
+    them: `ClaimCaseworkService.decide` calls `fraud_gate`, which is what replaced
+    the old `claim.fraud_flag` boolean. Both default to empty, which is the
+    correct default rather than a convenient one — a claim with no fraud analysis
+    behind it has nothing outstanding to decide, and inventing a block for
+    evidence that does not exist is the mirror of the bug the gate replaced.
     """
 
-    def __init__(self, assignment: object | None = None) -> None:
+    def __init__(
+        self,
+        assignment: object | None = None,
+        *,
+        siu_case: object | None = None,
+    ) -> None:
         self.notes: list[Any] = []
         self.movements: list[Any] = []
+        self.fraud_dispositions: list[Any] = []
+        self.siu_case = siu_case
         self._assignment = assignment
 
     def add_note(self, claim_id: uuid.UUID, *, author: str, body: str, section: str) -> Any:
@@ -72,6 +87,14 @@ class FakeClaimRepository:
     async def get_assignment(self, claim_id: uuid.UUID) -> object | None:
         del claim_id
         return self._assignment
+
+    async def list_fraud_dispositions(self, claim_id: uuid.UUID) -> list[Any]:
+        del claim_id
+        return list(self.fraud_dispositions)
+
+    async def get_siu_case(self, claim_id: uuid.UUID) -> object | None:
+        del claim_id
+        return self.siu_case
 
 
 class FakeHandlerRepository:
@@ -450,10 +473,29 @@ class TestDecisions:
 
     @pytest.mark.asyncio
     async def test_a_referral_is_allowed_on_a_blocked_claim(self) -> None:
-        """Otherwise a fraud-flagged, unassigned claim could not be moved at all."""
-        service, _, _ = build()
-        claim = make_claim(fraud_flag=True)
+        """Otherwise a claim under SIU investigation could not be moved at all.
 
+        Previously set up with `fraud_flag=True`, which stopped blocking anything
+        when `fraud_gate` replaced that boolean — so the test went on passing
+        while no longer creating the condition its name describes. The block is
+        now a real one, and the first half of the test proves it *is* a block
+        before the second half shows a referral getting through it.
+
+        Everything else is deliberately unblocked — assigned, and well inside
+        authority — so the open SIU case is the only thing in the way.
+        """
+        service, claims, _ = build(assignment=assigned(), authority_limit_minor=50_000_00)
+        claims.siu_case = SimpleNamespace(status=SiuStatus.UNDER_INVESTIGATION)
+
+        with pytest.raises(ValidationError):
+            await service.decide(
+                make_claim(reserve_minor=1_000_00),
+                decision=ClaimDecisionAction.APPROVE_SETTLEMENT,
+                actor="R. Marsh",
+                reason="x",
+            )
+
+        claim = make_claim(reserve_minor=1_000_00)
         await service.decide(claim, decision=ClaimDecisionAction.REFER_TO_MANAGER, actor="R. Marsh")
 
         assert claim.status == ClaimStatus.ESCALATED

@@ -26,6 +26,7 @@ from app.domain import claim_lifecycle
 from app.domain import recovery as recovery_rules
 from app.domain.enums import (
     AnalysisKind,
+    AuditEventType,
     NoteSection,
 )
 from app.models.claim import Claim
@@ -35,6 +36,8 @@ from app.repositories.handler import HandlerRepository
 from app.schemas import approvals as api
 from app.schemas.fnol import Money, money
 from app.services.claims.coverage import ClaimCoverageService
+from app.services.claims.fraud_gate import fraud_gate
+from app.services.fnol.audit import AuditService
 
 #: Roughly how long a manager spends on one decision, for the clearance sentence.
 #:
@@ -59,11 +62,16 @@ class ClaimApprovalService:
         cases: FNOLRepository,
         handlers: HandlerRepository,
         coverage: ClaimCoverageService,
+        audit: AuditService | None = None,
     ) -> None:
         self._claims = claims
         self._cases = cases
         self._handlers = handlers
         self._coverage = coverage
+        #: For the referral reason, which lives in the trail rather than in a column.
+        #: Optional so an existing construction keeps working; absent, the sheet
+        #: reports no referral, which is what it did before this was read at all.
+        self._audit = audit
 
     # -- The queue -----------------------------------------------------------
 
@@ -235,12 +243,15 @@ class ClaimApprovalService:
         case = await self._cases.get(claim.fnol_case_id) if claim.fnol_case_id else None
         analysis = await self._cases.get_analysis(case.id, AnalysisKind.COVERAGE) if case else None
 
+        gate = await fraud_gate(claim, claims=self._claims, cases=self._cases)
         blocks = claim_lifecycle.approval_blocks(
             claim,
             assignment=assignment,
             authority_limit_minor=handler.authority_limit_minor if handler else None,
             authority_currency=handler.currency if handler else None,
             incurred_minor=claim_lifecycle.incurred_minor(movements) if movements else None,
+            outstanding_indicators=gate.outstanding_indicators,
+            siu_open=gate.siu_open,
         )
 
         currency = claim.currency
@@ -280,6 +291,9 @@ class ClaimApprovalService:
             conditions=_conditions(blocks),
             coverage=_coverage(analysis),
             handler_note=_handler_note(notes),
+            referral=_referral(
+                await self._audit.history(claim.id) if self._audit is not None else []
+            ),
         )
 
 
@@ -418,6 +432,53 @@ def _coverage(analysis: object | None) -> api.ApprovalCoverageOut | None:
     return api.ApprovalCoverageOut(
         verdict=verdict,
         summary=str(result.get("reasoning", "") or "No reasoning was recorded."),
+    )
+
+
+def _referral(events: list[object]) -> api.ApprovalReferralOut | None:
+    """The escalation that put this claim in front of a manager, from the trail.
+
+    The **most recent** one, because a claim can be referred, returned and referred
+    again, and what a manager is being asked now is the last thing that was asked.
+
+    Read from `CLAIM_DECIDED` rather than from a dedicated column, and that is worth
+    stating: the verb and the reason are already recorded there, in `context`, and a
+    column beside them would be a second copy of a fact that can then disagree with
+    the audit trail. The trail is the record — see `app.models.notification` on the
+    same distinction.
+    """
+    escalations = [
+        event
+        for event in events
+        if str(getattr(event, "event_type", "")) == str(AuditEventType.CLAIM_DECIDED)
+        and str((getattr(event, "context", None) or {}).get("decision", ""))
+        in {str(action) for action in claim_lifecycle.ESCALATING_DECISIONS}
+    ]
+    if not escalations:
+        return None
+
+    latest = max(
+        escalations,
+        key=lambda event: (
+            getattr(event, "occurred_at", None)
+            or getattr(event, "created_at", None)
+            or datetime.min.replace(tzinfo=UTC)
+        ),
+    )
+    context = getattr(latest, "context", None) or {}
+    actor = str(getattr(latest, "actor", "") or "Unknown")
+    reason = str(context.get("reason") or "").strip()
+
+    return api.ApprovalReferralOut(
+        decision=str(context.get("decision", "")),
+        actor=actor,
+        initials=_initials(actor),
+        referred_at=(
+            getattr(latest, "occurred_at", None)
+            or getattr(latest, "created_at", None)
+            or datetime.now(UTC)
+        ),
+        reason=reason or None,
     )
 
 

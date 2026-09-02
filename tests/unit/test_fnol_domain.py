@@ -141,9 +141,40 @@ class TestNormalisation:
         assert normalisation.parse_date(value) == expected
 
     def test_refuses_a_loss_date_in_the_future(self) -> None:
-        future = (datetime.now(UTC) + timedelta(days=30)).strftime("%d/%m/%Y")
-        assert normalisation.parse_datetime(future) is None
-        assert normalisation.is_future_date(future) is True
+        """A notice cannot report a loss that has not happened yet.
+
+        Both the reference and the date are fixed, and the date is deliberately
+        one that cannot be read two ways — a day past the twelfth. Building it as
+        `now + 30 days` in `%d/%m/%Y` made this test fail on roughly twelve days
+        in every thirty: whenever the resulting day is twelve or under, the
+        string reads validly both day-first and month-first, and `temporal` then
+        *re-reads* it month-first instead of refusing it. That is correct
+        behaviour and it has its own test below; it has no business deciding
+        whether this one passes.
+        """
+        reference = datetime(2026, 3, 1, tzinfo=UTC)
+        assert normalisation.parse_datetime("20/04/2026", reference=reference) is None
+        assert normalisation.is_future_date("20/04/2026", reference=reference) is True
+
+    def test_an_ambiguous_future_date_is_re_read_rather_than_refused(self) -> None:
+        """`02/10/2026` on a September notice means 10 February, not 2 October.
+
+        Day-first is the house convention, but a day-first reading that lands
+        after the notice arrived loses to a month-first reading that does not:
+        a broker cannot report a loss that has not happened, so the other reading
+        is the intended one. Refusing the date instead would throw away a loss
+        date that was legible all along.
+
+        Worth pinning because the two rules interact in a way that is not
+        obvious from either one alone — the future-date guard looks like it
+        should fire here, and does not.
+        """
+        reference = datetime(2026, 9, 2, tzinfo=UTC)
+        assert normalisation.parse_datetime("02/10/2026", reference=reference) == datetime(
+            2026, 2, 10, tzinfo=UTC
+        )
+        # Not a future date once read correctly, so no exception is raised for one.
+        assert normalisation.is_future_date("02/10/2026", reference=reference) is False
 
     @pytest.mark.parametrize(
         ("value", "expected"),

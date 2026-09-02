@@ -46,13 +46,16 @@ async def list_inspections(
 ) -> api.InspectionQueueOut:
     """Every visit commissioned, under one chip, with the counts for all six.
 
-    **`mine` is off by default and the payload says which it gave you.** Adjusters
-    are recorded on `claim_inspections` by *name* — a firm is instructed before a
-    person is named, and neither has an account here — so narrowing to the reader
-    only works when the visit was instructed to an internal adjuster whose name
-    matches theirs exactly. Defaulting to the whole desk and reporting `whole_desk`
-    is the honest arrangement: a board that silently showed everybody's work under
-    the heading *commissioned to you* would misrepresent whose job each row is.
+    **`mine` is off by default and the payload says which it gave you.** It now
+    narrows on *identity* rather than on a display name: a visit is the reader's when
+    its `adjuster_subject` is their account, or — before they have recorded anything
+    — when its `adjuster_email` is their address. A visit instructed to a firm with
+    no named contact belongs to nobody and appears only on the whole desk.
+
+    Still off by default, and `whole_desk` is still reported, because the default has
+    to be the honest one for a reader whose visits carry no address: `mine` would
+    show them an empty board under the heading *commissioned to you*, which reads as
+    "you have no work" rather than as "nobody wrote your address down".
 
     Two of the six chips are not statuses. `sent_back` and `filed` are facts about
     the report; the other four are states of the visit. See
@@ -60,7 +63,8 @@ async def list_inspections(
     """
     return await context.inspection_queue.queue(
         chip=chip,
-        adjuster_name=_actor(principal) if mine else None,
+        adjuster_subject=principal.subject if mine else None,
+        adjuster_email=principal.email if mine else None,
     )
 
 

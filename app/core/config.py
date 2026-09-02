@@ -13,7 +13,7 @@ import json
 import os
 import time
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import AliasChoices, Field, PostgresDsn, RedisDsn, computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -832,6 +832,50 @@ class GraphSettings(BaseSettings):
     timeout_seconds: float = 30.0
     http_max_attempts: int = 3
 
+    # --- The webhook, and why polling stays ----------------------------------
+    #: Graph change notifications: the mailbox tells us, instead of us asking.
+    #:
+    #: Off by default because it cannot work without a *publicly reachable* HTTPS
+    #: URL — Graph calls us, so `localhost` is not a candidate and a self-signed
+    #: certificate is refused. A tunnel serves for development; an ingress serves
+    #: in production. An environment with neither runs on the poll alone, which is
+    #: exactly what it did before this existed.
+    webhook_enabled: bool = False
+    #: Where Graph posts change notifications. Must be HTTPS, must be reachable
+    #: from the internet, and must match the URL the live subscription was created
+    #: against — see `MailSubscriptionService.ensure`, which recreates rather than
+    #: renews when this changes, because Graph goes on posting to the old address.
+    notification_url: str | None = None
+    #: Where Graph posts *lifecycle* events: reauthorization needed, subscription
+    #: removed, notifications missed. Defaults to `notification_url` with
+    #: `/lifecycle` appended, because the two almost always sit together, and is
+    #: separable for a deployment that routes them differently.
+    lifecycle_url: str | None = None
+    #: The shared secret Graph echoes back on every notification.
+    #:
+    #: **This is the whole of the endpoint's authentication.** The route cannot
+    #: require a bearer token — Graph has none to send — so it is public, and the
+    #: only thing separating a real notification from anybody who found the URL is
+    #: this string and the subscription id beside it. Treat it as a credential:
+    #: long, random, never logged.
+    webhook_client_state: str | None = None
+    #: How long a new or renewed subscription is asked to live, in minutes.
+    #:
+    #: **4230 is Graph's ceiling for a mail resource**, not a preference — 70½
+    #: hours, a little under three days. Other resource types allow far longer
+    #: (30 days for drive items, 29 for directory objects) and mail does not, so
+    #: there is no configuration that removes the need to renew. Values above the
+    #: ceiling are clamped rather than sent, because Graph rejects the whole
+    #: request and a rejected renewal is a subscription that silently lapses.
+    subscription_minutes: int = 4230
+    #: Renew when a subscription has less than this left. Comfortably more than
+    #: the renewal interval, so a single missed beat tick is survivable and two
+    #: are needed to lose a subscription.
+    renew_before_minutes: int = 1440
+    #: How often the renewal sweep runs. Six hours against a 24-hour margin and a
+    #: 70-hour lifetime: four chances to renew before the margin is even reached.
+    renewal_interval_seconds: int = 21600
+
     # --- What intake does to the mailbox -------------------------------------
     #: Marking read is how the folder drains. It is a flag on a message, not a
     #: move and not a delete, and it needs `Mail.ReadWrite`. Set it false to run
@@ -852,6 +896,48 @@ class GraphSettings(BaseSettings):
     #: letterhead is a notice nobody reads. Turn this on for a mailbox whose
     #: senders paste damage photographs into the body.
     include_inline_attachments: bool = False
+
+    #: Graph's maximum subscription lifetime for an Outlook mail resource, in
+    #: minutes. A fact about the API rather than a setting: 4230 minutes is 70½
+    #: hours, and a request for more is refused outright.
+    SUBSCRIPTION_CEILING_MINUTES: ClassVar[int] = 4230
+
+    @property
+    def subscription_lifetime_minutes(self) -> int:
+        """`subscription_minutes`, clamped to what Graph will actually accept.
+
+        Clamped rather than validated, because the consequence of the two differs:
+        a rejected create is an intake that never starts, and a rejected *renewal*
+        is a subscription that lapses at its own expiry with nothing in the logs to
+        say why. Asking for less than the ceiling is legitimate — a short lifetime
+        is a fast way to exercise the renewal path — so only the upper bound moves.
+        """
+        return max(1, min(self.subscription_minutes, self.SUBSCRIPTION_CEILING_MINUTES))
+
+    @property
+    def resolved_lifecycle_url(self) -> str | None:
+        """`lifecycle_url`, or the notification URL with `/lifecycle` appended."""
+        if self.lifecycle_url:
+            return self.lifecycle_url
+        if not self.notification_url:
+            return None
+        return f"{self.notification_url.rstrip('/')}/lifecycle"
+
+    @property
+    def webhook_ready(self) -> bool:
+        """Whether a subscription can be created at all. Never a connectivity check.
+
+        Separate from `configured`: the credentials can be present and the webhook
+        unconfigured, which is the ordinary state of a developer's machine and of
+        every environment before a public URL exists.
+        """
+        return bool(
+            self.webhook_enabled
+            and self.configured
+            and self.notification_url
+            and self.notification_url.lower().startswith("https://")
+            and self.webhook_client_state
+        )
 
     @computed_field  # type: ignore[prop-decorator]
     @property

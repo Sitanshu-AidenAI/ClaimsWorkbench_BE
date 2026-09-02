@@ -40,9 +40,16 @@ _DESCRIPTION = (
 
 #: The same, when the board is showing everybody's work. Said plainly rather than
 #: leaving an adjuster to assume the four rows in front of them are all of theirs.
+#:
+#: This used to end "Adjusters are recorded by name rather than by account, so this
+#: board cannot yet be narrowed to your own", which was true and is not any more:
+#: `claim_inspections` carries the adjuster's address and account, so `mine` narrows
+#: on identity. What is still worth saying is that this view is not narrowed — an
+#: adjuster reading it is looking at the desk, and a visit missing from *Mine* means
+#: it was instructed to a firm rather than to them.
 _DESCRIPTION_DESK = (
-    "Every site visit commissioned on the desk. Adjusters are recorded by name "
-    "rather than by account, so this board cannot yet be narrowed to your own."
+    "Every site visit commissioned on the desk, not only your own. A visit is yours "
+    "when it was instructed to your address."
 )
 
 #: The chips, in the order the board draws them, with the words it draws them in.
@@ -78,7 +85,12 @@ class ClaimInspectionQueueService:
     # -- The queue -----------------------------------------------------------
 
     async def queue(
-        self, *, chip: str, adjuster_name: str | None = None, now: datetime | None = None
+        self,
+        *,
+        chip: str,
+        adjuster_subject: str | None = None,
+        adjuster_email: str | None = None,
+        now: datetime | None = None,
     ) -> api.InspectionQueueOut:
         """Every commissioned visit, under one chip, with the counts for all six.
 
@@ -93,7 +105,11 @@ class ClaimInspectionQueueService:
         the row it is counting would be unreadable.
         """
         moment = now or datetime.now(UTC)
-        rows = await self._claims.inspection_queue(adjuster_name=adjuster_name)
+        mine = bool(adjuster_subject or adjuster_email)
+        rows = await self._claims.inspection_queue(
+            adjuster_subject=adjuster_subject,
+            adjuster_email=adjuster_email,
+        )
 
         built = [
             self._row(inspection, claim, priced=priced, priced_currency=currency, now=moment)
@@ -121,9 +137,9 @@ class ClaimInspectionQueueService:
             total=next((facet.count for facet in facets if facet.id == chip), len(shown)),
             metrics=self._metrics(built),
             facets=facets,
-            description=_DESCRIPTION if adjuster_name else _DESCRIPTION_DESK,
+            description=_DESCRIPTION if mine else _DESCRIPTION_DESK,
             alert_note=_alert(built),
-            whole_desk=adjuster_name is None,
+            whole_desk=not mine,
         )
 
     def _row(
@@ -213,6 +229,12 @@ class ClaimInspectionQueueService:
             id=inspection.id,
             reference=claim.reference,
             claimant=claim.claimant_name or claim.insured_name or "Not recorded",
+            #: The same fallback sentence the queue row uses, deliberately. One
+            #: field that is a sentence in one payload and null in another is worse
+            #: than either, and the pane and the row are read minutes apart.
+            loss_description=claim.loss_description or "No description on the notice.",
+            date_of_loss=claim.date_of_loss,
+            currency=claim.currency,
             status=inspection.status,
             next_statuses=sorted(
                 str(status) for status in rules.allowed_transitions(inspection.status)

@@ -920,10 +920,17 @@ def _recoveries(
             )
             for task in tasks
         ],
-        #: Distinct from `unavailable_reason`. That said the product does not track
-        #: recoveries; this would say *this claim* has none worth pursuing, which is
-        #: a handler's conclusion and there is still nowhere to record one.
-        no_recovery_reason=None,
+        #: Distinct from `unavailable_reason`. That says the product does not track
+        #: recoveries at all; this says *this claim* has none worth pursuing, which is
+        #: a handler's conclusion recorded by `ClaimRecoveryService.decline`.
+        no_recovery_reason=claim.no_recovery_reason,
+        #: Only a problem once the claim is decided. An empty register on a claim
+        #: still in review is where every claim starts.
+        consideration_overdue=(
+            not recoveries
+            and claim.no_recovery_reason is None
+            and claim_lifecycle.is_terminal(claim.status)
+        ),
         expected_total=money(expected, currency) if recoveries and currency else None,
         recovered_total=money(recovered, currency) if recoveries and currency else None,
         limitation_warnings=recovery_rules.limitation_warnings(recoveries, now=now),
